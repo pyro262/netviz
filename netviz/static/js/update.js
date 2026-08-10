@@ -11,6 +11,12 @@
 // It fades in over 2s rather than appearing between frames. Something that
 // blinks into existence on a wall display reads as a glitch; something that
 // arrives slowly reads as a state change.
+//
+// Then it breathes, on a 7s cycle, which is what actually gets it noticed: a
+// static mark at this opacity is furniture the eye stops seeing after a day,
+// and peripheral vision is far better at finding slow change than low
+// contrast. The whole effect is CSS -- see index.html -- so it costs no frame
+// time and keeps running while the renderer is busy.
 
 const FADE_SECONDS = 2;
 

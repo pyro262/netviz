@@ -119,7 +119,33 @@
         transition-property: opacity; transition-timing-function: ease;
         pointer-events: none; user-select: none;
       }
-      .update-mark.on { opacity: 0.34; }
+      /* Two animations, not one: a single looping animation cannot also do a
+         one-time fade-in. `update-in` runs once and holds its end state with
+         `forwards`, then `update-breathe` starts after the same 2s and wins
+         the property from then on, because the later of two active animations
+         on one property is the one that applies.
+
+         7s and ease-in-out: slow enough that it never reads as a blink or a
+         flicker, and far off the cadence of anything else on the display, so
+         it does not sync with arc or ripple motion. It is the only thing here
+         that breathes, which is what makes peripheral vision find it. */
+      @keyframes update-in { from { opacity: 0; } to { opacity: 0.32; } }
+      @keyframes update-breathe {
+        0%   { opacity: 0.20; }
+        50%  { opacity: 0.52; }
+        100% { opacity: 0.20; }
+      }
+      .update-mark.on {
+        opacity: 0.32;
+        animation: update-in 2s ease forwards,
+                   update-breathe 7s ease-in-out 2s infinite;
+      }
+      /* Someone who has asked the system for less motion gets the mark, still
+         legible, without the pulse -- the information is the point and the
+         movement is only how it is found. */
+      @media (prefers-reduced-motion: reduce) {
+        .update-mark.on { animation: update-in 2s ease forwards; opacity: 0.32; }
+      }
       /* Degraded mode already drains the canvas to grey; the watermark is not
          part of that story and steps further back rather than competing with
          the banner that is. */
