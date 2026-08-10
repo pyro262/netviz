@@ -2,6 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <!-- Kills the white flash on the self-reload. The browser paints the base
+         canvas before any CSS is parsed, and its default is white -- on a dark
+         wall display that is a full-screen strobe every time /build.json
+         changes. `background: #0b0916` below is too late to prevent it; this
+         meta is read first and makes the pre-CSS canvas dark. -->
+    <meta name="color-scheme" content="dark">
     <title>netviz</title>
     <!-- PNGs only, deliberately. Chrome prefers an SVG icon at every size, and
          the detailed mark (meridian grid, three arcs) is mush in a 16px tab.
@@ -10,6 +16,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <style>
+      :root { color-scheme: dark; }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0916; }
       /* The canvas sizes itself to #stage, not to the window, so the optional
          right rail can take a slice of the viewport without the globe rendering
