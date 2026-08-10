@@ -1,10 +1,26 @@
 <p align="center">
-  <img src="netviz/static/icon-512.png" alt="netviz" width="128" height="128">
+  <img src="netviz/static/icon-512.png" alt="" width="104" height="104">
 </p>
 
 <h1 align="center">netviz</h1>
 
-<p align="center">A wall-display globe that draws your network's live traffic as arcs.</p>
+<p align="center">
+  <em>A wall-display globe that draws your network's live traffic as arcs.</em>
+</p>
+
+<p align="center">
+  <sub>Python 3.12+ &nbsp;·&nbsp; three.js r185 &nbsp;·&nbsp; no bundler &nbsp;·&nbsp; no npm at runtime &nbsp;·&nbsp; no interaction</sub>
+</p>
+
+<p align="center">
+  <img src="assets/hero.png" alt="A dark globe with glowing arcs converging on one city, beside a panel of traffic counters" width="100%">
+</p>
+
+<p align="center">
+  <sub>Synthetic traffic, so every arc above is fake. The rail on the right is optional.</sub>
+</p>
+
+---
 
 Point a router's netflow export and syslog at it. It geolocates each flow, streams
 the result to a browser over a WebSocket, and renders a three.js globe: ambient
