@@ -27,6 +27,13 @@
          without a CSS size the canvas lays out at its intrinsic pixel size,
          which is viewport * devicePixelRatio -- correct only at dpr 1. */
       canvas { display: block; width: 100%; height: 100%; transition: filter 1.6s ease; }
+      /* Required, and required in CSS rather than JS: without it the browser
+         scrolls the page out from under a drag on a tablet before any handler
+         runs. */
+      canvas { touch-action: none; }
+      /* An arrow parked on a dark wall for a week is the most visible thing in
+         the room. */
+      canvas.cursor-hidden { cursor: none; }
       /* Degraded: drain the colour out of the whole scene in one move --
          arcs, city lights and bloom included -- so a dead feed cannot be
          mistaken for a quiet night. */

@@ -11,6 +11,7 @@ import { createStars } from './stars.js';
 import { createAtmosphere } from './atmosphere.js';
 import { createComposer } from './post.js';
 import { createCameraRig } from './camera.js';
+import { startInput } from './input.js';
 import { isDns, classNameFor, foreignEnd } from './classify.js';
 import { createBurstDetector } from './burst.js';
 import { railEnabled, start as startRail } from './rail.js';
@@ -127,6 +128,7 @@ async function boot() {
   // Position and aim come from the rig every frame; nothing is set here.
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
   const rig = createCameraRig(camera, GLOBE_RADIUS);
+  const input = startInput({ canvas: renderer.domElement, rig });
 
   const globe = await createGlobe(GLOBE_RADIUS);
   scene.add(globe.group);
@@ -268,6 +270,7 @@ async function boot() {
     if (aurora) aurora.mesh.material.uniforms.time.value += dt;
     globe.updateFlashes(dt);
     stars.update(dt);
+    input.tick(dt);
     rig.update(dt, arcs.origins());
     sinceSun += dt;
     if (sinceSun >= SUN_UPDATE_SECONDS) {
@@ -281,7 +284,7 @@ async function boot() {
   // exists so tools/shoot.py can assert the scene has live arcs rather than
   // leaving "looks about right" as the only check.
   window.__netviz = {
-    arcs, globe, ripples, aurora, renderer, camera, scene, rig, stars,
+    arcs, globe, ripples, aurora, renderer, camera, scene, rig, stars, input,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
     project(lat, lon) {
