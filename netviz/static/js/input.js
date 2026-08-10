@@ -30,13 +30,14 @@ export function startInput({ canvas, rig, onToggleRail }) {
   let lastMove = 0;
   let cursorTimer = null;
 
-  const ndc = (ev) => {
+  const ndcFromClient = (x, y) => {
     const r = canvas.getBoundingClientRect();
     return {
-      x: ((ev.clientX - r.left) / r.width) * 2 - 1,
-      y: -(((ev.clientY - r.top) / r.height) * 2 - 1),
+      x: ((x - r.left) / r.width) * 2 - 1,
+      y: -(((y - r.top) / r.height) * 2 - 1),
     };
   };
+  const ndc = (ev) => ndcFromClient(ev.clientX, ev.clientY);
 
   function showCursor() {
     canvas.classList.remove('cursor-hidden');
@@ -100,11 +101,30 @@ export function startInput({ canvas, rig, onToggleRail }) {
   }
 
   function onUp(ev) {
+    const hadTwo = pointers.size === 2;
     pointers.delete(ev.pointerId);
     if (canvas.hasPointerCapture?.(ev.pointerId)) {
       canvas.releasePointerCapture(ev.pointerId);
     }
     if (pointers.size < 2) pinchDist = 0;
+    if (hadTwo && pointers.size === 1) {
+      // One finger lifted out of a pinch. grabPoint still holds whatever the
+      // *first* finger touched at the original onDown, from before the
+      // pinch moved anything -- re-pick under the surviving finger exactly
+      // as a fresh onDown would, and drop the fling estimate so it does not
+      // inherit the pinch's midpoint drift. Stay manual and grabbed: a
+      // pointer is still down.
+      if (dragOn) {
+        const [, p] = [...pointers.entries()][0];
+        const v = rig.view();
+        const n = ndcFromClient(p.x, p.y);
+        grabPoint = pickSphere(v.lat, v.lon, v.distance, n.x, n.y,
+                               v.fovDeg, v.aspect);
+      }
+      vLat = 0; vLon = 0;
+      lastMove = performance.now();
+      return;
+    }
     if (pointers.size === 0) {
       grabPoint = null;
       rig.release();
