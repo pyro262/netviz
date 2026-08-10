@@ -29,10 +29,10 @@ services:
       # Public resolvers to hide from the display, on top of the built-in
       # list. Comma separated; an entry ending in "." or ":" is a prefix.
       NETVIZ_EXTRA_RESOLVERS: ${NETVIZ_EXTRA_RESOLVERS:-}
-      # "owner/repo" to watch for newer releases; empty makes no request at
-      # all. The kiosk shows a dim watermark in the lower left when the
-      # published release is ahead of the running version.
-      NETVIZ_UPDATE_REPO: ${NETVIZ_UPDATE_REPO:-}
+      # The kiosk shows a dim watermark in the lower left when the published
+      # release is ahead of the running version. On by default; set this to
+      # empty to disable the check and make no outbound request at all.
+      NETVIZ_UPDATE_REPO: ${NETVIZ_UPDATE_REPO-pyro262/netviz}
       NETVIZ_HIGHLIGHT1_PREFIX: ${NETVIZ_HIGHLIGHT1_PREFIX:-}
       NETVIZ_HIGHLIGHT1_LABEL: ${NETVIZ_HIGHLIGHT1_LABEL:-network 1}
       NETVIZ_HIGHLIGHT1_COLOR: ${NETVIZ_HIGHLIGHT1_COLOR:-#a855f7}

@@ -233,9 +233,31 @@ Read in `netviz/config.py`. `INFLUX_TOKEN` is the only secret.
 | `NETVIZ_TEMPLATES` | `/state/templates.json` | IPFIX templates, so a restart loses nothing |
 | `NETVIZ_FLUSH_SECONDS` | `10` | How often points are batched out |
 | `NETVIZ_LOG_UNPARSED` | `0` | Log this many rejected syslog lines, for writing a parser |
+| `NETVIZ_XT_GEOIP_DIR` | `/data/xt_geoip` | Router geo tables, if fetched; absent is fine |
+| `NETVIZ_UPDATE_REPO` | `pyro262/netviz` | Release check — **set empty to disable**, see below |
 | `INFLUX_URL` | `http://influxdb:8086` | Leave `INFLUX_TOKEN` empty to disable history |
 | `INFLUX_ORG` / `INFLUX_BUCKET` | `home` / `netviz` | |
 | `INFLUX_TOKEN` | `""` | Secret |
+
+### The update check
+
+The collector asks GitHub once every six hours whether there is a newer release
+than the one it is running, and the kiosk shows a dim, slowly pulsing
+`UPDATE AVAILABLE` in the lower left when there is. **This is on by default.**
+
+It is one unauthenticated `GET` to `api.github.com`. It sends nothing about your
+network, your traffic or your configuration — only the standard request a public
+release page receives. Nothing is reported anywhere, and the collector makes no
+other outbound connection except the NOAA aurora feed.
+
+To turn it off completely, so the request is never made:
+
+```
+NETVIZ_UPDATE_REPO=
+```
+
+It defaults to on rather than off because the people most likely to be running a
+stale build are the ones who never read this file.
 
 `WATCHTOWER_ENV` (read by `notify.py`) points at a file holding a Discord webhook
 in shoutrrr form, for stale-feed alerts. Bind it in

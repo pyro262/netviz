@@ -102,3 +102,33 @@ class TestExtraResolvers:
         monkeypatch.setenv("NETVIZ_EXTRA_RESOLVERS", "1.2.3.4,,")
         mod = importlib.reload(config_module)
         assert mod.Config().display_config()["resolvers"]["extra"] == ["1.2.3.4"]
+
+
+class TestUpdateCheck:
+    """The release check defaults ON.
+
+    It was opt-in in 0.2.1, which was the wrong call for released software:
+    the people most likely to be running a stale build are exactly the ones
+    who never read the configuration reference, so an opt-in update notice
+    reaches everybody except its audience.
+    """
+
+    def test_defaults_to_watching_upstream(self, monkeypatch):
+        monkeypatch.delenv("NETVIZ_UPDATE_REPO", raising=False)
+        mod = _reload(monkeypatch)
+        assert mod.Config().update_repo == "pyro262/netviz"
+
+    def test_an_empty_value_disables_it(self, monkeypatch):
+        """Empty must mean off, not "fall back to the default" -- it is the
+        documented way to stop the collector making any outbound request."""
+        mod = _reload(monkeypatch, NETVIZ_UPDATE_REPO="")
+        assert mod.Config().update_repo == ""
+        assert not mod.Config().update_repo      # falsy, so run() skips the check
+
+    def test_whitespace_only_also_disables_it(self, monkeypatch):
+        mod = _reload(monkeypatch, NETVIZ_UPDATE_REPO="   ")
+        assert mod.Config().update_repo == ""
+
+    def test_a_fork_can_be_watched_instead(self, monkeypatch):
+        mod = _reload(monkeypatch, NETVIZ_UPDATE_REPO="someone/their-fork")
+        assert mod.Config().update_repo == "someone/their-fork"

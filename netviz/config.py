@@ -60,11 +60,18 @@ class Config:
     # the ordinary case: without them block events fall back to MaxMind, which
     # is what every install did before this existed.
     xt_geoip_dir: str = os.environ.get("NETVIZ_XT_GEOIP_DIR", "/data/xt_geoip")
-    # "owner/repo" to check for newer releases, empty to disable. Empty by
-    # default because the check is one outbound request the collector would
-    # not otherwise make, and a display on an isolated network should not
-    # start reaching the internet because it was upgraded.
-    update_repo: str = os.environ.get("NETVIZ_UPDATE_REPO", "").strip()
+    # "owner/repo" to check for newer releases. Set it empty to disable, which
+    # also stops the request being made at all.
+    #
+    # On by default, pointing at upstream. This was opt-in in 0.2.1 and that
+    # was the wrong call for released software: the people most likely to be
+    # running a stale build are exactly the ones who never read the
+    # configuration reference, so an opt-in update notice reaches everybody
+    # except its audience. The cost is one unauthenticated GET to GitHub every
+    # six hours, carrying nothing about the network it runs on, and the README
+    # says so plainly rather than leaving it to be discovered.
+    update_repo: str = os.environ.get("NETVIZ_UPDATE_REPO",
+                                      "pyro262/netviz").strip()
     buffer_path: str = os.environ.get("NETVIZ_BUFFER", "/state/buffer.jsonl")
     # IPFIX templates survive a restart here; without it every restart drops
     # data records until the router's next template set.
