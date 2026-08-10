@@ -382,7 +382,7 @@ test('after the visit the camera comes home and the ordinary cycle resumes', () 
 });
 
 import {
-  beginManual, endManual, isManual, setManualView,
+  beginManual, endManual, isManual, setManualView, markInput,
 } from '../../netviz/static/js/campath.js';
 
 const P2 = { ...DEFAULTS, rng: () => 0.5, resumeSeconds: 30 };
@@ -497,4 +497,93 @@ test('the cycle clock is frozen during a detour, not eaten by it', () => {
   assert.equal(cycles.size, 1, 'the cycle rolled over mid-visit');
   const span = visit.length * 0.05;
   assert.ok(span > P.visitSeconds, `the detour lasted only ${span.toFixed(1)}s`);
+});
+
+// ---- markInput: "somebody is still here", without claiming a pointer ------
+
+test('markInput takes the camera off its cycle without claiming a grab', () => {
+  const s = initialState();
+  markInput(s);
+  assert.equal(isManual(s), true, 'wheel and keys must borrow the display too');
+  assert.equal(s.held, false, 'markInput must never claim a pointer is down');
+});
+
+test('markInput restarts the idle countdown, so zooming is not an empty room', () => {
+  // The bug: wheel and +/- never touched the state machine at all. Drag,
+  // release, then spend forty seconds zooming in on one arc, and the camera
+  // decides nobody is there and flies home mid-inspection.
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  endManual(s);
+  for (let i = 0; i < 250; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);   // 25s idle
+  assert.equal(isManual(s), true);
+  markInput(s);                                                        // a wheel notch
+  assert.equal(s.idleT, 0, 'the countdown did not restart');
+  for (let i = 0; i < 250; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);   // 25s more
+  assert.equal(isManual(s), true, 'handed back while the user was still zooming');
+});
+
+test('markInput during a drag does not release the pointer', () => {
+  // A wheel notch mid-drag must not hand the globe back. This is exactly what
+  // grab()/release() on those inputs would have done.
+  const s = initialState();
+  beginManual(s);
+  markInput(s);
+  assert.equal(s.held, true, 'a live drag was released by a wheel notch');
+  for (let i = 0; i < 600; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);   // 60s
+  assert.equal(isManual(s), true);
+});
+
+// ---- maxHeldSeconds: the safety net ---------------------------------------
+
+test('a pointer that never lifts cannot freeze the display forever', () => {
+  // pointerup is not guaranteed: a mouse unplugged mid-press, a compositor
+  // grabbing the pointer, an OS-level capture. Without this cap, step()'s
+  // held branch is the only early return in the file with no bound, and the
+  // wall sits frozen on a healthy feed with no degraded banner.
+  const p = { ...P2, maxHeldSeconds: 300 };
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  for (let i = 0; i < 2999; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);   // 299.9s
+  assert.equal(s.held, true, 'released early -- a real hold must not be cut');
+  step(s, 0.2, { lat: 0, lon: 0 }, p);                                  // past 300s
+  assert.equal(s.held, false, 'still held after maxHeldSeconds');
+  // It falls into the ordinary idle countdown rather than snapping home.
+  assert.equal(isManual(s), true);
+  for (let i = 0; i < 301; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);    // +30.1s
+  assert.equal(isManual(s), false, 'never handed back after the forced release');
+  assert.equal(s.phase, 'return');
+});
+
+test('an ordinary drag is well inside the cap', () => {
+  // The cap must be a backstop, not a time limit somebody notices. Nobody
+  // holds a wall display for five minutes; two is a long drag.
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  for (let i = 0; i < 1200; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);  // 120s
+  assert.equal(s.held, true);
+  assert.equal(s.curLat, 10, 'the held view moved under the user');
+});
+
+test('maxHeldSeconds 0 disables the cap', () => {
+  const p = { ...P2, maxHeldSeconds: 0 };
+  const s = initialState();
+  beginManual(s);
+  for (let i = 0; i < 10000; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);  // 1000s
+  assert.equal(s.held, true);
+});
+
+test('releasing and re-grabbing resets the held clock', () => {
+  const p = { ...P2, maxHeldSeconds: 300 };
+  const s = initialState();
+  beginManual(s);
+  for (let i = 0; i < 2500; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);   // 250s held
+  endManual(s);
+  beginManual(s);
+  assert.equal(s.heldT, 0);
+  for (let i = 0; i < 1000; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);   // 100s more
+  assert.equal(s.held, true, 'the new grab inherited the old one\'s clock');
 });

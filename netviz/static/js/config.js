@@ -198,7 +198,20 @@ export const CONFIG = {
     inertia: 0.85,
     invert: false,
     // Idle seconds before the camera takes itself back. 0 never resumes.
+    //
+    // Measured in RENDERED time, not wall-clock: the countdown is summed from
+    // the render loop's per-frame dt, so a hidden tab -- where the browser
+    // throttles requestAnimationFrame to nothing -- stops it entirely, and a
+    // display running below real time counts slow. Accepted: a wall kiosk is
+    // never a hidden tab, and the alternative costs campath.js its purity.
     resumeSeconds: 30,
+    // How fast the distance eases back to camera.distance once the display has
+    // taken itself back, as a fraction of the remaining gap per second -- the
+    // same easing the camera walk uses, so it reads as the same motion.
+    // Orientation is not the only thing a passer-by borrows: without this, a
+    // globe pulled in to 3.3 radii stays wrongly framed after the view has
+    // already come home. Never runs during a pinch.
+    zoomReturnEase: 0.35,
     // An arrow parked on a dark wall for a week is the most visible thing in
     // the room. 0 keeps it visible.
     hideCursorSeconds: 3,

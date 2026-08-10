@@ -58,6 +58,15 @@ export const DEFAULTS = {
   // its cycle. 0 means never, which makes a panned view permanent -- the right
   // choice for a desk, and the wrong one for a wall nobody is standing at.
   resumeSeconds: 30,
+  // Safety net, not a feature. `held` is normally cleared by pointerup or
+  // pointercancel, and input.js also releases on window blur and on a lost
+  // pointer capture -- but every one of those is a DOM event that something
+  // outside this page can swallow: a mouse unplugged mid-press, a compositor
+  // taking the pointer, an OS-level capture. Without a cap, `step()` would be
+  // the one place in this file that returns early with no bound, and the wall
+  // would sit frozen on a healthy feed with no degraded banner until the next
+  // deploy. Nobody holds a wall display for five minutes.
+  maxHeldSeconds: 300,
   // A block burst does not take a view somebody is holding, and a burst that
   // arrives during a drag is dropped rather than queued: letting go must not
   // launch a flight to somewhere the user did not ask for, seconds after the
@@ -129,6 +138,7 @@ export function initialState() {
     manual: false,
     held: false,           // pointer currently down
     idleT: 0,              // seconds since the last input, while manual
+    heldT: 0,              // seconds the pointer has been down, for maxHeldSeconds
     cycles: 0,
   };
 }
@@ -191,6 +201,7 @@ export function beginManual(s) {
   s.manual = true;
   s.held = true;
   s.idleT = 0;
+  s.heldT = 0;
   if (isVisiting(s)) {
     s.phase = 'return';
     s.phaseT = 0;
@@ -200,6 +211,19 @@ export function beginManual(s) {
 /** Pointer up. Still manual -- the idle countdown starts here. */
 export function endManual(s) {
   s.held = false;
+  s.heldT = 0;
+  s.idleT = 0;
+}
+
+/** Somebody is still here, without claiming a pointer is down.
+ *
+ *  Wheel, pinch and the zoom/arrow keys go through this rather than through
+ *  beginManual/endManual. Faking a grab for them would work by accident and
+ *  break on the overlap: a wheel notch during a drag would clear `held` on the
+ *  way out and hand the globe back mid-gesture. This only says "the idle
+ *  countdown restarts", which is the whole of what those inputs mean. */
+export function markInput(s) {
+  s.manual = true;
   s.idleT = 0;
 }
 
@@ -226,6 +250,7 @@ export function startVisit(s, lat, lon, p = DEFAULTS) {
   if (isManual(s)) {
     s.manual = false;
     s.held = false;
+    s.heldT = 0;
   }
   s.visitLat = lat;
   s.visitLon = lon;
@@ -249,7 +274,19 @@ export function step(s, dt, traffic, p = DEFAULTS) {
   // Manual: input owns curLat/curLon and nothing here may move them. Only the
   // idle countdown runs.
   if (s.manual) {
-    if (s.held) return s;
+    if (s.held) {
+      // The only early return in this file with no clock behind it, until
+      // maxHeldSeconds. See DEFAULTS for why a pointer that never lifts is a
+      // reachable state and not a hypothetical.
+      s.heldT += dt;
+      if (p.maxHeldSeconds > 0 && s.heldT >= p.maxHeldSeconds) {
+        s.held = false;
+        s.heldT = 0;
+        s.idleT = 0;    // fall into the ordinary idle countdown from here
+      }
+      return s;
+    }
+    s.heldT = 0;
     s.idleT += dt;
     if (p.resumeSeconds > 0 && s.idleT >= p.resumeSeconds) {
       s.manual = false;
