@@ -272,7 +272,7 @@ async function boot() {
   // exists so tools/shoot.py can assert the scene has live arcs rather than
   // leaving "looks about right" as the only check.
   window.__netviz = {
-    arcs, globe, ripples, aurora, renderer, camera, scene, rig,
+    arcs, globe, ripples, aurora, renderer, camera, scene, rig, stars,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
     project(lat, lon) {

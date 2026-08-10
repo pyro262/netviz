@@ -13,6 +13,7 @@
 // stars in the actual orientation for the current moment, so Orion is Orion.
 import * as THREE from 'three';
 import { cfg } from './config.js';
+import { dayFraction } from './sun.js';
 import {
   gmstDegrees, equatorialToVec, bvToRgb, magnitudeToSize, magnitudeToAlpha,
 } from './starfield.js';
@@ -115,10 +116,28 @@ export async function createStars() {
   }
   applyTime(new Date());
 
+  // Daylight ramp. Recomputed on the same 5s tick as the sidereal re-sync --
+  // a 30-minute ramp moves by 0.3% in that time, so anything finer is wasted
+  // trigonometry.
+  const base = cfg('appearance.starBrightness', 1.0);
+  const dayGain = cfg('appearance.starDayGain', 1.0);
+  const rampMinutes = cfg('appearance.starRampMinutes', 30);
+
+  function applyBrightness(date) {
+    const home = cfg('home', null);
+    if (!home || dayGain === 1) return;         // nothing to ramp between
+    const f = dayFraction(date, home.lat, home.lon, rampMinutes);
+    cat.material.uniforms.brightness.value = base * (1 + (dayGain - 1) * f);
+  }
+  applyBrightness(new Date());
+
   let sinceSync = 0;
   return {
     group,
     count: cat.count,
+    /** Exposed for verification: the page cannot be watched for 12 hours. */
+    brightness() { return cat.material.uniforms.brightness.value; },
+    applyBrightness,
     setPixelScale(v) {
       cat.material.uniforms.pixelScale.value = v;
     },
@@ -128,7 +147,9 @@ export async function createStars() {
       sinceSync += dt;
       if (sinceSync < 5) return;
       sinceSync = 0;
-      applyTime(new Date());
+      const now = new Date();
+      applyTime(now);
+      applyBrightness(now);
     },
   };
 }

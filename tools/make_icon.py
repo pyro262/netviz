@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 # --- palette -----------------------------------------------------------------
 
@@ -297,6 +297,74 @@ def svg() -> str:
 '''
 
 
+# --- repository banner -------------------------------------------------------
+
+WORDMARK = (236, 232, 255)     # near white, not pure -- pure white on #0b0916
+                               # rings against the plasma palette
+TAGLINE = (141, 125, 184)      # muted violet, clearly secondary to the wordmark
+BANNER_BG = (11, 9, 22)        # #0b0916, the display's own background
+NAME_TEXT = "netviz"
+TAG_TEXT = "live network traffic, drawn on a globe"
+
+# Bold, wide-coverage, and present on every distribution this is likely to be
+# run on. Checked in order; a missing font is a hard failure rather than a
+# silent fallback to Pillow's bitmap default, which looks like a ransom note at
+# 200px.
+FONTS = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+)
+
+
+def _font(px: int) -> ImageFont.FreeTypeFont:
+    for path in FONTS:
+        if Path(path).exists():
+            return ImageFont.truetype(path, px)
+    raise SystemExit(f"no usable bold font found; looked for {FONTS}")
+
+
+def banner(width: int = 2000, height: int = 560) -> Image.Image:
+    """Wide mark + wordmark for the top of the README.
+
+    Rendered at roughly twice its display width so it stays sharp on a HiDPI
+    screen -- GitHub serves the file at whatever width the markup asks for, so
+    the extra pixels cost only bytes.
+
+    The mark and the two lines of text are measured and centred as one group.
+    Laying them out from a fixed left margin instead leaves the whole lockup
+    sitting left of centre with a band of dead background beside it, which is
+    exactly what the first cut did.
+    """
+    img = Image.new("RGB", (width, height), BANNER_BG)
+    d = ImageDraw.Draw(img)
+
+    mark_px = int(height * 0.80)
+    name = _font(int(height * 0.40))
+    tag = _font(int(height * 0.105))
+
+    n_box = d.textbbox((0, 0), NAME_TEXT, font=name)
+    t_box = d.textbbox((0, 0), TAG_TEXT, font=tag)
+    n_w, n_h = n_box[2] - n_box[0], n_box[3] - n_box[1]
+    t_w, t_h = t_box[2] - t_box[0], t_box[3] - t_box[1]
+
+    gap_mark = int(height * 0.10)          # mark to text
+    gap_line = int(height * 0.075)         # wordmark to tagline
+    group_w = mark_px + gap_mark + max(n_w, t_w)
+    x0 = (width - group_w) // 2
+
+    mark = render(mark_px, True)
+    img.paste(mark, (x0, (height - mark_px) // 2), mark)
+
+    x = x0 + mark_px + gap_mark
+    y = (height - (n_h + gap_line + t_h)) // 2
+    d.text((x - n_box[0], y - n_box[1]), NAME_TEXT, font=name, fill=WORDMARK)
+    d.text((x - t_box[0], y + n_h + gap_line - t_box[1]), TAG_TEXT,
+           font=tag, fill=TAGLINE)
+
+    return img
+
+
 def main() -> None:
     out = Path(__file__).resolve().parent.parent / "netviz" / "static"
     (out / "icon.svg").write_text(svg())
@@ -305,6 +373,11 @@ def main() -> None:
     render(16, False).save(out / "favicon-16.png")
     for f in ("icon.svg", "icon-512.png", "favicon-32.png", "favicon-16.png"):
         print(f"wrote {out / f}")
+
+    assets = Path(__file__).resolve().parent.parent / "assets"
+    assets.mkdir(exist_ok=True)
+    banner().save(assets / "banner.png")
+    print(f"wrote {assets / 'banner.png'}")
 
 
 if __name__ == "__main__":

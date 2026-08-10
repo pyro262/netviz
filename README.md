@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="netviz/static/icon-512.png" alt="" width="104" height="104">
+  <img src="assets/banner.png" alt="netviz — live network traffic, drawn on a globe" width="760">
 </p>
-
-<h1 align="center">netviz</h1>
 
 <p align="center">
   <em>A wall-display globe that draws your network's live traffic as arcs.</em>

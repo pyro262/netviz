@@ -1,3 +1,5 @@
+import pytest
+
 import importlib
 
 import netviz.config as config_module
@@ -57,5 +59,26 @@ class TestHighlightNetworks:
 
         served = mod.Config().display_config()
 
-        assert set(served) == {"highlight"}
+        assert set(served) == {"highlight", "home"}
         assert "super-secret" not in repr(served)
+
+
+class TestHomePosition:
+    def test_display_config_carries_the_home_position(self, monkeypatch):
+        """The page cannot derive home: the camera infers it from where arcs
+        converge, which is no use to the star day/night ramp before any traffic
+        has arrived."""
+        monkeypatch.setenv("NETVIZ_HOME_LAT", "51.5074")
+        monkeypatch.setenv("NETVIZ_HOME_LON", "-0.1278")
+        mod = importlib.reload(config_module)
+
+        home = mod.Config().display_config()["home"]
+
+        assert home == {"lat": pytest.approx(51.5074), "lon": pytest.approx(-0.1278)}
+
+    def test_home_is_present_even_at_the_defaults(self, monkeypatch):
+        monkeypatch.delenv("NETVIZ_HOME_LAT", raising=False)
+        monkeypatch.delenv("NETVIZ_HOME_LON", raising=False)
+        mod = importlib.reload(config_module)
+
+        assert set(mod.Config().display_config()["home"]) == {"lat", "lon"}

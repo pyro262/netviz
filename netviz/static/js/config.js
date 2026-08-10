@@ -9,6 +9,11 @@
 
 export const CONFIG = {
 
+  // Filled in from the collector's /config.json, which reads NETVIZ_HOME_LAT /
+  // NETVIZ_HOME_LON. Null until then, and null is handled: the star day/night
+  // ramp is simply not applied without a position to compute sunrise for.
+  home: null,
+
   // ---------------------------------------------------------------- traffic --
   //
   // The renderer never sees your IP addresses' locations -- the collector
@@ -163,6 +168,13 @@ export const CONFIG = {
     // curve saturates at 1, so scaling it there would flatten every star
     // brighter than mag 3 to the same value and lose Sirius against Polaris.
     starBrightness: 1.5,
+    // Daylight makes a kiosk screen hard to read, so the stars are driven
+    // harder while the sun is up at the collector's home position and fall
+    // back to starBrightness at night. Ramped rather than switched, over
+    // starRampMinutes from sunrise and again from sunset, so the change lands
+    // while the sky on the globe is already moving. 1.0 disables it.
+    starDayGain: 2.0,
+    starRampMinutes: 30,
   },
 
   // ----------------------------------------------------------------- rail --
@@ -200,6 +212,16 @@ export const CONFIG = {
  * Exported separately from the fetch so it can be tested without a network.
  */
 export function mergeServerConfig(served) {
+  // Home comes from the collector because the page has no other way to know
+  // it: the camera infers home from where arcs converge, which is no use to
+  // the star ramp before any traffic has arrived. Merged before the early
+  // return below, or a collector that sends home but no networks would be
+  // ignored.
+  const home = served && served.home;
+  if (home && Number.isFinite(home.lat) && Number.isFinite(home.lon)) {
+    CONFIG.home = { lat: home.lat, lon: home.lon };
+  }
+
   const networks = served && served.highlight && served.highlight.networks;
   if (!Array.isArray(networks)) return CONFIG;
   const local = CONFIG.highlight.networks;

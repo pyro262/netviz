@@ -75,6 +75,14 @@ class Config:
         than a dump of this object: Config also holds the Influx token, and a
         page that gets handed the whole thing once would carry every secret
         added to it later.
+
+        The home position is in here because the page cannot derive it: the
+        renderer learns where home is only from the arcs, and the star ramp
+        needs the local sunrise before any traffic has arrived. It is no more
+        exposure than the display already gives -- every arc converges on it.
         """
-        return {"highlight": {"networks": self.highlight_networks}}
+        return {
+            "highlight": {"networks": self.highlight_networks},
+            "home": {"lat": self.home_lat, "lon": self.home_lon},
+        }
     flush_seconds: float = float(os.environ.get("NETVIZ_FLUSH_SECONDS", "10"))

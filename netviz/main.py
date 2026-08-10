@@ -426,7 +426,15 @@ async def run(cfg: Config, synthetic: bool) -> None:
                                     process_request=make_process_request(
                                         static_root, health=health,
                                         kp_cache=kp_cache, stats=stats,
+                                        # Built by Config so there is one
+                                        # whitelist, not two. Hand-rolling the
+                                        # dict here is how the home position
+                                        # reached /config.json in tests and not
+                                        # on the wire. The networks are passed
+                                        # separately because synthetic mode
+                                        # substitutes demo prefixes into them.
                                         display_config={
+                                            **cfg.display_config(),
                                             "highlight": {
                                                 "networks": highlight_networks}})):
             log.info("netviz listening: ws=%d http=%s synthetic=%s",
