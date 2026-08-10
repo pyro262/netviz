@@ -229,7 +229,7 @@ def test_local_is_outside_the_miss_rate():
 class FakeXt:
     """Stands in for XtGeoIP: a flat map, no file format involved."""
     def __init__(self, known=None):
-        self.known = known or {"198.51.100.167": "HK", "45.9.9.9": "RU"}
+        self.known = known or {"198.51.100.7": "HK", "198.51.100.9": "RU"}
 
     def lookup(self, ip):
         return self.known.get(ip)
@@ -253,8 +253,8 @@ def test_block_destination_moves_to_the_routers_country():
     country, the router blocked it as another."""
     e = make_router_enricher()
     e._reader.KNOWN = dict(FakeReader.KNOWN)
-    e._reader.KNOWN["198.51.100.167"] = (1.29, 103.85, "SG")
-    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    e._reader.KNOWN["198.51.100.7"] = (1.29, 103.85, "SG")
+    out = e.enrich(_block("192.168.0.50", "198.51.100.7"))
     assert out.dst_country == "HK"
     assert (out.dst_lat, out.dst_lon) == (22.3983, 114.1138)
     assert e.stats_xt["corrected"] == 1
@@ -263,8 +263,8 @@ def test_block_destination_moves_to_the_routers_country():
 def test_agreement_is_counted_separately_and_moves_to_the_centroid():
     e = make_router_enricher()
     e._reader.KNOWN = dict(FakeReader.KNOWN)
-    e._reader.KNOWN["198.51.100.167"] = (22.30, 114.17, "HK")
-    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    e._reader.KNOWN["198.51.100.7"] = (22.30, 114.17, "HK")
+    out = e.enrich(_block("192.168.0.50", "198.51.100.7"))
     assert out.dst_country == "HK"
     assert e.stats_xt["corrected"] == 0
     assert e.stats_xt["agreed"] == 1
@@ -273,7 +273,7 @@ def test_agreement_is_counted_separately_and_moves_to_the_centroid():
 def test_a_block_maxmind_cannot_place_is_drawn_anyway():
     """Previously dropped: no coordinates, no arc. The router could place it."""
     e = make_router_enricher()
-    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    out = e.enrich(_block("192.168.0.50", "198.51.100.7"))
     assert out is not None
     assert out.dst_country == "HK"
     assert e.stats_xt["placed"] == 1
@@ -283,7 +283,7 @@ def test_an_inbound_block_is_rescued_on_the_source_end():
     """On an inbound-blocking router the foreign end is the source, and a
     source MaxMind cannot place is dropped one step before the override runs."""
     e = make_router_enricher()
-    out = e.enrich(_block("45.9.9.9", "192.168.0.50"))
+    out = e.enrich(_block("198.51.100.9", "192.168.0.50"))
     assert out is not None
     assert out.src_country == "RU"
     assert (out.src_lat, out.src_lon) == (62.2381, 99.3997)
@@ -296,8 +296,8 @@ def test_flows_are_never_touched_by_the_router_tables():
     one it is better at. Only blocks ask what the router believed."""
     e = make_router_enricher()
     e._reader.KNOWN = dict(FakeReader.KNOWN)
-    e._reader.KNOWN["198.51.100.167"] = (1.29, 103.85, "SG")
-    out = e.enrich(_ev("192.168.0.50", dst="198.51.100.167"))
+    e._reader.KNOWN["198.51.100.7"] = (1.29, 103.85, "SG")
+    out = e.enrich(_ev("192.168.0.50", dst="198.51.100.7"))
     assert out.dst_country == "SG"
     assert (out.dst_lat, out.dst_lon) == (1.29, 103.85)
     assert e.stats_xt == {"agreed": 0, "corrected": 0, "placed": 0}
@@ -305,7 +305,7 @@ def test_flows_are_never_touched_by_the_router_tables():
 
 def test_destination_wins_when_both_ends_are_in_watched_countries():
     e = make_router_enricher()
-    out = e.enrich(_block("45.9.9.9", "198.51.100.167"))
+    out = e.enrich(_block("198.51.100.9", "198.51.100.7"))
     assert out.dst_country == "HK"
 
 
@@ -323,8 +323,8 @@ def test_a_country_with_no_outline_keeps_the_maxmind_answer():
     coordinates would be worse than the disagreement."""
     e = make_router_enricher(centroids={})
     e._reader.KNOWN = dict(FakeReader.KNOWN)
-    e._reader.KNOWN["198.51.100.167"] = (1.29, 103.85, "SG")
-    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    e._reader.KNOWN["198.51.100.7"] = (1.29, 103.85, "SG")
+    out = e.enrich(_block("192.168.0.50", "198.51.100.7"))
     assert out.dst_country == "SG"
     assert (out.dst_lat, out.dst_lon) == (1.29, 103.85)
 
@@ -332,6 +332,6 @@ def test_a_country_with_no_outline_keeps_the_maxmind_answer():
 def test_private_ends_are_not_asked_of_the_router_tables():
     e = make_router_enricher()
     e.xt.known["192.168.0.50"] = "CN"       # would be absurd, must not be used
-    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    out = e.enrich(_block("192.168.0.50", "198.51.100.7"))
     assert out.src_country == "--"
     assert out.dst_country == "HK"

@@ -15,12 +15,14 @@
 # block only happens when the router matched one of them.
 #
 # Usage:
-#   NETVIZ_WATCHED_COUNTRIES=RU,CN,KP tools/fetch_xt_geoip.sh [user@host]
+#   NETVIZ_WATCHED_COUNTRIES=RU,CN,KP tools/fetch_xt_geoip.sh root@router.example
 #
-# Needs key-based SSH to the router. Nothing here writes to the router.
+# The router address is required rather than defaulted -- a default here would
+# be one site's address shipped to everyone else's clone. Needs key-based SSH
+# (NETVIZ_ROUTER_SSH_KEY names the key). Nothing here writes to the router.
 set -euo pipefail
 
-ROUTER="${1:-${NETVIZ_ROUTER_SSH:-root@ROUTER}}"
+ROUTER="${1:-${NETVIZ_ROUTER_SSH:-}}"
 REMOTE_DIR="${NETVIZ_XT_GEOIP_REMOTE:-/usr/share/xt_geoip/LE}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # A router is rarely the host an ordinary ssh config points at, so the key is
@@ -29,6 +31,11 @@ SSH_KEY="${NETVIZ_ROUTER_SSH_KEY:-}"
 ssh_opts=()
 [[ -n "$SSH_KEY" ]] && ssh_opts+=(-i "$SSH_KEY")
 DEST="${NETVIZ_XT_GEOIP_DIR:-$HERE/data/xt_geoip}"
+
+if [[ -z "$ROUTER" ]]; then
+    echo "usage: $0 user@router   (or set NETVIZ_ROUTER_SSH)" >&2
+    exit 2
+fi
 
 COUNTRIES="${NETVIZ_WATCHED_COUNTRIES:-}"
 if [[ -z "$COUNTRIES" ]]; then

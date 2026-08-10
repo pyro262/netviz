@@ -36,9 +36,9 @@ def write_v6(path, ranges):
 
 @pytest.fixture
 def tables(tmp_path):
-    write_v4(tmp_path / "HK.iv4", [("103.28.54.0", "103.28.54.255"),
-                                   ("1.32.205.0", "1.32.205.255")])
-    write_v4(tmp_path / "ZA.iv4", [("155.133.238.0", "155.133.238.255")])
+    write_v4(tmp_path / "HK.iv4", [("198.51.100.0", "198.51.100.255"),
+                                   ("192.0.2.0", "192.0.2.255")])
+    write_v4(tmp_path / "ZA.iv4", [("203.0.113.0", "203.0.113.255")])
     write_v6(tmp_path / "CN.iv6", [("2001:250::", "2001:250:fff:ffff:ffff:ffff:ffff:ffff")])
     return tmp_path
 
@@ -46,15 +46,15 @@ def tables(tmp_path):
 def test_v4_lookup_hits_inside_a_range(tables):
     x = XtGeoIP.load(str(tables))
     assert x.lookup("198.51.100.167") == "HK"
-    assert x.lookup("155.133.238.194") == "ZA"
+    assert x.lookup("203.0.113.194") == "ZA"
 
 
 def test_v4_boundaries_are_inclusive(tables):
     x = XtGeoIP.load(str(tables))
-    assert x.lookup("103.28.54.0") == "HK"
-    assert x.lookup("103.28.54.255") == "HK"
-    assert x.lookup("103.28.53.255") is None
-    assert x.lookup("103.28.55.0") is None
+    assert x.lookup("198.51.100.0") == "HK"
+    assert x.lookup("198.51.100.255") == "HK"
+    assert x.lookup("198.51.99.255") is None
+    assert x.lookup("198.51.101.0") is None
 
 
 def test_an_address_between_two_ranges_is_not_claimed(tables):
@@ -95,15 +95,15 @@ def test_empty_directory_returns_none(tmp_path):
 
 
 def test_truncated_file_is_skipped_not_loaded(tmp_path, caplog):
-    write_v4(tmp_path / "HK.iv4", [("103.28.54.0", "103.28.54.255")])
+    write_v4(tmp_path / "HK.iv4", [("198.51.100.0", "198.51.100.255")])
     (tmp_path / "RU.iv4").write_bytes(b"\x00" * 12)   # 12 is not a multiple of 8
     x = XtGeoIP.load(str(tmp_path))
     assert x.countries == ["HK"]
-    assert x.lookup("103.28.54.1") == "HK"
+    assert x.lookup("198.51.100.1") == "HK"
 
 
 def test_non_table_files_are_ignored(tmp_path):
-    write_v4(tmp_path / "HK.iv4", [("103.28.54.0", "103.28.54.255")])
+    write_v4(tmp_path / "HK.iv4", [("198.51.100.0", "198.51.100.255")])
     (tmp_path / "README.txt").write_text("hello")
     (tmp_path / "GeoLite2-City.mmdb").write_bytes(b"x")
     x = XtGeoIP.load(str(tmp_path))
