@@ -165,7 +165,43 @@ export const CONFIG = {
       quietSeconds: 120,    // then that country cannot trigger again for this long
       visitSeconds: 15,     // stillness over the blocked country
       visitMaxSeconds: 25,  // cap on the flight out
+      // A block burst does not take a view somebody is holding, and a burst
+      // arriving during a drag is dropped rather than queued -- letting go
+      // must not launch a flight to somewhere nobody asked for, seconds after
+      // the event that caused it.
+      interruptManual: false,
     },
+  },
+
+  // ---------------------------------------------------------------- input --
+  //
+  // Direct manipulation. The display is autonomous and a person borrows it:
+  // drag to turn, wheel or pinch to move closer, and after resumeSeconds of
+  // stillness the camera eases home and resumes its own cycle.
+  //
+  // Set resumeSeconds to 0 and a panned view stays put forever. That is the
+  // right answer for a desk and the wrong one for a wall nobody is standing
+  // at, which is why it is not the default.
+
+  input: {
+    enabled: true,
+    drag: true,
+    zoom: true,
+    keyboard: true,
+    // Closest and furthest, in globe radii. The floor is not taste: below
+    // ~3.2 the globe's angular radius exceeds the 17.5 deg half-FOV of the
+    // 35 deg camera and the limb clips on a 16:9 wall.
+    zoomRange: [3.3, 9.0],
+    zoomFactor: 1.12,      // per wheel notch, multiplicative
+    // Fraction of a fling's speed remaining after one second. 0 stops dead,
+    // which reads as broken; 1 never settles.
+    inertia: 0.85,
+    invert: false,
+    // Idle seconds before the camera takes itself back. 0 never resumes.
+    resumeSeconds: 30,
+    // An arrow parked on a dark wall for a week is the most visible thing in
+    // the room. 0 keeps it visible.
+    hideCursorSeconds: 3,
   },
 
   // --------------------------------------------------------------- layers --
