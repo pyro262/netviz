@@ -221,7 +221,7 @@ def test_stats_json_serves_the_rail_snapshot(root):
     body = json.loads(handler(_FakeConnection(), _FakeRequest("/stats.json")).body)
 
     assert body["blocks"]["total"] == 1
-    assert body["blocks"]["top"] == [{"cc": "CN", "n": 1}]
+    assert [(r["cc"], r["n"]) for r in body["blocks"]["top"]] == [("CN", 1)]
     assert body["feeds"] is None          # no Health wired into this handler
 
 

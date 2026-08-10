@@ -107,7 +107,8 @@ class TestStats:
         s.note(block(src_country="--", dst_country="RU"), now=5000.0)
         snap = s.snapshot(5000.0)
         assert snap["blocks"]["total"] == 4
-        assert snap["blocks"]["top"] == [{"cc": "CN", "n": 3}, {"cc": "RU", "n": 1}]
+        assert [(r["cc"], r["n"]) for r in snap["blocks"]["top"]] == [
+            ("CN", 3), ("RU", 1)]
 
     def test_unplaceable_blocks_still_reach_the_total(self):
         """The globe draws an arc for a block GeoIP could not place; the rail's
@@ -162,3 +163,77 @@ class TestStats:
         for h in range(23):
             s.note(block(dst_country="CN"), now=base + h * 3600)
         assert s.snapshot(base + 22 * 3600)["blocks"]["total"] == 23
+
+
+# --- Sparkline series -------------------------------------------------------
+
+class TestSeries:
+    """One count per bucket in time order, for the rail's sparklines."""
+
+    def test_is_ordered_oldest_first(self):
+        c = RollingCounter(60.0, 6)          # 10-second buckets
+        c.add("RU", 1000.0)
+        c.add("RU", 1030.0)
+        c.add("RU", 1030.0)
+        s = c.series("RU", 1030.0)
+        assert len(s) == 6
+        assert s[-1] == 2                    # newest bucket last
+        assert s[-4] == 1                    # 30s earlier, three buckets back
+        assert sum(s) == 3
+
+    def test_empty_buckets_are_zero_not_omitted(self):
+        """A sparkline whose gaps close up draws a quiet hour as a busy one."""
+        c = RollingCounter(60.0, 6)
+        c.add("RU", 1000.0)
+        s = c.series("RU", 1050.0)
+        assert len(s) == 6
+        assert s.count(0) == 5
+        assert sum(s) == 1
+
+    def test_a_label_never_seen_is_all_zeroes(self):
+        c = RollingCounter(60.0, 6)
+        c.add("RU", 1000.0)
+        assert c.series("CN", 1000.0) == [0] * 6
+
+    def test_lapped_buckets_do_not_survive(self):
+        """The same slot index comes round again; an old count in it must not
+        reappear an hour later as though it were current."""
+        c = RollingCounter(60.0, 6)
+        c.add("RU", 1000.0)
+        assert sum(c.series("RU", 1000.0)) == 1
+        assert c.series("RU", 1000.0 + 60.0) == [0] * 6
+
+    def test_series_agrees_with_tally_over_the_window(self):
+        c = RollingCounter(60.0, 6)
+        for t in (1000.0, 1005.0, 1021.0, 1039.0):
+            c.add("RU", t)
+        now = 1050.0
+        assert sum(c.series("RU", now)) == c.tally(now).get("RU", 0)
+
+
+def test_snapshot_carries_a_sparkline_per_top_row():
+    from netviz.stats import RECENT_SLOTS
+    s = Stats(clock=lambda: 1000.0)
+    for _ in range(3):
+        s.note(block(dst_country="RU"), 1000.0)
+    s.note(block(dst_country="CN"), 1000.0)
+    snap = s.snapshot(1000.0)
+    rows = snap["blocks"]["top"]
+    assert [r["cc"] for r in rows] == ["RU", "CN"]
+    for row in rows:
+        assert len(row["spark"]) == RECENT_SLOTS
+        assert sum(row["spark"]) == row["n"]
+    assert snap["blocks"]["spark_seconds"] == 3600.0
+
+
+def test_sparkline_is_the_last_hour_not_the_last_day():
+    """The 24h count and the sparkline answer different questions: a country
+    quiet for an hour still shows its day total, with a flat line."""
+    s = Stats(clock=lambda: 100000.0)
+    for _ in range(5):
+        s.note(block(dst_country="RU"), 100000.0 - 7200.0)      # two hours ago
+    snap = s.snapshot(100000.0)
+    row = snap["blocks"]["top"][0]
+    assert row["cc"] == "RU"
+    assert row["n"] == 5
+    assert sum(row["spark"]) == 0

@@ -91,6 +91,28 @@ export function formatClock(date) {
  * empties out on a failed poll looks like a quiet network, which is the exact
  * confusion degraded mode exists to prevent.
  */
+/**
+ * Normalise a sparkline series to points in [0,1], oldest first.
+ *
+ * Returns null for anything that cannot be drawn honestly: a missing series
+ * (an older collector that serves no `spark`), a too-short one, or an hour
+ * with no blocks at all. Null renders as nothing, where a flat line at zero
+ * would be a claim -- and a flat line is also what a *broken* series looks
+ * like, which is the one reading the rail must never invent.
+ *
+ * Scaled to the row's own peak. Every row shares the same time axis, so the
+ * lines compare shapes, not magnitudes; the count beside them carries the
+ * magnitude already.
+ */
+export function sparkPoints(series) {
+  if (!Array.isArray(series) || series.length < 2) return null;
+  const values = series.map((n) => (Number.isFinite(n) && n > 0 ? n : 0));
+  const peak = values.reduce((m, n) => Math.max(m, n), 0);
+  if (peak <= 0) return null;
+  return values.map((n) => n / peak);
+}
+
+
 export function panels(snapshot) {
   const s = snapshot || {};
   const blocks = s.blocks || {};
@@ -105,10 +127,15 @@ export function panels(snapshot) {
   // top row is the part worth reading.
   const peak = top.reduce((m, r) => Math.max(m, r.n || 0), 0);
 
+  // The sparkline is the last hour; the bar and the count are the last 24.
+  // They are scaled independently on purpose -- a country's shape over the
+  // hour is worth reading whether or not it leads the day, and scaling the
+  // lines to the day's leader would flatten every other row to nothing.
   const blockRows = top.map((r) => ({
     label: r.cc,
     value: formatCount(r.n),
     bar: peak > 0 ? (r.n || 0) / peak : 0,
+    spark: sparkPoints(r.spark),
   }));
   if (!blockRows.length) {
     blockRows.push({ label: 'NONE', value: '—', bar: 0, muted: true });
@@ -158,6 +185,42 @@ function el(tag, cls, text) {
   return node;
 }
 
+// Viewbox units for the sparkline. Arbitrary but fixed: the SVG scales to
+// whatever CSS gives it, and picking round numbers keeps the path readable in
+// a DOM inspector.
+const SPARK_W = 100;
+const SPARK_H = 20;
+
+/**
+ * One row's last hour as an inline SVG polyline.
+ *
+ * Inline SVG rather than a canvas or a row of divs: there are at most five of
+ * these, they redraw once every 10 seconds, and an SVG path costs nothing to
+ * rebuild while a canvas would need its own resize handling on a display whose
+ * rail is a percentage of the viewport.
+ *
+ * `createElementNS` is required -- `createElement('svg')` yields an HTML
+ * element with the right tag name that never renders.
+ */
+function sparkSvg(points) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'rail-spark');
+  svg.setAttribute('viewBox', `0 0 ${SPARK_W} ${SPARK_H}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  const step = points.length > 1 ? SPARK_W / (points.length - 1) : SPARK_W;
+  // 1px of padding top and bottom so a peak at 1.0 is not clipped by the
+  // viewBox edge and a zero is not lost against the row's baseline.
+  const path = points
+    .map((v, i) => `${(i * step).toFixed(1)},${(SPARK_H - 1 - v * (SPARK_H - 2)).toFixed(1)}`)
+    .join(' ');
+  const line = document.createElementNS(ns, 'polyline');
+  line.setAttribute('points', path);
+  svg.append(line);
+  return svg;
+}
+
 function paint(root, data, clock) {
   root.replaceChildren();
 
@@ -196,6 +259,7 @@ function paint(root, data, clock) {
         track.append(fill);
         line.append(track);
       }
+      if (row.spark) line.append(sparkSvg(row.spark));
       box.append(line);
     }
     root.append(box);

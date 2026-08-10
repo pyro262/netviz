@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  railEnabled, formatCount, formatLag, formatPercent, formatAge, formatClock, panels,
+  railEnabled, formatCount, formatLag, formatPercent, formatAge, formatClock, panels, sparkPoints,
 } from '../../netviz/static/js/rail.js';
 
 test('rail is off by default', () => {
@@ -145,4 +145,72 @@ test('no blocks in 24h shows a row rather than an empty panel', () => {
 test('bars never divide by zero when every count is zero', () => {
   const p = panels({ blocks: { total: 0, top: [{ cc: 'CN', n: 0 }] } });
   assert.equal(p[0].rows[0].bar, 0);
+});
+
+test('sparkPoints scales a series to its own peak', () => {
+  assert.deepEqual(sparkPoints([0, 2, 4, 1]), [0, 0.5, 1, 0.25]);
+});
+
+test('sparkPoints returns null for an hour with no blocks', () => {
+  // A flat line at zero is a claim, and it is also what a broken series looks
+  // like. Nothing drawn is the honest answer.
+  assert.equal(sparkPoints([0, 0, 0, 0]), null);
+});
+
+test('sparkPoints returns null when the collector serves no series', () => {
+  assert.equal(sparkPoints(undefined), null);
+  assert.equal(sparkPoints(null), null);
+  assert.equal(sparkPoints('nope'), null);
+});
+
+test('sparkPoints refuses a series too short to be a line', () => {
+  assert.equal(sparkPoints([]), null);
+  assert.equal(sparkPoints([5]), null);
+});
+
+test('sparkPoints treats junk entries as zero rather than propagating NaN', () => {
+  assert.deepEqual(sparkPoints([null, 4, undefined, 2]), [0, 1, 0, 0.5]);
+});
+
+test('sparkPoints ignores negatives instead of inverting the line', () => {
+  assert.deepEqual(sparkPoints([-3, 0, 6]), [0, 0, 1]);
+});
+
+test('panels attaches a sparkline to each block row', () => {
+  const rows = panels({
+    blocks: { total: 9, top: [
+      { cc: 'RU', n: 6, spark: [0, 3, 6] },
+      { cc: 'CN', n: 3, spark: [3, 0, 0] },
+    ] },
+  })[0].rows;
+  assert.deepEqual(rows.map((r) => r.label), ['RU', 'CN']);
+  assert.deepEqual(rows[0].spark, [0, 0.5, 1]);
+  assert.deepEqual(rows[1].spark, [1, 0, 0]);
+});
+
+test('each row scales to its own peak, not the leader', () => {
+  // Otherwise every row below the top one flattens to nothing and the shape,
+  // which is the only thing the line is for, is lost.
+  const rows = panels({
+    blocks: { total: 101, top: [
+      { cc: 'RU', n: 100, spark: [0, 100] },
+      { cc: 'CN', n: 1, spark: [0, 1] },
+    ] },
+  })[0].rows;
+  assert.deepEqual(rows[0].spark, [0, 1]);
+  assert.deepEqual(rows[1].spark, [0, 1]);
+});
+
+test('a failed poll renders no sparkline and no fake row', () => {
+  const rows = panels(null)[0].rows;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].value, '—');
+  assert.ok(!rows[0].spark);
+});
+
+test('a collector without spark support still renders its bars', () => {
+  const rows = panels({ blocks: { total: 3, top: [{ cc: 'RU', n: 3 }] } })[0].rows;
+  assert.equal(rows[0].value, '3');
+  assert.equal(rows[0].bar, 1);
+  assert.equal(rows[0].spark, null);
 });

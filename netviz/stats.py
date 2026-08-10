@@ -75,6 +75,24 @@ class RollingCounter:
     def total(self, now: float) -> int:
         return sum(sum(counts.values()) for counts in self._live(now))
 
+    def series(self, label: str, now: float) -> list[int]:
+        """One count per bucket, oldest first, `slots` long.
+
+        Buckets nothing was written to are 0, not omitted -- a sparkline whose
+        gaps close up would draw a quiet hour as though it were busy, which is
+        the opposite of what someone reads off a wall. The newest bucket is
+        partial by construction, so the last point always undercounts; at a
+        3-minute bucket that is invisible against the 20 beside it.
+        """
+        newest = self._index(now)
+        oldest = newest - self.slots + 1
+        out = [0] * self.slots
+        for slot in range(self.slots):
+            epoch = self._epoch[slot]
+            if epoch is not None and oldest <= epoch <= newest:
+                out[epoch - oldest] = self._counts[slot].get(label, 0)
+        return out
+
     def top(self, now: float, k: int) -> list[tuple[str, int]]:
         """Highest-count labels first, ties broken by label so the rail does not
         reshuffle two equal countries every poll."""
@@ -102,6 +120,13 @@ def foreign_country(ev: Event) -> Optional[str]:
 BLOCK_WINDOW, BLOCK_SLOTS = 86400.0, 96
 FLOW_WINDOW, FLOW_SLOTS = 60.0, 60
 
+# A second, finer counter over the last hour, for the rail's sparklines. The
+# 24h counter cannot serve them: its 15-minute buckets give 4 points an hour,
+# which is not a shape. This is a separate counter rather than a finer single
+# one because 24h at 3-minute resolution would be 480 buckets kept for a line
+# that only ever shows the last 20 of them.
+RECENT_WINDOW, RECENT_SLOTS = 3600.0, 20
+
 
 class Stats:
     """What /stats.json serves. Fed from main.on_event.
@@ -115,6 +140,7 @@ class Stats:
     def __init__(self, clock=time.time) -> None:
         self._clock = clock
         self.blocks = RollingCounter(BLOCK_WINDOW, BLOCK_SLOTS)
+        self.blocks_recent = RollingCounter(RECENT_WINDOW, RECENT_SLOTS)
         self.flows = RollingCounter(FLOW_WINDOW, FLOW_SLOTS)
         self.decoder: Any = None
         self.syslog: Any = None
@@ -137,6 +163,7 @@ class Stats:
                 self.blocks_unplaced += 1
             else:
                 self.blocks.add(cc, now)
+                self.blocks_recent.add(cc, now)
         else:
             self.flows.add("flow", now)
         if ev.ts:
@@ -154,7 +181,14 @@ class Stats:
                 "window_seconds": BLOCK_WINDOW,
                 "total": placed + self.blocks_unplaced,
                 "unplaced": self.blocks_unplaced,
-                "top": [{"cc": cc, "n": n} for cc, n in self.blocks.top(now, 5)],
+                # `spark` is the last hour in 3-minute buckets, oldest first,
+                # so a row shows whether its 24h count is happening now or
+                # happened this morning. Same length for every row, so the
+                # rail can scale them against each other.
+                "spark_seconds": RECENT_WINDOW,
+                "top": [{"cc": cc, "n": n,
+                         "spark": self.blocks_recent.series(cc, now)}
+                        for cc, n in self.blocks.top(now, 5)],
             },
             "netflow": {
                 "flows_per_min": self.flows.total(now),
