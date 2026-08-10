@@ -6,7 +6,12 @@ from netviz.events import Event
 class FakeReader:
     """Stands in for geoip2.database.Reader so tests need no .mmdb file."""
     KNOWN = {"203.0.113.9": (55.75, 37.62, "RU")}
-    BEHAVIOR = {}  # Can be set to inject fault conditions
+
+    def __init__(self):
+        # Per instance, not per class: as a class attribute the OSError
+        # injected by one test stayed set for every test defined after it,
+        # which silently turned their misses into errors.
+        self.BEHAVIOR = {}  # Can be set to inject fault conditions
 
     def city(self, ip):
         if self.BEHAVIOR.get("raise_oserror"):
@@ -24,7 +29,7 @@ def make_enricher():
     e = Enricher.__new__(Enricher)
     e._reader = FakeReader()
     e._home = (30.3, -97.7)
-    e.stats = {"hits": 0, "misses": 0, "private": 0, "errors": 0}
+    e.stats = {"hits": 0, "misses": 0, "private": 0, "errors": 0, "local": 0}
     return e
 
 
@@ -157,3 +162,60 @@ class TestResolveMmdb:
         (tmp_path / "dbip-city-lite.mmdb").write_bytes(b"x")
 
         assert resolve_mmdb("GeoLite2-City.mmdb") == "dbip-city-lite.mmdb"
+
+
+# --- CGNAT and non-routable space -------------------------------------------
+# Both used to fall through to the database, miss, and inflate the miss rate
+# that the GeoIP alarm watches. They are two different problems: a CGNAT
+# address is a real host, a multicast group is not one anywhere.
+
+@pytest.mark.parametrize("ip", ["100.64.0.1", "100.100.5.6", "100.127.255.254"])
+def test_cgnat_source_is_home_and_not_a_miss(ip):
+    e = make_enricher()
+    out = e.enrich(_ev(ip, dst="203.0.113.9"))
+    assert (out.src_lat, out.src_lon) == (30.3, -97.7)
+    assert out.src_country == "--"
+    # Only the source end is counted, so a located destination adds no hit.
+    assert e.stats == {"hits": 0, "misses": 0, "private": 1, "errors": 0, "local": 0}
+
+
+@pytest.mark.parametrize("ip", ["100.63.255.255", "100.128.0.0"])
+def test_addresses_either_side_of_cgnat_are_not_private(ip):
+    """100.64.0.0/10 is a /10, not a /8 -- the neighbours are ordinary public
+    space and must still be asked of the database."""
+    e = make_enricher()
+    assert e.enrich(_ev(ip)) is None
+    assert e.stats["misses"] == 1
+    assert e.stats["private"] == 0
+
+
+@pytest.mark.parametrize("ip", [
+    "224.0.0.251",        # mDNS, constant on any LAN
+    "239.255.255.250",    # SSDP
+    "255.255.255.255",    # broadcast (inside 240/4)
+    "0.0.0.0",
+    "ff02::fb",           # link-local mDNS: multicast *and* link-local
+    "ff05::1",
+])
+def test_nonroutable_is_dropped_as_local_not_missed(ip):
+    e = make_enricher()
+    assert e.enrich(_ev(ip, dst="203.0.113.9")) is None
+    assert e.stats["local"] == 1
+    assert e.stats["misses"] == 0
+    assert e.stats["private"] == 0
+
+
+def test_nonroutable_destination_drops_the_event():
+    """A flow to a multicast group has no far end to draw."""
+    e = make_enricher()
+    assert e.enrich(_ev("203.0.113.9", dst="224.0.0.251")) is None
+    assert e.stats["local"] == 1
+
+
+def test_local_is_outside_the_miss_rate():
+    e = make_enricher()
+    for _ in range(9):
+        e.enrich(_ev("224.0.0.251", dst="203.0.113.9"))
+    e.enrich(_ev("203.0.113.9"))
+    assert e.stats["local"] == 9
+    assert e.miss_rate() == 0.0
