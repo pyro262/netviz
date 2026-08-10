@@ -59,9 +59,41 @@ function isDnsPort(port) {
  *  both directions are on the feed. Absent ports mean unknown, never port 0 --
  *  a source that carries no ports must keep its arcs. */
 export function isDns(ev) {
-  if (!cfg('traffic.dropDns', true)) return false;
   if (!ev || ev.k === 'block') return false;   // blocks are never suppressed
-  return isDnsPort(ev.sp) || isDnsPort(ev.dp);
+  if (cfg('traffic.dropDns', true) && (isDnsPort(ev.sp) || isDnsPort(ev.dp))) {
+    return true;
+  }
+  return isResolverAddress(ev);
+}
+
+/** Does this address belong to a known public resolver?
+ *
+ *  An entry ending in `.` or `:` is a prefix and matches anything under it;
+ *  anything else must match the whole address. IPv6 is compared lower-case and
+ *  as written -- the collector passes the address through from the exporter, so
+ *  this will not catch an unusual expansion of the same address. The prefixes
+ *  cover the cases that matter.
+ */
+export function isResolverAddress(ev) {
+  if (!cfg('traffic.dropResolvers', true)) return false;
+  if (!ev || ev.k === 'block') return false;
+  const list = cfg('traffic.resolvers', []).concat(cfg('traffic.extraResolvers', []));
+  return matchesAny(ev.s, list) || matchesAny(ev.d, list);
+}
+
+function matchesAny(addr, list) {
+  if (typeof addr !== 'string' || !addr) return false;
+  const a = addr.toLowerCase();
+  for (const entry of list) {
+    if (typeof entry !== 'string' || !entry) continue;
+    const e = entry.toLowerCase();
+    if (e.endsWith('.') || e.endsWith(':')) {
+      if (a.startsWith(e)) return true;
+    } else if (a === e) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** A country code the collector could actually place. `--` is what GeoIP

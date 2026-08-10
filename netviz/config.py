@@ -67,6 +67,14 @@ class Config:
     home_lat: float = float(os.environ.get("NETVIZ_HOME_LAT", "30.3"))
     home_lon: float = float(os.environ.get("NETVIZ_HOME_LON", "-97.7"))
     highlight_networks: list[dict] = field(default_factory=_highlight_networks)
+    # Public resolvers to hide from the display on top of the built-in list in
+    # config.js. Comma separated; an entry ending in "." or ":" is a prefix.
+    # Here rather than only in config.js so a container deployment can add its
+    # provider's resolver without a rebuild.
+    extra_resolvers: list[str] = field(default_factory=lambda: [
+        s.strip() for s in os.environ.get("NETVIZ_EXTRA_RESOLVERS", "").split(",")
+        if s.strip()
+    ])
 
     def display_config(self) -> dict:
         """The subset of config the browser is allowed to know.
@@ -84,5 +92,6 @@ class Config:
         return {
             "highlight": {"networks": self.highlight_networks},
             "home": {"lat": self.home_lat, "lon": self.home_lon},
+            "resolvers": {"extra": self.extra_resolvers},
         }
     flush_seconds: float = float(os.environ.get("NETVIZ_FLUSH_SECONDS", "10"))

@@ -26,6 +26,9 @@ services:
       # Up to three networks drawn in their own colour. Prefixes live in .env
       # rather than in the tracked config.js: an address prefix describes how
       # your LAN is laid out. Unset means the slot is simply off.
+      # Public resolvers to hide from the display, on top of the built-in
+      # list. Comma separated; an entry ending in "." or ":" is a prefix.
+      NETVIZ_EXTRA_RESOLVERS: ${NETVIZ_EXTRA_RESOLVERS:-}
       NETVIZ_HIGHLIGHT1_PREFIX: ${NETVIZ_HIGHLIGHT1_PREFIX:-}
       NETVIZ_HIGHLIGHT1_LABEL: ${NETVIZ_HIGHLIGHT1_LABEL:-network 1}
       NETVIZ_HIGHLIGHT1_COLOR: ${NETVIZ_HIGHLIGHT1_COLOR:-#a855f7}

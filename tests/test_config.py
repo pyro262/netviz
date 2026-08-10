@@ -59,7 +59,7 @@ class TestHighlightNetworks:
 
         served = mod.Config().display_config()
 
-        assert set(served) == {"highlight", "home"}
+        assert set(served) == {"highlight", "home", "resolvers"}
         assert "super-secret" not in repr(served)
 
 
@@ -82,3 +82,23 @@ class TestHomePosition:
         mod = importlib.reload(config_module)
 
         assert set(mod.Config().display_config()["home"]) == {"lat", "lon"}
+
+
+class TestExtraResolvers:
+    def test_empty_by_default(self, monkeypatch):
+        monkeypatch.delenv("NETVIZ_EXTRA_RESOLVERS", raising=False)
+        mod = importlib.reload(config_module)
+        assert mod.Config().display_config()["resolvers"]["extra"] == []
+
+    def test_parsed_and_stripped(self, monkeypatch):
+        """A .env written by hand has spaces after the commas, and a resolver
+        entry with a leading space matches nothing -- silently."""
+        monkeypatch.setenv("NETVIZ_EXTRA_RESOLVERS", " 203.0.113.53, 198.51.100. ")
+        mod = importlib.reload(config_module)
+        assert mod.Config().display_config()["resolvers"]["extra"] == [
+            "203.0.113.53", "198.51.100."]
+
+    def test_empty_entries_are_dropped(self, monkeypatch):
+        monkeypatch.setenv("NETVIZ_EXTRA_RESOLVERS", "1.2.3.4,,")
+        mod = importlib.reload(config_module)
+        assert mod.Config().display_config()["resolvers"]["extra"] == ["1.2.3.4"]

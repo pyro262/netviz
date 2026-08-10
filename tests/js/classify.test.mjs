@@ -1,9 +1,11 @@
 // Which visual class an event belongs to. Kept free of three.js so it runs
 // under `node --test` -- arcs.js only maps the returned name to a spec.
-import test from 'node:test';
+import test, { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { classNameFor, isDns, isHighlighted, highlightSlot, foreignEnd } from
-  '../../netviz/static/js/classify.js';
+import {
+  classNameFor, isDns, isHighlighted, highlightSlot, foreignEnd,
+  isResolverAddress,
+} from '../../netviz/static/js/classify.js';
 import { CONFIG, mergeServerConfig } from '../../netviz/static/js/config.js';
 
 // The highlight slots ship with empty prefixes -- they mean nothing until
@@ -196,4 +198,88 @@ test('an unplaceable event has no foreign end at all', () => {
 
 test('a country code with no coordinates is not usable', () => {
   assert.equal(foreignEnd({ dc: 'CN' }), null);
+});
+
+// --- public resolvers -------------------------------------------------------
+//
+// The port rule already covers plain DNS and DNS-over-TLS, which is every query
+// a local recursive resolver sends to the root and authoritative servers. This
+// is for what it cannot see: DNS-over-HTTPS on 443, and exporters that omit
+// ports entirely.
+
+describe('isResolverAddress', () => {
+  it('catches DNS-over-HTTPS to a public resolver on port 443', () => {
+    const ev = { k: 'flow', s: '10.0.0.5', d: '1.1.1.1', sp: 51234, dp: 443 };
+    // 443 is deliberately not in traffic.dnsPorts -- that is the whole gap.
+    assert.equal(CONFIG.traffic.dnsPorts.includes(443), false);
+    assert.equal(isResolverAddress(ev), true);
+    assert.equal(isDns(ev), true, 'the display gate must drop it too');
+  });
+
+  it('catches the resolver as the source as well as the destination', () => {
+    assert.equal(isResolverAddress(
+      { k: 'flow', s: '8.8.4.4', d: '10.0.0.5', sp: 443, dp: 51234 }), true);
+  });
+
+  it('matches an IPv6 resolver by prefix', () => {
+    assert.equal(isResolverAddress(
+      { k: 'flow', s: '10.0.0.5', d: '2606:4700:4700::1111' }), true);
+    assert.equal(isResolverAddress(
+      { k: 'flow', s: '10.0.0.5', d: '2001:4860:4860::8888' }), true);
+  });
+
+  it('is case insensitive for IPv6', () => {
+    assert.equal(isResolverAddress(
+      { k: 'flow', s: '10.0.0.5', d: '2606:4700:4700::1111'.toUpperCase() }), true);
+  });
+
+  it('anchors a prefix at the start', () => {
+    // 145.90.28.1 must not match the NextDNS prefix 45.90.28.
+    assert.equal(isResolverAddress(
+      { k: 'flow', s: '10.0.0.5', d: '145.90.28.1' }), false);
+  });
+
+  it('does not match an address that merely starts the same', () => {
+    // 1.1.1.10 is not 1.1.1.1: a whole-address entry must match whole.
+    assert.equal(isResolverAddress(
+      { k: 'flow', s: '10.0.0.5', d: '1.1.1.10' }), false);
+  });
+
+  it('leaves ordinary web traffic alone', () => {
+    assert.equal(isResolverAddress(
+      { k: 'flow', s: '10.0.0.5', d: '93.184.216.34', dp: 443 }), false);
+  });
+
+  it('never claims a block, whichever resolver it touched', () => {
+    // Same rule as DNS: the wall exists to show blocks.
+    assert.equal(isResolverAddress(
+      { k: 'block', s: '10.0.0.5', d: '1.1.1.1' }), false);
+    assert.equal(isDns({ k: 'block', s: '10.0.0.5', d: '1.1.1.1' }), false);
+  });
+
+  it('can be turned off', () => {
+    CONFIG.traffic.dropResolvers = false;
+    try {
+      assert.equal(isResolverAddress(
+        { k: 'flow', s: '10.0.0.5', d: '1.1.1.1', dp: 443 }), false);
+    } finally {
+      CONFIG.traffic.dropResolvers = true;
+    }
+  });
+
+  it('honours a user-supplied addition', () => {
+    CONFIG.traffic.extraResolvers = ['203.0.113.53'];
+    try {
+      assert.equal(isResolverAddress(
+        { k: 'flow', s: '10.0.0.5', d: '203.0.113.53', dp: 443 }), true);
+    } finally {
+      CONFIG.traffic.extraResolvers = [];
+    }
+  });
+
+  it('tolerates a missing address', () => {
+    assert.equal(isResolverAddress({ k: 'flow', d: '1.1.1.1' }), true);
+    assert.equal(isResolverAddress({ k: 'flow' }), false);
+    assert.equal(isResolverAddress(null), false);
+  });
 });

@@ -33,6 +33,46 @@ export const CONFIG = {
     // converging somewhere nothing actually is. The collector still records it.
     dropDns: true,
     dnsPorts: [53, 853, 5353],   // 53 plain, 853 DNS-over-TLS, 5353 mDNS
+
+    // Also drop anything to or from a known public resolver, whatever port it
+    // is on. The port rule above already catches plain DNS and DNS-over-TLS,
+    // including every query a local recursive resolver such as unbound sends to
+    // the root and authoritative servers -- those are port 53 by definition.
+    // What it cannot catch is DNS-over-HTTPS, which is port 443 and looks
+    // exactly like web traffic, and any exporter that omits ports.
+    //
+    // This matters most on DB-IP, which answers for every address and places
+    // anycast resolvers at a registrant country rather than declining to guess:
+    // Cloudflare and Google both land in Canada. GeoLite2 declines instead, so
+    // those arcs are dropped for a different reason. Either way they are not
+    // where the display implies.
+    //
+    // An entry ending in `.` or `:` is a prefix; anything else is matched whole.
+    dropResolvers: true,
+    resolvers: [
+      '1.1.1.1', '1.0.0.1', '1.1.1.2', '1.0.0.2', '1.1.1.3', '1.0.0.3',
+      '2606:4700:4700:',                                      // Cloudflare
+      '8.8.8.8', '8.8.4.4', '2001:4860:4860:',                 // Google
+      '9.9.9.9', '9.9.9.10', '9.9.9.11', '149.112.112.',
+      '2620:fe:',                                             // Quad9
+      '208.67.222.222', '208.67.220.220', '208.67.222.123',
+      '208.67.220.123', '2620:119:',                          // OpenDNS
+      '94.140.14.14', '94.140.15.15', '94.140.14.15', '94.140.15.16',
+      '2a10:50c0:',                                           // AdGuard
+      '45.90.28.', '45.90.30.', '2a07:a8c0:', '2a07:a8c1:',    // NextDNS
+      '76.76.2.', '76.76.10.', '2606:1a40:',                   // Control D
+      '185.228.168.', '185.228.169.', '2a0d:2a00:',            // CleanBrowsing
+      '4.2.2.1', '4.2.2.2', '4.2.2.3', '4.2.2.4',              // Level3
+      '64.6.64.6', '64.6.65.6',                                // Verisign
+      '8.26.56.26', '8.20.247.20',                             // Comodo
+      '77.88.8.8', '77.88.8.1',                                // Yandex
+      '156.154.70.1', '156.154.71.1',                          // Neustar
+      '114.114.114.114', '223.5.5.5', '223.6.6.6',
+      '119.29.29.29',                                          // CN resolvers
+    ],
+    // Your own additions -- an upstream your resolver forwards to, a provider
+    // resolver, anything the list above misses. Same matching rules.
+    extraResolvers: [],
   },
 
   // ------------------------------------------------------------- highlight --
@@ -220,6 +260,14 @@ export function mergeServerConfig(served) {
   const home = served && served.home;
   if (home && Number.isFinite(home.lat) && Number.isFinite(home.lon)) {
     CONFIG.home = { lat: home.lat, lon: home.lon };
+  }
+
+  // Extra resolvers to hide, so a container deployment can name its provider's
+  // without rebuilding the image. Additive: the built-in list stays.
+  const extra = served && served.resolvers && served.resolvers.extra;
+  if (Array.isArray(extra) && extra.length) {
+    CONFIG.traffic.extraResolvers = CONFIG.traffic.extraResolvers.concat(
+      extra.filter((e) => typeof e === 'string' && e));
   }
 
   const networks = served && served.highlight && served.highlight.networks;
