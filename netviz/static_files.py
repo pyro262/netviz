@@ -63,6 +63,18 @@ def build_stamp(root: Path, extra: str = "") -> str:
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
 
+def file_etag(path: Path) -> Optional[str]:
+    """Validator for one served file, from the same size+mtime basis as the
+    build stamp. Content hashing would be stricter but this is computed on every
+    request for every asset, and stat() already catches a docker build."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    raw = f"{path.name}:{st.st_size}:{st.st_mtime_ns}"
+    return '"' + hashlib.sha256(raw.encode()).hexdigest()[:20] + '"'
+
+
 def make_process_request(
     root: Path,
     health: Any = None,
@@ -155,17 +167,37 @@ def make_process_request(
         if content_type is None or not target.is_file():
             return connection.respond(404, "not found\n")
 
+        # `no-cache` and not `no-store`, with a validator.
+        #
+        # `no-store` forbids keeping the bytes at all, so every kiosk reload
+        # re-downloaded and re-compiled the whole page -- 650 KB of vendored
+        # three.js, the textures, the star catalogue -- before it could paint a
+        # single frame. A reload is exactly when the browser has stopped drawing
+        # the old page, so that gap is a visible flash of empty surface on the
+        # wall. `no-cache` still forces a revalidation on every request, so a
+        # deploy can never be served stale JS; it just lets an unchanged asset
+        # come back as a 304 with no body, and lets the JS engine keep its
+        # compilation cache for that URL.
+        etag = file_etag(target)
+        if etag is not None and request.headers.get("If-None-Match") == etag:
+            return Response(304, "Not Modified", Headers({
+                "ETag": etag,
+                "Cache-Control": "no-cache",
+            }), b"")
+
         try:
             body = target.read_bytes()
         except OSError:
             log.exception("static: could not read %s", target)
             return connection.respond(404, "not found\n")
 
-        headers = Headers({
+        fields = {
             "Content-Type": content_type,
             "Content-Length": str(len(body)),
-            "Cache-Control": "no-store",   # a kiosk reload must never get stale JS
-        })
-        return Response(200, "OK", headers, b"" if method == "HEAD" else body)
+            "Cache-Control": "no-cache",
+        }
+        if etag is not None:
+            fields["ETag"] = etag
+        return Response(200, "OK", Headers(fields), b"" if method == "HEAD" else body)
 
     return process_request

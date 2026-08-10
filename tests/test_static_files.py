@@ -43,7 +43,7 @@ def test_root_path_serves_index_html(root):
     assert resp.status_code == 200
     assert resp.body == b"<h1>globe</h1>"
     assert resp.headers["Content-Type"] == "text/html; charset=utf-8"
-    assert resp.headers["Cache-Control"] == "no-store"
+    assert resp.headers["Cache-Control"] == "no-cache"
 
 
 def test_javascript_gets_a_module_content_type(root):
@@ -336,3 +336,65 @@ def test_build_json_reflects_a_config_change(root):
     b = json.loads(two(_FakeConnection(), _FakeRequest("/build.json")).body)["stamp"]
 
     assert a != b
+
+
+class TestRevalidation:
+    """A kiosk reload must re-check every asset but should not have to
+    re-download the ones that did not change. `no-store` forbade keeping them
+    at all, which made every reload pay for 650 KB of three.js before it could
+    paint -- and a reload is exactly when nothing is being drawn."""
+
+    def test_a_static_file_carries_an_etag(self, root):
+        handler = make_process_request(root)
+
+        resp = handler(_FakeConnection(), _FakeRequest("/js/main.js"))
+
+        assert resp.status_code == 200
+        assert resp.headers["ETag"].startswith('"')
+        assert resp.headers["Cache-Control"] == "no-cache"
+
+    def test_an_unchanged_file_comes_back_304_with_no_body(self, root):
+        handler = make_process_request(root)
+        first = handler(_FakeConnection(), _FakeRequest("/js/main.js"))
+
+        second = handler(_FakeConnection(), _FakeRequest(
+            "/js/main.js", {"If-None-Match": first.headers["ETag"]}))
+
+        assert second.status_code == 304
+        assert second.body == b""
+        assert second.headers["ETag"] == first.headers["ETag"]
+
+    def test_a_changed_file_is_sent_in_full(self, root):
+        """The whole safety argument for dropping no-store: revalidation still
+        happens on every request, so a deploy can never serve stale JS."""
+        handler = make_process_request(root)
+        stale = handler(_FakeConnection(), _FakeRequest("/js/main.js")).headers["ETag"]
+
+        (root / "js" / "main.js").write_text("export const x = 2;  // redeployed")
+
+        resp = handler(_FakeConnection(), _FakeRequest(
+            "/js/main.js", {"If-None-Match": stale}))
+
+        assert resp.status_code == 200
+        assert b"redeployed" in resp.body
+        assert resp.headers["ETag"] != stale
+
+    def test_a_matching_etag_for_a_different_file_is_not_honoured(self, root):
+        handler = make_process_request(root)
+        js = handler(_FakeConnection(), _FakeRequest("/js/main.js")).headers["ETag"]
+
+        resp = handler(_FakeConnection(), _FakeRequest(
+            "/index.html", {"If-None-Match": js}))
+
+        assert resp.status_code == 200
+        assert resp.body == b"<h1>globe</h1>"
+
+    def test_the_json_endpoints_stay_no_store(self, root):
+        """These are live state, not assets. A cached /build.json would defeat
+        the reload it exists to trigger."""
+        handler = make_process_request(root)
+
+        resp = handler(_FakeConnection(), _FakeRequest("/build.json"))
+
+        assert resp.headers["Cache-Control"] == "no-store"
+        assert "ETag" not in resp.headers
