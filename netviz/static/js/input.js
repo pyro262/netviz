@@ -13,7 +13,13 @@ import { pickSphere, solveDrag, zoomBy, decay } from './orbit.js';
 
 export function startInput({ canvas, rig, onToggleRail }) {
   const enabled = cfg('input.enabled', true);
-  if (!enabled) return { stop() {} };
+  // The disabled stub must carry the WHOLE interface, tick included. main.js
+  // calls input.tick(dt) every frame, and three.js re-schedules its animation
+  // frame only AFTER the callback returns -- so a missing method throws, the
+  // loop stops after one frame, and the wall is a black canvas until the next
+  // deploy. A config knob must never be able to do that. Measured with
+  // enabled:false: 0 frames rendered and "input.tick is not a function".
+  if (!enabled) return { tick() {}, stop() {} };
 
   const dragOn = cfg('input.drag', true);
   const zoomOn = cfg('input.zoom', true);
