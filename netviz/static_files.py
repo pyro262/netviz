@@ -30,7 +30,7 @@ _TYPES = {
 }
 
 
-def build_stamp(root: Path) -> str:
+def build_stamp(root: Path, extra: str = "") -> str:
     """Fingerprint of everything this server would serve.
 
     The kiosk polls /build.json and reloads when this changes, so a rebuild
@@ -40,6 +40,13 @@ def build_stamp(root: Path) -> str:
     an actual asset change should. Content hashing would be stricter, but this
     walks 2.7 MB of vendored three.js every 30 seconds and stat() is enough to
     catch a docker build.
+
+    `extra` folds in state that is served but is not a file on disk -- the
+    display config, which comes from the environment. Without it, changing a
+    highlighted network's colour in .env and restarting leaves every open kiosk
+    showing the old palette forever: the page reads /config.json once at boot,
+    and nothing on disk changed, so no reload is ever triggered. A wall display
+    has nobody standing at it to press F5.
     """
     root = Path(root).resolve()
     parts = []
@@ -51,6 +58,8 @@ def build_stamp(root: Path) -> str:
         except OSError:
             continue
         parts.append(f"{path.relative_to(root)}:{st.st_size}:{st.st_mtime_ns}")
+    if extra:
+        parts.append(f"config:{extra}")
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
 
@@ -70,6 +79,9 @@ def make_process_request(
     /stats.json, which is what the optional right rail reads.
     """
     root = Path(root).resolve()
+    # Serialised once: it cannot change without a restart, and it is hashed on
+    # every /build.json poll from every kiosk.
+    config_stamp = json.dumps(display_config, sort_keys=True) if display_config else ""
 
     def _json(method: str, payload: dict) -> Response:
         body = json.dumps(payload).encode()
@@ -93,7 +105,7 @@ def make_process_request(
         # Computed, not read off disk -- handled before the file lookup so no
         # build.json can ever shadow it.
         if raw == "/build.json":
-            return _json(method, {"stamp": build_stamp(root)})
+            return _json(method, {"stamp": build_stamp(root, config_stamp)})
 
         # Same reasoning as build.json: computed before the file lookup so a
         # file of that name on disk cannot shadow the live answer.

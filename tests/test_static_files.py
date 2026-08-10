@@ -300,3 +300,39 @@ def test_config_json_is_not_shadowed_by_a_file_on_disk(root):
     body = json.loads(handler(_FakeConnection(), _FakeRequest("/config.json")).body)
 
     assert body == {"highlight": {"networks": []}}
+
+
+def test_build_stamp_changes_when_the_display_config_does(root):
+    """A wall display has nobody standing at it to press F5. The page reads
+    /config.json once at boot, so a colour changed in .env has to move the
+    build stamp or every open kiosk keeps the old palette indefinitely."""
+    from netviz.static_files import build_stamp
+
+    before = build_stamp(root, '{"highlight": "cyan"}')
+    after = build_stamp(root, '{"highlight": "violet"}')
+
+    assert before != after
+
+
+def test_build_stamp_is_stable_when_nothing_changes(root):
+    """The other half of it: a bare restart must not bounce every display."""
+    from netviz.static_files import build_stamp
+
+    assert build_stamp(root, '{"a": 1}') == build_stamp(root, '{"a": 1}')
+    assert build_stamp(root) == build_stamp(root)
+
+
+def test_build_json_reflects_a_config_change(root):
+    from netviz.stats import Stats
+
+    one = make_process_request(root, stats=Stats(),
+                               display_config={"highlight": {"networks": [
+                                   {"prefix": "10.10.10.", "color": "#22d3ee"}]}})
+    two = make_process_request(root, stats=Stats(),
+                               display_config={"highlight": {"networks": [
+                                   {"prefix": "10.10.10.", "color": "#a855f7"}]}})
+
+    a = json.loads(one(_FakeConnection(), _FakeRequest("/build.json")).body)["stamp"]
+    b = json.loads(two(_FakeConnection(), _FakeRequest("/build.json")).body)["stamp"]
+
+    assert a != b
