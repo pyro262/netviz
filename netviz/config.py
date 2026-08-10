@@ -56,6 +56,10 @@ class Config:
     # file is absent -- see enrich.resolve_mmdb. A clone with no MaxMind
     # account gets dbip-city-lite.mmdb from tools/fetch_dbip.sh and works.
     mmdb_path: str = os.environ.get("NETVIZ_MMDB", "/data/GeoLite2-City.mmdb")
+    # The router's own geo-IP tables, from tools/fetch_xt_geoip.sh. Absent is
+    # the ordinary case: without them block events fall back to MaxMind, which
+    # is what every install did before this existed.
+    xt_geoip_dir: str = os.environ.get("NETVIZ_XT_GEOIP_DIR", "/data/xt_geoip")
     buffer_path: str = os.environ.get("NETVIZ_BUFFER", "/state/buffer.jsonl")
     # IPFIX templates survive a restart here; without it every restart drops
     # data records until the router's next template set.

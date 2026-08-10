@@ -170,5 +170,12 @@ class Stats:
                 "miss_rate": (self.enricher.miss_rate()
                               if self.enricher is not None else None),
                 "database": getattr(self.enricher, "database_type", None),
+                # How often the router's own tables disagreed with MaxMind
+                # about a blocked address, and how many blocks they placed
+                # that MaxMind could not. Null when no tables are installed,
+                # which is not the same as "installed and never fired".
+                "router": (dict(self.enricher.stats_xt)
+                           if getattr(self.enricher, "xt", None) is not None
+                           else None),
             },
         }

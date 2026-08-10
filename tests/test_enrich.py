@@ -219,3 +219,119 @@ def test_local_is_outside_the_miss_rate():
     e.enrich(_ev("203.0.113.9"))
     assert e.stats["local"] == 9
     assert e.miss_rate() == 0.0
+
+
+# --- Router geo tables on block events --------------------------------------
+# The router blocks on xt_geoip and the globe draws on MaxMind. Where they
+# disagree the arc used to land in a country that is not on the block list,
+# which reads as a display bug when the router was right by its own data.
+
+class FakeXt:
+    """Stands in for XtGeoIP: a flat map, no file format involved."""
+    def __init__(self, known=None):
+        self.known = known or {"198.51.100.167": "HK", "45.9.9.9": "RU"}
+
+    def lookup(self, ip):
+        return self.known.get(ip)
+
+
+def make_router_enricher(centroids=None):
+    e = make_enricher()
+    e.xt = FakeXt()
+    e.centroids = centroids if centroids is not None else {
+        "HK": (22.3983, 114.1138), "RU": (62.2381, 99.3997)}
+    e.stats_xt = {"agreed": 0, "corrected": 0, "placed": 0}
+    return e
+
+
+def _block(src, dst):
+    return Event(ts=0.0, kind="block", src_ip=src, dst_ip=dst, bytes=1, proto=6)
+
+
+def test_block_destination_moves_to_the_routers_country():
+    """The case that exposed the disagreement: MaxMind had this address in one
+    country, the router blocked it as another."""
+    e = make_router_enricher()
+    e._reader.KNOWN = dict(FakeReader.KNOWN)
+    e._reader.KNOWN["198.51.100.167"] = (1.29, 103.85, "SG")
+    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    assert out.dst_country == "HK"
+    assert (out.dst_lat, out.dst_lon) == (22.3983, 114.1138)
+    assert e.stats_xt["corrected"] == 1
+
+
+def test_agreement_is_counted_separately_and_moves_to_the_centroid():
+    e = make_router_enricher()
+    e._reader.KNOWN = dict(FakeReader.KNOWN)
+    e._reader.KNOWN["198.51.100.167"] = (22.30, 114.17, "HK")
+    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    assert out.dst_country == "HK"
+    assert e.stats_xt["corrected"] == 0
+    assert e.stats_xt["agreed"] == 1
+
+
+def test_a_block_maxmind_cannot_place_is_drawn_anyway():
+    """Previously dropped: no coordinates, no arc. The router could place it."""
+    e = make_router_enricher()
+    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    assert out is not None
+    assert out.dst_country == "HK"
+    assert e.stats_xt["placed"] == 1
+
+
+def test_an_inbound_block_is_rescued_on_the_source_end():
+    """On an inbound-blocking router the foreign end is the source, and a
+    source MaxMind cannot place is dropped one step before the override runs."""
+    e = make_router_enricher()
+    out = e.enrich(_block("45.9.9.9", "192.168.0.50"))
+    assert out is not None
+    assert out.src_country == "RU"
+    assert (out.src_lat, out.src_lon) == (62.2381, 99.3997)
+    assert (out.dst_lat, out.dst_lon) == (30.3, -97.7)
+    assert e.stats_xt["placed"] == 1
+
+
+def test_flows_are_never_touched_by_the_router_tables():
+    """A flow asks 'where is this host', which is MaxMind's question and the
+    one it is better at. Only blocks ask what the router believed."""
+    e = make_router_enricher()
+    e._reader.KNOWN = dict(FakeReader.KNOWN)
+    e._reader.KNOWN["198.51.100.167"] = (1.29, 103.85, "SG")
+    out = e.enrich(_ev("192.168.0.50", dst="198.51.100.167"))
+    assert out.dst_country == "SG"
+    assert (out.dst_lat, out.dst_lon) == (1.29, 103.85)
+    assert e.stats_xt == {"agreed": 0, "corrected": 0, "placed": 0}
+
+
+def test_destination_wins_when_both_ends_are_in_watched_countries():
+    e = make_router_enricher()
+    out = e.enrich(_block("45.9.9.9", "198.51.100.167"))
+    assert out.dst_country == "HK"
+
+
+def test_no_tables_leaves_maxmind_alone():
+    e = make_enricher()
+    e.xt = None
+    e.stats_xt = {"agreed": 0, "corrected": 0, "placed": 0}
+    out = e.enrich(_block("192.168.0.50", "203.0.113.9"))
+    assert out.dst_country == "RU"
+    assert (out.dst_lat, out.dst_lon) == (55.75, 37.62)
+
+
+def test_a_country_with_no_outline_keeps_the_maxmind_answer():
+    """The router can block a country this install has no bake for. Inventing
+    coordinates would be worse than the disagreement."""
+    e = make_router_enricher(centroids={})
+    e._reader.KNOWN = dict(FakeReader.KNOWN)
+    e._reader.KNOWN["198.51.100.167"] = (1.29, 103.85, "SG")
+    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    assert out.dst_country == "SG"
+    assert (out.dst_lat, out.dst_lon) == (1.29, 103.85)
+
+
+def test_private_ends_are_not_asked_of_the_router_tables():
+    e = make_router_enricher()
+    e.xt.known["192.168.0.50"] = "CN"       # would be absurd, must not be used
+    out = e.enrich(_block("192.168.0.50", "198.51.100.167"))
+    assert out.src_country == "--"
+    assert out.dst_country == "HK"

@@ -8,7 +8,7 @@ services:
       - "514:5514/udp"      # host 514 needs root; dockerd has it, the app does not
       - "8099:8099/tcp"
     volumes:
-      - ./data:/data:ro     # GeoLite2-City.mmdb
+      - ./data:/data:ro     # GeoLite2-City.mmdb, and xt_geoip/ if fetched
       - ./state:/state      # bounded disk buffer; create it writable by UID 10001 first
     environment:
       INFLUX_URL: ${INFLUX_URL:-http://influxdb:8086}

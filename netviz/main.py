@@ -15,7 +15,7 @@ import websockets
 
 from .aurora import KpCache, fetch_kp, next_poll_delay
 from .config import Config
-from .enrich import Enricher
+from .enrich import Enricher, load_centroids
 from .events import Event
 from .fanout import CLOSE, Fanout
 from .health import Health, RatioAlert
@@ -26,6 +26,7 @@ from .stats import Stats
 from .store import Store
 from .syslog_parse import parse_syslog_line
 from .synthetic import DEMO_HIGHLIGHT_PREFIXES, SyntheticFeed
+from .xtgeoip import XtGeoIP
 from . import notify
 
 log = logging.getLogger("netviz")
@@ -327,6 +328,17 @@ async def run(cfg: Config, synthetic: bool) -> None:
     static_root = Path(__file__).resolve().parent / "static"
     enricher = None if synthetic else Enricher(cfg.mmdb_path,
                                                (cfg.home_lat, cfg.home_lon))
+    if enricher is not None:
+        # The router's own geo tables, if this install fetched them. Both
+        # halves must be present to be useful: the tables say which country,
+        # the bake says where to draw it.
+        enricher.xt = XtGeoIP.load(cfg.xt_geoip_dir)
+        if enricher.xt is not None:
+            enricher.centroids = load_centroids(
+                str(static_root / "data" / "borders-index.json"))
+            if not enricher.centroids:
+                log.warning("xt_geoip: tables loaded but no centroids -- "
+                            "block events keep their MaxMind coordinates")
     thresholds = _thresholds_for(cfg, synthetic)
     store = None
     if not synthetic and cfg.influx_token:

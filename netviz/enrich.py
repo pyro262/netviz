@@ -3,7 +3,7 @@ network I/O, so this is the easiest unit in the collector to test."""
 import ipaddress
 import logging
 import os
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from .events import Event
 
@@ -77,6 +77,30 @@ def resolve_mmdb(configured: str) -> str:
     return configured
 
 
+def load_centroids(path: str) -> dict[str, tuple[float, float]]:
+    """Country centroids from the border bake's index, `{cc: (lat, lon)}`.
+
+    Entries are `[firstSegment, count, lat, lon]`; the first two belong to the
+    renderer's draw ranges. An entry without the trailing pair comes from a
+    bake older than centroids and is skipped rather than guessed at.
+    """
+    import json
+    try:
+        with open(path) as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError) as e:
+        log.warning("xt_geoip: no country centroids from %s: %s", path, e)
+        return {}
+    out: dict[str, tuple[float, float]] = {}
+    for cc, entry in raw.items():
+        if isinstance(entry, list) and len(entry) >= 4:
+            out[cc] = (float(entry[2]), float(entry[3]))
+    if not out:
+        log.warning("xt_geoip: %s has no centroids -- re-run "
+                    "tools/bake_geo.py borders", path)
+    return out
+
+
 class Enricher:
     def __init__(self, mmdb_path: str, home: tuple[float, float]) -> None:
         import geoip2.database
@@ -88,6 +112,13 @@ class Enricher:
         self.database_type = self._reader.metadata().database_type
         log.info("geoip: opened %s (%s)", self.mmdb_path, self.database_type)
         self._home = home
+        # Both attached after construction, and both optional: the router's
+        # tables are a site's own file and the centroids come from a bake that
+        # a clone may not have run. Absent, block events keep the MaxMind
+        # answer, which is what every install did before this existed.
+        self.xt: Any = None
+        self.centroids: dict[str, tuple[float, float]] = {}
+        self.stats_xt = {"agreed": 0, "corrected": 0, "placed": 0}
         # `local` is deliberately outside the miss_rate denominator: multicast
         # and friends are not a database shortcoming, and counting them as
         # misses inflated the rate that the 20% GeoIP alarm watches.
@@ -163,6 +194,7 @@ class Enricher:
 
     def enrich(self, ev: Event) -> Optional[Event]:
         src_coords, src_status = self._locate(ev.src_ip)
+        rescued = None
 
         # Count source result
         if src_status == "hit":
@@ -179,7 +211,17 @@ class Enricher:
         # Drop event if source cannot be located (miss or error) or is not a
         # host at all (local).
         if src_status in ("miss", "error", "local"):
-            return None
+            # ...unless it is a block whose source the router's own tables can
+            # place. On an inbound-blocking router the foreign end *is* the
+            # source, so dropping here would discard exactly the events the
+            # wall exists to show, one step before the thing that could have
+            # rescued them ran.
+            rescued = (src_status == "miss" and ev.kind == "block"
+                       and self._router_place(ev.src_ip))
+            if not rescued:
+                return None
+            src_coords = rescued
+            self.stats_xt["placed"] += 1
 
         # Set source coordinates
         ev.src_lat, ev.src_lon, ev.src_country = src_coords
@@ -195,4 +237,74 @@ class Enricher:
         if dst_status in ("hit", "private"):
             ev.dst_lat, ev.dst_lon, ev.dst_country = dst_coords
 
+        if ev.kind == "block":
+            # A source already placed from the tables above is skipped rather
+            # than re-resolved -- it would land on the same answer and be
+            # counted a second time, once as placed and once as agreed.
+            self._apply_router_geoip(
+                ev, "done" if rescued else src_status, dst_status)
         return ev
+
+    def _router_place(self, ip: str) -> Optional[tuple[float, float, str]]:
+        """Coordinates and country for `ip` from the router's tables, or None
+        when there are no tables, no match, or no outline to place it on."""
+        if self.xt is None:
+            return None
+        cc = self.xt.lookup(ip)
+        if cc is None:
+            return None
+        centroid = self.centroids.get(cc)
+        if centroid is None:
+            return None
+        return centroid[0], centroid[1], cc
+
+    def _apply_router_geoip(self, ev: Event, src_status: str,
+                            dst_status: str) -> None:
+        """Re-place a block's foreign end where the *router* thought it was.
+
+        Blocks only. A flow is a "where in the world is this host" question,
+        which is what MaxMind is for and what it is better at; a block is a
+        "what did the thing that made this decision believe" question, and only
+        the router's own tables can answer that. Mixing the two would move
+        every arc on the display, not just the ones the alarm layer is about.
+
+        The end is chosen by the same rule as `foreign_country()` in stats.py
+        and `foreignEnd()` in classify.js -- prefer the destination -- because
+        every geo policy on an outbound-blocking router puts the blocked
+        country there while the source is a LAN address.
+
+        Country *and* coordinates move together, to the blocked country's
+        outline centroid. Overriding the label alone would draw the arc into
+        Singapore while Hong Kong's outline flashed, which is a worse display
+        than the disagreement it set out to fix.
+        """
+        if self.xt is None:
+            return
+        ends = (("dst", ev.dst_ip, dst_status), ("src", ev.src_ip, src_status))
+        for which, ip, status in ends:
+            # Only the placeable public end. A private address is home, and
+            # asking the router's tables about it can only waste a bisection;
+            # "done" is an end already placed from the tables upstream.
+            if status in ("private", "done"):
+                continue
+            # A country the router blocks on but this install has no outline
+            # for yields None here: nothing to move the arc to, so MaxMind's
+            # answer stands rather than coordinates being invented.
+            placed = self._router_place(ip)
+            if placed is None:
+                continue
+            lat, lon, cc = placed
+            before = ev.dst_country if which == "dst" else ev.src_country
+            if which == "dst":
+                ev.dst_country, ev.dst_lat, ev.dst_lon = cc, lat, lon
+            else:
+                ev.src_country, ev.src_lat, ev.src_lon = cc, lat, lon
+            if before == cc:
+                self.stats_xt["agreed"] += 1
+            elif before in (None, "", "--", "??"):
+                # MaxMind could not place it at all and the router could. These
+                # are arcs that previously did not draw.
+                self.stats_xt["placed"] += 1
+            else:
+                self.stats_xt["corrected"] += 1
+            return

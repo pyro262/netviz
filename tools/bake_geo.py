@@ -155,6 +155,28 @@ def bake_coastline(coast: dict) -> None:
     print(f"wrote {OUT / 'coastline.bin'} ({len(floats) // 4} segments)")
 
 
+def ring_centroid(pts: list[tuple[float, float]]) -> tuple[float, float, float]:
+    """Planar centroid and absolute area of one lon/lat ring, by the shoelace
+    formula. Returns (lon, lat, area); area is 0 for a degenerate ring.
+
+    Planar rather than spherical on purpose: this only has to pick a point
+    inside a country to draw an arc to, and the caller immediately re-projects
+    the result onto the sphere, where a fraction of a degree of equal-area
+    error is invisible. A ring that crosses the antimeridian would be wrong,
+    but Natural Earth splits those into separate rings, which the caller
+    combines as vectors.
+    """
+    a = cx = cy = 0.0
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
+        cross = x0 * y1 - x1 * y0
+        a += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    if a == 0.0:
+        return 0.0, 0.0, 0.0
+    return cx / (3.0 * a), cy / (3.0 * a), abs(a) / 2.0
+
+
 def bake_borders(countries: dict) -> None:
     """Outlines of the blocked countries, as lat/lon segment pairs.
 
@@ -168,7 +190,19 @@ def bake_borders(countries: dict) -> None:
     # single country's outline when a block arc from it lands. Segments are
     # emitted grouped by country for exactly this reason -- the ranges must be
     # contiguous or a drawRange cannot address one country.
-    index: dict[str, list[int]] = {}
+    index: dict[str, list[float]] = {}
+    # code -> area-weighted sum of unit vectors, one per ring, for the centroid
+    # appended to each index entry.
+    #
+    # Two things this construction is doing on purpose. Each ring contributes
+    # its *polygon* centroid weighted by its own area, not its vertices: a mean
+    # of vertices is weighted by how finely the outline is drawn, and Russia's
+    # Arctic coastline carries so many more points than its interior that the
+    # answer came out at 71.6 N, in the Arctic Ocean. And the per-ring answers
+    # are combined as 3D vectors, because Russia's Chukotka ring sits on the
+    # far side of the antimeridian, where averaging longitudes walks the result
+    # most of the way around the planet.
+    vectors: dict[str, list[float]] = {}
     for feat in countries["features"]:
         props = feat["properties"]
         code = None
@@ -185,12 +219,19 @@ def bake_borders(countries: dict) -> None:
                 continue
         found.add(code)
         start = len(floats) // 4
+        acc = vectors.setdefault(code, [0.0, 0.0, 0.0])
         for ring in rings(feat["geometry"]):
             pts = [(x, y) for x, y, *_ in ring]
             for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
                 if abs(x1 - x0) > 180.0:      # antimeridian, see bake_coastline
                     continue
                 floats += [y0, x0, y1, x1]
+            cx, cy, area = ring_centroid(pts)
+            if area > 0.0:
+                lat, lon = math.radians(cy), math.radians(cx)
+                acc[0] += area * math.cos(lat) * math.cos(lon)
+                acc[1] += area * math.cos(lat) * math.sin(lon)
+                acc[2] += area * math.sin(lat)
         # A country can appear as several features (mainland plus territories),
         # so extend an existing range rather than replacing it.
         count = len(floats) // 4 - start
@@ -198,6 +239,16 @@ def bake_borders(countries: dict) -> None:
             index[code][1] += count
         else:
             index[code] = [start, count]
+    # Each entry becomes [firstSegment, count, lat, lon]. Appended rather than
+    # restructured: the renderer reads range[0] and range[1] positionally and
+    # does not need to know the centroid is there.
+    for code, acc in vectors.items():
+        norm = math.sqrt(acc[0] ** 2 + acc[1] ** 2 + acc[2] ** 2)
+        if norm == 0.0:                        # antipodal cancellation; no answer
+            continue
+        lat = math.degrees(math.asin(acc[2] / norm))
+        lon = math.degrees(math.atan2(acc[1], acc[0]))
+        index[code] += [round(lat, 4), round(lon, 4)]
     (OUT / "borders.bin").write_bytes(struct.pack(f"<{len(floats)}f", *floats))
     (OUT / "borders-index.json").write_text(json.dumps(index, separators=(",", ":")))
     missing = sorted(BLOCKED - found)
