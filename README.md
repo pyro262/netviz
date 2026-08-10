@@ -18,6 +18,13 @@
   <sub>Synthetic traffic, so every arc above is fake. The rail on the right is optional.</sub>
 </p>
 
+<p align="center">
+  <b><a href="https://github.com/pyro262/netviz/wiki/Quick-Start">Quick start</a></b> &nbsp;·&nbsp;
+  <b><a href="https://github.com/pyro262/netviz/wiki/Configuration">Configuration</a></b> &nbsp;·&nbsp;
+  <b><a href="https://github.com/pyro262/netviz/wiki/Troubleshooting">Troubleshooting</a></b> &nbsp;·&nbsp;
+  <b><a href="https://github.com/pyro262/netviz/wiki/FAQ">FAQ</a></b>
+</p>
+
 ---
 
 Point a router's netflow export and syslog at it. It geolocates each flow, streams
