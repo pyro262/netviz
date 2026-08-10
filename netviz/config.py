@@ -60,6 +60,11 @@ class Config:
     # the ordinary case: without them block events fall back to MaxMind, which
     # is what every install did before this existed.
     xt_geoip_dir: str = os.environ.get("NETVIZ_XT_GEOIP_DIR", "/data/xt_geoip")
+    # "owner/repo" to check for newer releases, empty to disable. Empty by
+    # default because the check is one outbound request the collector would
+    # not otherwise make, and a display on an isolated network should not
+    # start reaching the internet because it was upgraded.
+    update_repo: str = os.environ.get("NETVIZ_UPDATE_REPO", "").strip()
     buffer_path: str = os.environ.get("NETVIZ_BUFFER", "/state/buffer.jsonl")
     # IPFIX templates survive a restart here; without it every restart drops
     # data records until the router's next template set.

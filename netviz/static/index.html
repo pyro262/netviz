@@ -103,6 +103,27 @@
          and the hour's shape is the qualifier. vector-effect keeps the stroke
          1px after the viewBox is stretched to the column -- without it the
          non-uniform scale turns the line into a wedge. */
+      /* Update watermark, lower left. Deliberately not the alarm amber: an
+         available update is not an alarm, and spending that colour on one
+         devalues it where it matters. Violet is the map's own hue, so this
+         reads as part of the furniture rather than as an event.
+
+         pointer-events:none because the wall has no interaction at all and a
+         stray element that could swallow one would be a bug nobody looks for.
+         It transitions opacity only -- transitioning `display` or `visibility`
+         does nothing, and the fade is the whole point. */
+      .update-mark {
+        position: fixed; left: 1.6vw; bottom: 1.4vh; z-index: 3;
+        font-size: 0.85vw; letter-spacing: 0.18em;
+        color: #b39ddb; opacity: 0;
+        transition-property: opacity; transition-timing-function: ease;
+        pointer-events: none; user-select: none;
+      }
+      .update-mark.on { opacity: 0.34; }
+      /* Degraded mode already drains the canvas to grey; the watermark is not
+         part of that story and steps further back rather than competing with
+         the banner that is. */
+      body.degraded .update-mark.on { opacity: 0.16; }
       .rail-spark { display: block; width: 100%; height: 1.4vh; overflow: visible; }
       .rail-spark polyline {
         fill: none; stroke: #ed795399; stroke-width: 1;

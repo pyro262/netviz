@@ -14,6 +14,7 @@ import { createCameraRig } from './camera.js';
 import { isDns, classNameFor, foreignEnd } from './classify.js';
 import { createBurstDetector } from './burst.js';
 import { railEnabled, start as startRail } from './rail.js';
+import { mountUpdateMark } from './update.js';
 
 const GLOBE_RADIUS = 1.0;
 
@@ -50,11 +51,16 @@ const BUILD_POLL_SECONDS = cfg('polling.buildSeconds', 30);
  *  reload would land on a closed port. */
 function watchForNewBuild() {
   let known = null;
+  // The same poll carries the release check: an update is available for days
+  // once it is available at all, so it does not deserve a timer of its own.
+  const showUpdate = mountUpdateMark();
   const check = async () => {
     try {
       const r = await fetch('/build.json', { cache: 'no-store' });
       if (!r.ok) return;
-      const { stamp } = await r.json();
+      const build = await r.json();
+      showUpdate(build);
+      const { stamp } = build;
       if (known === null) {
         known = stamp;
       } else if (stamp !== known) {
@@ -62,7 +68,10 @@ function watchForNewBuild() {
         window.location.reload();
       }
     } catch (err) {
-      // Collector down or mid-restart; try again on the next tick.
+      // Collector down or mid-restart; try again on the next tick. The mark is
+      // deliberately left as it was: a failed poll is not evidence the update
+      // went away, and blinking it off and on every restart is the noise this
+      // is supposed to avoid.
     }
   };
   check();

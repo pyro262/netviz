@@ -13,6 +13,7 @@ from typing import Optional
 
 import websockets
 
+from . import __version__
 from .aurora import KpCache, fetch_kp, next_poll_delay
 from .config import Config
 from .enrich import Enricher, load_centroids
@@ -20,6 +21,7 @@ from .events import Event
 from .fanout import CLOSE, Fanout
 from .health import Health, RatioAlert
 from .ipfix import IpfixDecoder
+from .release import ReleaseCache
 from .replay import Replay
 from .static_files import make_process_request
 from .stats import Stats
@@ -339,6 +341,16 @@ async def run(cfg: Config, synthetic: bool) -> None:
             if not enricher.centroids:
                 log.warning("xt_geoip: tables loaded but no centroids -- "
                             "block events keep their MaxMind coordinates")
+    # Opt-in, and started before the server so the first poll overlaps startup
+    # rather than delaying it. Never in synthetic mode: that is a development
+    # run against no router, and it should make no outbound requests at all.
+    release = None
+    if cfg.update_repo and not synthetic:
+        release = ReleaseCache(cfg.update_repo, __version__)
+        release.start()
+        log.info("release check: watching %s (running %s)",
+                 cfg.update_repo, __version__)
+
     thresholds = _thresholds_for(cfg, synthetic)
     store = None
     if not synthetic and cfg.influx_token:
@@ -438,6 +450,7 @@ async def run(cfg: Config, synthetic: bool) -> None:
                                     process_request=make_process_request(
                                         static_root, health=health,
                                         kp_cache=kp_cache, stats=stats,
+                                        release=release,
                                         # Built by Config so there is one
                                         # whitelist, not two. Hand-rolling the
                                         # dict here is how the home position

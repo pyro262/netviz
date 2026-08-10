@@ -82,6 +82,7 @@ def make_process_request(
     kp_cache: Any = None,
     stats: Any = None,
     display_config: Any = None,
+    release: Any = None,
 ) -> Callable[[Any, Any], Optional[Response]]:
     """`health` is the collector's Health object, or None.
 
@@ -117,7 +118,13 @@ def make_process_request(
         # Computed, not read off disk -- handled before the file lookup so no
         # build.json can ever shadow it.
         if raw == "/build.json":
-            return _json(method, {"stamp": build_stamp(root, config_stamp)})
+            payload = {"stamp": build_stamp(root, config_stamp)}
+            # Rides the reload poll rather than getting an endpoint and a timer
+            # of its own: every kiosk already asks for this every 30s, and an
+            # update is available for days once it is available at all.
+            if release is not None:
+                payload["update"] = release.state()
+            return _json(method, payload)
 
         # Same reasoning as build.json: computed before the file lookup so a
         # file of that name on disk cannot shadow the live answer.
