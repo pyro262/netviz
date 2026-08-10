@@ -75,6 +75,27 @@ test('a drag whose solution is past the clamp stops at the clamp', () => {
   }
 });
 
+test('the trust region, not the clamp, is what bounds the iteration', () => {
+  // The clamp test above passes with SOLVE_MAX_STEP deleted: the in-loop
+  // latitude clamp and the final longitude wrap between them make any runaway
+  // look bounded, so the guard that was added after tracing the camera to
+  // latitude -430 had no coverage of its own. Lift the clamp far out of the
+  // way and the trust region is the only thing left holding this together.
+  //
+  // The bound is 180, not 90. With the clamp gone there is no reason for the
+  // solver to land inside +/-90 at all -- what the trust region guarantees is
+  // that latitude cannot move more than SOLVE_ITERATIONS * SOLVE_MAX_STEP =
+  // 120 degrees from where it started, and boundedness is the property under
+  // test. Measured on this case: -128.8 with the guard, -610.1 without.
+  const view = { ...VIEW, latClamp: 1e6 };
+  const grab = pickSphere(-62, 150, view.distance, 0, 0, view.fovDeg, view.aspect);
+  const cam = solveDrag({ lat: -62, lon: 150 }, grab, { x: 0.35, y: 0.30 }, view);
+  assert.ok(Number.isFinite(cam.lat) && Number.isFinite(cam.lon),
+            `diverged to ${cam.lat},${cam.lon}`);
+  assert.ok(Math.abs(cam.lat) <= 180, `walked away to latitude ${cam.lat}`);
+  assert.ok(cam.lon >= -180 && cam.lon < 180, `lon unwrapped: ${cam.lon}`);
+});
+
 test('solveDrag holds accuracy near the limb', () => {
   // 0.30 NDC is 9.6 deg off axis; the globe's angular radius at 4.6 radii is
   // 12.56 deg, so this is near the limb and still on it. 0.6 would be 18.6 deg

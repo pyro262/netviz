@@ -18,7 +18,11 @@ const R2D = 180 / Math.PI;
 const SOLVE_ITERATIONS = 8;
 const SOLVE_MAX_STEP = 15;      // degrees, per iteration
 const SOLVE_TOLERANCE = 1e-3;   // degrees
-const DEFAULT_LAT_CLAMP = 62;   // matches campath's latClamp
+// Only for a caller that passes no view.latClamp. The rig always does, and it
+// passes its OWN clamp -- this default agrees with campath only while that is
+// left at 62, and a solver clamping to 62 while the camera clamps to 40 slides
+// the globe out from under the finger at high latitude.
+const DEFAULT_LAT_CLAMP = 62;
 
 export function latLonToUnit(lat, lon) {
   const phi = (90 - lat) * D2R;
@@ -37,7 +41,6 @@ export function unitToLatLon(v) {
   };
 }
 
-function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
 function add(a, b) { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; }
 function scale(a, k) { return { x: a.x * k, y: a.y * k, z: a.z * k }; }
 function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
