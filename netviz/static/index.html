@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>netviz</title>
+    <!-- PNGs only, deliberately. Chrome prefers an SVG icon at every size, and
+         the detailed mark (meridian grid, three arcs) is mush in a 16px tab.
+         icon.svg / icon-512.png stay in the tree for anything that wants the
+         full drawing. Regenerate all four with tools/make_icon.py. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0916; }
+      /* The canvas sizes itself to #stage, not to the window, so the optional
+         right rail can take a slice of the viewport without the globe rendering
+         off-centre. With the rail off, #stage IS the viewport. */
+      #stage { position: fixed; inset: 0; }
+      body.rail #stage { right: 26%; }
+      /* width/height belt-and-braces against renderer.setSize's updateStyle:
+         without a CSS size the canvas lays out at its intrinsic pixel size,
+         which is viewport * devicePixelRatio -- correct only at dpr 1. */
+      canvas { display: block; width: 100%; height: 100%; transition: filter 1.6s ease; }
+      /* Degraded: drain the colour out of the whole scene in one move --
+         arcs, city lights and bloom included -- so a dead feed cannot be
+         mistaken for a quiet night. */
+      body.degraded canvas { filter: grayscale(0.88) brightness(0.62); }
+      #degraded {
+        position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+        display: none;
+        padding: 0.6rem 1.2rem;
+        background: #fb9f3a;            /* plasma #fb9f3a */
+        color: #17122b;
+        font: 600 clamp(18px, 2.1vw, 40px)/1.2 system-ui, sans-serif;
+        letter-spacing: 0.06em;
+        text-align: center;
+      }
+      #degraded.on { display: block; }
+
+      /* ---------------------------------------------------- the right rail --
+         Off unless ?rail=1 -- see js/rail.js. Nothing below applies to a
+         default kiosk, and #rail stays empty and undisplayed. Sizes are in vw
+         so the rail reads the same on a 1080p desk monitor and a 4K wall. */
+      #rail {
+        position: fixed; top: 0; right: 0; bottom: 0; width: 26%;
+        display: none; flex-direction: column; gap: 1.4vh;
+        box-sizing: border-box; padding: 1.6vh 1.4vw;
+        background: #12102400;         /* transparent-backed, per the design */
+        color: #fdca26;                /* plasma */
+        font: 400 1.05vw/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        letter-spacing: 0.04em;
+        /* Degraded mode fades the stats out over 2s (the canvas drain next to
+           it takes 1.6s) rather than blanking them: the last known numbers are
+           what someone walking up to a dead feed wants to see. */
+        transition: opacity 2s ease;
+      }
+      #rail.on { display: flex; }
+      body.degraded #rail { opacity: 0.28; }
+
+      .rail-head { display: flex; align-items: baseline; justify-content: space-between; }
+      .rail-title { font-size: 1.5vw; font-weight: 600; color: #f0f921; letter-spacing: 0.18em; }
+      .rail-clock { text-align: right; color: #d8576b; }
+      .rail-clock-local { font-size: 1.35vw; color: #fdca26; }
+      .rail-clock-utc { font-size: 0.85vw; opacity: 0.7; }
+
+      .rail-panel { border-top: 1px solid #7201a855; padding-top: 0.9vh; }
+      .rail-panel-title {
+        margin: 0 0 0.5vh; font-size: 0.9vw; font-weight: 600;
+        letter-spacing: 0.22em; color: #ed7953;
+      }
+      .rail-panel-note { margin-left: 0.6em; opacity: 0.6; }
+
+      .rail-big { display: flex; align-items: baseline; gap: 0.6vw; margin-bottom: 0.6vh; }
+      .rail-big-value { font-size: 3.1vw; line-height: 1; color: #fdca26; }
+      .rail-big-note { font-size: 0.8vw; letter-spacing: 0.18em; color: #d8576b; }
+
+      /* Two shapes. A plain row is label + right-aligned value. A row with a
+         bar puts the bar last and lets it take the slack, so the country codes
+         and their counts stay in fixed columns while only the bar changes
+         width. Both keep the label column the same, so the two panels read as
+         one list. */
+      .rail-row {
+        display: grid; grid-template-columns: 1fr auto; gap: 0.6vw;
+        align-items: center; padding: 0.18vh 0;
+      }
+      .rail-row.bars { grid-template-columns: 3.2em auto 1fr; }
+      .rail-row.muted { opacity: 0.45; }
+      .rail-label { color: #bd3786; }
+      .rail-value { color: #fdca26; text-align: right; font-variant-numeric: tabular-nums; }
+      .rail-value.bad { color: #fb9f3a; font-weight: 600; }
+      .rail-bar { display: block; height: 0.55vh; background: #46039f55; }
+      .rail-bar-fill { display: block; height: 100%; background: #ed7953; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/three.module.js",
+          "three/addons/": "/vendor/three/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="degraded" role="status"></div>
+    <div id="stage"><canvas id="scene"></canvas></div>
+    <!-- Populated only when ?rail=1 asks for it; otherwise it stays empty and
+         display:none, and js/rail.js never polls. -->
+    <aside id="rail"></aside>
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>

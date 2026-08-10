@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <title>netviz</title>
+  <defs>
+    <radialGradient id="disc" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#561aa8"/>
+      <stop offset="70%" stop-color="#2a0a95"/>
+      <stop offset="100%" stop-color="#0d0887"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="80%" stop-color="#7201a8" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#7201a8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7201a8"/>
+      <stop offset="50%" stop-color="#d8576b"/>
+      <stop offset="100%" stop-color="#fdca26"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.6"/>
+    </filter>
+    <clipPath id="disc-clip"><circle cx="50.0" cy="50.0" r="36.5"/></clipPath>
+  </defs>
+  <circle cx="50.0" cy="50.0" r="42.34" fill="url(#halo)"/>
+  <circle cx="50.0" cy="50.0" r="36.5" fill="url(#disc)"/>
+  <g clip-path="url(#disc-clip)" fill="none" stroke="#9c179e"
+     stroke-width="0.45" opacity="0.6">
+    <ellipse cx="50.0" cy="50.0" rx="12.41" ry="36.5"/>
+    <ellipse cx="50.0" cy="50.0" rx="24.82" ry="36.5"/>
+    <ellipse cx="50.0" cy="50.0" rx="36.50" ry="36.5"/>
+    <line x1="50.0" y1="13.5" x2="50.0" y2="86.5"/>
+    <ellipse cx="50.0" cy="21.24" rx="22.47" ry="6.74"/>
+    <ellipse cx="50.0" cy="34.00" rx="32.81" ry="9.84"/>
+    <ellipse cx="50.0" cy="50.00" rx="36.50" ry="10.95"/>
+    <ellipse cx="50.0" cy="66.00" rx="32.81" ry="9.84"/>
+    <ellipse cx="50.0" cy="78.76" rx="22.47" ry="6.74"/>
+  </g>
+    <path d="M 21.53 33.94 Q 28.83 52.25 48.54 52.19" stroke="url(#arc)" stroke-width="1.6" fill="none" stroke-linecap="round" filter="url(#glow)" opacity="0.55"/>
+    <path d="M 21.53 33.94 Q 28.83 52.25 48.54 52.19" stroke="url(#arc)" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <path d="M 80.66 45.62 Q 66.83 59.83 48.54 52.19" stroke="url(#arc)" stroke-width="1.6" fill="none" stroke-linecap="round" filter="url(#glow)" opacity="0.55"/>
+    <path d="M 80.66 45.62 Q 66.83 59.83 48.54 52.19" stroke="url(#arc)" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <path d="M 60.95 79.20 Q 45.56 69.91 48.54 52.19" stroke="url(#arc)" stroke-width="1.6" fill="none" stroke-linecap="round" filter="url(#glow)" opacity="0.55"/>
+    <path d="M 60.95 79.20 Q 45.56 69.91 48.54 52.19" stroke="url(#arc)" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <circle cx="48.54" cy="52.19" r="4.2" fill="#f0f921" opacity="0.35"
+          filter="url(#glow)"/>
+  <circle cx="48.54" cy="52.19" r="1.9" fill="#f0f921"/>
+</svg>

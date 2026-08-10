@@ -1,0 +1,60 @@
+[Unit]
+Description=netviz wall kiosk
+Documentation=see deploy/kiosk/README.md
+
+# The display must come up with no keyboard and no login after a power cut, so
+# this deliberately does not wait for a graphical session -- there is none. It
+# takes tty1 for itself instead, which is why getty@tty1 is a conflict rather
+# than a dependency: both wanting the same tty is the classic reason a kiosk
+# comes back to a login prompt behind the browser.
+After=systemd-user-sessions.service network-online.target
+Wants=network-online.target
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+
+# CHANGE THIS. A dedicated unprivileged account; it needs to be in the "video"
+# and "input" groups to drive the display and any touch panel. Running the
+# browser as root works and is not worth the risk on a machine left unattended
+# in a room.
+User=kiosk
+Group=kiosk
+SupplementaryGroups=video input render seat
+
+# CHANGE THIS if the collector is not on this machine.
+Environment=NETVIZ_URL=http://localhost:8099/?rail=1
+Environment=NETVIZ_PROFILE=/var/lib/netviz-kiosk/chromium
+# Chromium refuses to start without a writable HOME even with --user-data-dir.
+Environment=HOME=/var/lib/netviz-kiosk
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+
+ExecStart=/usr/local/bin/netviz-kiosk
+
+# The whole point of the unit. A crashed tab, an OOM kill, a GPU reset, a
+# browser that exits on its own -- all of them come back in 5 seconds without
+# anybody in the room. Restart=always rather than on-failure because a clean
+# exit is just as wrong here as a crash: nothing should ever close this window.
+Restart=always
+RestartSec=5
+
+# Own the console properly, or the kiosk shares tty1 with kernel messages and
+# a login prompt.
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+
+# A real login session, so logind grants the seat and the DRM master needed to
+# put pixels on the screen without a desktop environment.
+PAMName=login
+UtmpIdentifier=tty1
+UtmpMode=user
+
+StateDirectory=netviz-kiosk
+
+[Install]
+WantedBy=multi-user.target

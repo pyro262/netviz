@@ -1,0 +1,24 @@
+.env
+docs/site-notes.md
+# GeoIP mmdb at the repo root only; netviz/static/data is committed bake output
+/data/
+state/
+.venv/
+__pycache__/
+.pytest_cache/
+screenshots/
+docker-compose.override.yml
+
+# Local-only notes: the design and build docs stay on disk for whoever is
+# working on the deployment rather than in the repo.
+docs/
+
+# The watched-country outline layer. Which countries a firewall blocks is a
+# statement about somebody's security posture, and this bake output encodes
+# exactly that list -- so it is generated locally, never committed. Build your
+# own with:
+#     NETVIZ_WATCHED_COUNTRIES=RU,CN,KP python3 tools/bake_geo.py borders
+# A clone without it simply has no watched-country layer; the renderer treats
+# the files as absent rather than failing to boot.
+netviz/static/data/borders.bin
+netviz/static/data/borders-index.json

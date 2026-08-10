@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netviz"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "websockets>=13.0",
+    "influxdb-client>=1.44",
+    "geoip2>=4.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "playwright>=1.62"]
+
+[tool.setuptools.packages.find]
+include = ["netviz*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

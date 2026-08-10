@@ -1,0 +1,47 @@
+services:
+  netviz-collector:
+    build: .
+    container_name: netviz-collector
+    restart: unless-stopped
+    ports:
+      - "2055:2055/udp"
+      - "514:5514/udp"      # host 514 needs root; dockerd has it, the app does not
+      - "8099:8099/tcp"
+    volumes:
+      - ./data:/data:ro     # GeoLite2-City.mmdb
+      - ./state:/state      # bounded disk buffer; create it writable by UID 10001 first
+    environment:
+      INFLUX_URL: ${INFLUX_URL:-http://influxdb:8086}
+      INFLUX_ORG: ${INFLUX_ORG:-home}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-netviz}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+      # Sample of syslog lines the parser rejected, for building a new parser
+      # branch against the real stream. 0 in normal operation; set on the host
+      # for one run, e.g. NETVIZ_LOG_UNPARSED=40 docker compose up -d.
+      NETVIZ_LOG_UNPARSED: ${NETVIZ_LOG_UNPARSED:-0}
+      # Where the arcs converge. Set these in .env -- a city centre is plenty
+      # precise, and the value ends up on screen.
+      NETVIZ_HOME_LAT: ${NETVIZ_HOME_LAT:-30.3}
+      NETVIZ_HOME_LON: ${NETVIZ_HOME_LON:--97.7}
+      # Up to three networks drawn in their own colour. Prefixes live in .env
+      # rather than in the tracked config.js: an address prefix describes how
+      # your LAN is laid out. Unset means the slot is simply off.
+      NETVIZ_HIGHLIGHT1_PREFIX: ${NETVIZ_HIGHLIGHT1_PREFIX:-}
+      NETVIZ_HIGHLIGHT1_LABEL: ${NETVIZ_HIGHLIGHT1_LABEL:-network 1}
+      NETVIZ_HIGHLIGHT1_COLOR: ${NETVIZ_HIGHLIGHT1_COLOR:-#a855f7}
+      NETVIZ_HIGHLIGHT2_PREFIX: ${NETVIZ_HIGHLIGHT2_PREFIX:-}
+      NETVIZ_HIGHLIGHT2_LABEL: ${NETVIZ_HIGHLIGHT2_LABEL:-network 2}
+      NETVIZ_HIGHLIGHT2_COLOR: ${NETVIZ_HIGHLIGHT2_COLOR:-#22d3ee}
+      NETVIZ_HIGHLIGHT3_PREFIX: ${NETVIZ_HIGHLIGHT3_PREFIX:-}
+      NETVIZ_HIGHLIGHT3_LABEL: ${NETVIZ_HIGHLIGHT3_LABEL:-network 3}
+      NETVIZ_HIGHLIGHT3_COLOR: ${NETVIZ_HIGHLIGHT3_COLOR:-#4ade80}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Site-specific additions -- an external Docker network, a Discord webhook
+# bind mount, a different Influx host -- belong in docker-compose.override.yml,
+# which compose merges automatically and .gitignore keeps untracked.
+# See docker-compose.override.yml.example.
