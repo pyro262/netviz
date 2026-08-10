@@ -12,6 +12,7 @@
 // to the terminator crossing the globe in the same frame. These are the actual
 // stars in the actual orientation for the current moment, so Orion is Orion.
 import * as THREE from 'three';
+import { cfg } from './config.js';
 import {
   gmstDegrees, equatorialToVec, bvToRgb, magnitudeToSize, magnitudeToAlpha,
 } from './starfield.js';
@@ -48,7 +49,10 @@ async function loadCatalogue(radius) {
   geom.setAttribute('palpha', new THREE.BufferAttribute(alpha, 1));
 
   const mat = new THREE.ShaderMaterial({
-    uniforms: { pixelScale: { value: 1.0 } },
+    uniforms: {
+      pixelScale: { value: 1.0 },
+      brightness: { value: cfg('appearance.starBrightness', 1.0) },
+    },
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -70,6 +74,7 @@ async function loadCatalogue(radius) {
       }
     `,
     fragmentShader: /* glsl */`
+      uniform float brightness;
       varying vec3 vColor;
       varying float vAlpha;
       void main() {
@@ -79,7 +84,10 @@ async function loadCatalogue(radius) {
         // Soft core rather than a flat disc, so a bright star reads as a point
         // of light instead of a filled circle.
         float a = pow(max(0.0, 1.0 - r * 2.0), 1.6) * vAlpha;
-        gl_FragColor = vec4(vColor, a);
+        // Additive blending, so scaling the colour scales the light this star
+        // contributes. Above 1 is fine and is the point: the alpha curve is
+        // already clamped at 1 for anything brighter than about mag 0.8.
+        gl_FragColor = vec4(vColor * brightness, a);
       }
     `,
   });

@@ -157,6 +157,12 @@ export const CONFIG = {
     // bloom term. Raising strength cannot rescue a base pass that is already
     // blown out -- lower flowsPerSecond instead.
     bloom: { strength: 0.7, radius: 0.5, threshold: 0.08, knee: 0.6 },
+    // Multiplies every star's colour. Stars blend additively, so this is a
+    // straight scale on how much light each one contributes -- 1.5 is 50%
+    // brighter sky. Deliberately NOT applied to the per-magnitude alpha: that
+    // curve saturates at 1, so scaling it there would flatten every star
+    // brighter than mag 3 to the same value and lose Sirius against Polaris.
+    starBrightness: 1.5,
   },
 
   // ----------------------------------------------------------------- rail --
