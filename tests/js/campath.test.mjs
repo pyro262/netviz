@@ -381,6 +381,111 @@ test('after the visit the camera comes home and the ordinary cycle resumes', () 
     'never left home again after the visit');
 });
 
+import {
+  beginManual, endManual, isManual, setManualView,
+} from '../../netviz/static/js/campath.js';
+
+const P2 = { ...DEFAULTS, rng: () => 0.5, resumeSeconds: 30 };
+
+test('manual freezes the camera where the user left it', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 40, -74);
+  for (let i = 0; i < 100; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);
+  assert.equal(s.curLat, 40);
+  assert.equal(s.curLon, -74);
+});
+
+test('a held view is not released while the pointer is down', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  for (let i = 0; i < 600; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);   // 60s
+  assert.equal(isManual(s), true);
+});
+
+test('the camera takes itself back after resumeSeconds of idle', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  endManual(s);
+  for (let i = 0; i < 299; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);   // 29.9s
+  assert.equal(isManual(s), true);
+  step(s, 0.2, { lat: 0, lon: 0 }, P2);                                  // past 30s
+  assert.equal(isManual(s), false);
+  assert.equal(s.phase, 'return');
+});
+
+test('resuming does not jump: the target starts at the held view', () => {
+  const s = initialState();
+  s.targetLat = -50; s.targetLon = 170;      // stale, from before the drag
+  beginManual(s);
+  setManualView(s, 10, 10);
+  endManual(s);
+  for (let i = 0; i < 310; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);
+  // One eased frame from (10,10) toward the traffic must be a small move.
+  assert.ok(Math.abs(s.curLat - 10) < 2, `curLat jumped to ${s.curLat}`);
+  assert.ok(Math.abs(deltaLon(10, s.curLon)) < 2, `curLon jumped to ${s.curLon}`);
+});
+
+test('resumeSeconds 0 keeps a panned view forever', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  endManual(s);
+  const p = { ...P2, resumeSeconds: 0 };
+  for (let i = 0; i < 6000; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);   // 10 min
+  assert.equal(isManual(s), true);
+  assert.equal(s.curLat, 10);
+});
+
+test('a block burst never takes a view being held', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  assert.equal(startVisit(s, -30, 25, P2), false);
+  assert.equal(s.phase, 'return');           // unchanged, no visit began
+  assert.equal(s.curLat, 10);
+});
+
+test('a burst during a drag is dropped, not deferred to the release', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  startVisit(s, -30, 25, P2);                 // refused
+  endManual(s);
+  for (let i = 0; i < 400; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);
+  // After the hand-back the camera returns to the traffic, never to (-30, 25).
+  assert.equal(isManual(s), false);
+  assert.ok(Math.abs(deltaLon(s.curLon, 25)) > 5, 'flew to the dropped burst');
+});
+
+test('detourInterruptManual true lets the burst win', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  assert.equal(startVisit(s, -30, 25, { ...P2, detourInterruptManual: true }), true);
+  assert.equal(isManual(s), false);
+  assert.equal(s.phase, 'visit');
+});
+
+test('grabbing the globe interrupts a running detour', () => {
+  const s = initialState();
+  startVisit(s, -30, 25, P2);
+  assert.equal(s.phase, 'visit');
+  beginManual(s);
+  assert.equal(isManual(s), true);
+  assert.equal(s.phase, 'return');           // visit abandoned, not resumed later
+});
+
+test('setManualView clamps latitude and wraps longitude', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 89, 200);
+  assert.equal(s.curLat, 62);                // latClamp
+  assert.equal(s.curLon, -160);              // wrapped into [-180, 180)
+});
+
 test('the cycle clock is frozen during a detour, not eaten by it', () => {
   // If the visit ran on the cycle's own clock, a detour late in a cycle would
   // be cut short by the rollover and the camera would snap away mid-look.

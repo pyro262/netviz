@@ -53,6 +53,16 @@ export const DEFAULTS = {
   // cycle. The easing character is unchanged, only its rate.
   ease: 0.2,              // fraction of the remaining gap per second
   latClamp: 62,           // never look down the pole
+  // Direct manipulation (2026-08-10). The display is autonomous and a person
+  // borrows it: after this many idle seconds the camera eases home and resumes
+  // its cycle. 0 means never, which makes a panned view permanent -- the right
+  // choice for a desk, and the wrong one for a wall nobody is standing at.
+  resumeSeconds: 30,
+  // A block burst does not take a view somebody is holding, and a burst that
+  // arrives during a drag is dropped rather than queued: letting go must not
+  // launch a flight to somewhere the user did not ask for, seconds after the
+  // event that caused it.
+  detourInterruptManual: false,
   rng: Math.random,
 };
 
@@ -67,6 +77,9 @@ Object.assign(DEFAULTS, {
   latClamp: cfg('camera.walk.latitudeClamp', DEFAULTS.latClamp),
   visitSeconds: cfg('camera.detour.visitSeconds', DEFAULTS.visitSeconds),
   visitMaxSeconds: cfg('camera.detour.visitMaxSeconds', DEFAULTS.visitMaxSeconds),
+  resumeSeconds: cfg('input.resumeSeconds', DEFAULTS.resumeSeconds),
+  detourInterruptManual: cfg('camera.detour.interruptManual',
+                             DEFAULTS.detourInterruptManual),
 });
 
 /** The four cardinal points, in degrees clockwise from north. A walk follows
@@ -109,6 +122,13 @@ export function initialState() {
     lastEW: null,          // last east/west bearing, so the next one reverses it
     lastNS: null,          // likewise for north/south
     latDir: 1,             // flips when a walk reaches the latitude clamp
+    // Direct manipulation. `manual` covers the whole borrowed period --
+    // pointer down, and the idle countdown after release -- because a burst
+    // that yanks the view four seconds after the user let go breaks the same
+    // promise as one that yanks it mid-drag.
+    manual: false,
+    held: false,           // pointer currently down
+    idleT: 0,              // seconds since the last input, while manual
     cycles: 0,
   };
 }
@@ -159,6 +179,38 @@ export function isVisiting(s) {
   return s.phase === 'visit' || s.phase === 'visitHold';
 }
 
+/** True while the user has the globe -- held, or released and not yet handed
+ *  back. */
+export function isManual(s) {
+  return s.manual === true;
+}
+
+/** Pointer down. Takes the camera off its cycle and abandons any running
+ *  detour: an input that gets overridden by the display feels broken. */
+export function beginManual(s) {
+  s.manual = true;
+  s.held = true;
+  s.idleT = 0;
+  if (isVisiting(s)) {
+    s.phase = 'return';
+    s.phaseT = 0;
+  }
+}
+
+/** Pointer up. Still manual -- the idle countdown starts here. */
+export function endManual(s) {
+  s.held = false;
+  s.idleT = 0;
+}
+
+/** The view the user is holding. Clamped and wrapped exactly like the
+ *  autonomous path, so a dragged camera can never reach a pose the walk
+ *  cannot. */
+export function setManualView(s, lat, lon, p = DEFAULTS) {
+  s.curLat = Math.max(-p.latClamp, Math.min(p.latClamp, lat));
+  s.curLon = ((lon + 180) % 360 + 360) % 360 - 180;
+}
+
 /**
  * Send the camera to look at a blocked country.
  *
@@ -167,8 +219,14 @@ export function isVisiting(s) {
  * camera into a metronome. Everything else -- return, hold, walk -- is
  * interruptible, because a burst outranks all of them.
  */
-export function startVisit(s, lat, lon) {
+export function startVisit(s, lat, lon, p = DEFAULTS) {
   if (isVisiting(s)) return false;
+  // A held view is not taken. Off by default; see detourInterruptManual.
+  if (isManual(s) && !p.detourInterruptManual) return false;
+  if (isManual(s)) {
+    s.manual = false;
+    s.held = false;
+  }
   s.visitLat = lat;
   s.visitLon = lon;
   s.phase = 'visit';
@@ -187,6 +245,25 @@ export function startVisit(s, lat, lon) {
 export function step(s, dt, traffic, p = DEFAULTS) {
   s.elapsed += dt;
   s.phaseT += dt;
+
+  // Manual: input owns curLat/curLon and nothing here may move them. Only the
+  // idle countdown runs.
+  if (s.manual) {
+    if (s.held) return s;
+    s.idleT += dt;
+    if (p.resumeSeconds > 0 && s.idleT >= p.resumeSeconds) {
+      s.manual = false;
+      // Start the return from where the user left it, or the first eased frame
+      // jumps toward whatever the target was before the drag.
+      s.targetLat = s.curLat;
+      s.targetLon = s.curLon;
+      s.cycleT = 0;
+      s.phase = 'return';
+      s.phaseT = 0;
+      newHeading(s, p);
+    }
+    return s;
+  }
 
   // A detour runs off the cycle clock entirely. If the cycle kept ticking, a
   // burst arriving late in one would be cut short by the rollover and the
