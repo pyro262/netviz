@@ -1,6 +1,10 @@
-# netviz
+<p align="center">
+  <img src="netviz/static/icon-512.png" alt="netviz" width="128" height="128">
+</p>
 
-A wall-display globe that draws your network's live traffic as arcs.
+<h1 align="center">netviz</h1>
+
+<p align="center">A wall-display globe that draws your network's live traffic as arcs.</p>
 
 Point a router's netflow export and syslog at it. It geolocates each flow, streams
 the result to a browser over a WebSocket, and renders a three.js globe: ambient
