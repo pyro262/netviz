@@ -3,7 +3,7 @@ import { BACKGROUND } from './palette.js';
 import { createGlobe, latLonToVec3 } from './globe.js';
 import { sunDirection } from './sun.js';
 import { createArcs } from './arcs.js';
-import { cfg, loadServerConfig } from './config.js';
+import { cfg, CONFIG, loadServerConfig } from './config.js';
 import { createRipples } from './ripples.js';
 import { createAurora } from './aurora.js';
 import { start as startDegraded } from './degraded.js';
@@ -17,6 +17,7 @@ import { createBurstDetector } from './burst.js';
 import { railEnabled, start as startRail } from './rail.js';
 import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
+import { createMenu } from './menu.js';
 
 const GLOBE_RADIUS = 1.0;
 
@@ -137,7 +138,12 @@ async function boot() {
   // Position and aim come from the rig every frame; nothing is set here.
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
   const rig = createCameraRig(camera, GLOBE_RADIUS);
-  const input = startInput({ canvas: renderer.domElement, rig });
+  // Built once `settings` exists, near the bottom of boot() -- the menu needs
+  // settings.apply() and startInput needs the menu. `input` is referenced by
+  // the render loop below via closure, so declaring it here and assigning it
+  // later is safe: the loop's callback cannot run before boot() has finished
+  // running synchronously past the assignment.
+  let input;
 
   const globe = await createGlobe(GLOBE_RADIUS);
   scene.add(globe.group);
@@ -301,7 +307,18 @@ async function boot() {
       railHandle = null;
     },
   };
-  if (railEnabled(window.location.search, cfg('rail.enabled', false))) rail.mount();
+  // Resolved once, at boot, and reconciled into CONFIG immediately: the URL
+  // (`?rail=1`) can override the config default, and everything downstream
+  // that asks cfg('rail.enabled') -- the menu's toggle state chief among them
+  // -- must agree with what actually got mounted. Without this, the documented
+  // kiosk setup (?rail=1, CONFIG.rail.enabled false) draws the menu's "Stats
+  // rail" item unchecked while the rail is visibly on screen, and the first
+  // click applies rail.enabled: true, which apply.js's handler then skips
+  // because the rail is already mounted -- a control that reads as dead and
+  // needs two clicks to do anything.
+  const railWanted = railEnabled(window.location.search, cfg('rail.enabled', false));
+  CONFIG.rail.enabled = railWanted;
+  if (railWanted) rail.mount();
 
   window.addEventListener('resize', resize);
   resize();
@@ -356,17 +373,26 @@ async function boot() {
     else throw new Error(`no polling timer ${key}`);
   };
 
-  const settings = createApplier({
+  // ctx is a real object, not a literal captured by value: settings.apply()
+  // reads ctx.input at call time, so patching ctx.input below -- once input
+  // actually exists -- is enough. createMenu needs `settings` itself, and
+  // startInput needs the menu, so the order has to be settings -> menu ->
+  // input, with input's slot in ctx filled in last.
+  const ctx = {
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
-    scene, input, polling, resize, rail,
-  });
+    scene, input: null, polling, resize, rail,
+  };
+  const settings = createApplier(ctx);
+  const menu = createMenu({ rig, settings, root: stage });
+  input = startInput({ canvas: renderer.domElement, rig, menu });
+  ctx.input = input;
 
   // Diagnostics only -- no interaction, nothing reads this on the wall. It
   // exists so tools/shoot.py can assert the scene has live arcs rather than
   // leaving "looks about right" as the only check.
   window.__netviz = {
     arcs, globe, ripples, aurora, renderer, camera, scene, rig, stars, input,
-    settings,
+    settings, menu,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
     project(lat, lon) {

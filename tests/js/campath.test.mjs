@@ -382,7 +382,7 @@ test('after the visit the camera comes home and the ordinary cycle resumes', () 
 });
 
 import {
-  beginManual, endManual, isManual, setManualView, markInput,
+  beginManual, endManual, isManual, setManualView, markInput, forceHandBack,
 } from '../../netviz/static/js/campath.js';
 
 const P2 = { ...DEFAULTS, rng: () => 0.5, resumeSeconds: 30 };
@@ -467,6 +467,33 @@ test('detourInterruptManual true lets the burst win', () => {
   assert.equal(startVisit(s, -30, 25, { ...P2, detourInterruptManual: true }), true);
   assert.equal(isManual(s), false);
   assert.equal(s.phase, 'visit');
+});
+
+test('forceHandBack ends manual immediately, no idle wait', () => {
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  endManual(s);        // released, but still manual -- the idle countdown state
+  assert.equal(isManual(s), true);
+  forceHandBack(s);
+  assert.equal(isManual(s), false);
+  assert.equal(s.held, false);
+});
+
+test('startVisit refused by manual mode succeeds once forceHandBack runs first', () => {
+  // This is the bug camera.js's visit() had to work around: every menu
+  // opener leaves the camera manual (poke() on open, re-poked every frame
+  // the menu stays open), which is exactly the state startVisit refuses to
+  // interrupt by default. "Look here" is an explicit request, not an
+  // automatic detour, so it hands the camera back first.
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 10, 10);
+  assert.equal(startVisit(s, -30, 25, P2), false, 'sanity: still refused before the fix');
+  forceHandBack(s);
+  assert.equal(startVisit(s, -30, 25, P2), true);
+  assert.equal(s.phase, 'visit');
+  assert.equal(isManual(s), false);
 });
 
 test('grabbing the globe interrupts a running detour', () => {

@@ -172,6 +172,40 @@
         stroke-linejoin: round; stroke-linecap: round;
         vector-effect: non-scaling-stroke;
       }
+
+      /* ------------------------------------------------------------ the menu --
+         Opened by right-click, `s`, or a double tap (js/menu.js + a later
+         task's wiring); closed by an outside click, the opening gesture
+         repeated, a successful action, esc, or the page losing focus.
+
+         Deliberately its OWN palette, not the wall's plasma scheme: it has to
+         stay readable whatever the display is doing underneath it -- degraded
+         grey, a bright bloom flare, the middle of a dark ocean -- so it is a
+         solid near-opaque panel rather than something tuned to sit on top of
+         the globe. Same reasoning as #degraded's flat background. */
+      .menu {
+        position: fixed; z-index: 5; min-width: 13rem;
+        background: #0d0b18; border: 1px solid #4b4166;
+        border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+        padding: 6px 0; font: 400 14px/1.4 system-ui, sans-serif;
+        color: #f2f2f7;
+        -webkit-user-select: none; user-select: none;
+      }
+      .menu-item {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 7px 14px; cursor: pointer;
+      }
+      .menu-item.disabled { color: #6b6880; cursor: default; }
+      .menu-item:not(.disabled):hover { background: #251f3a; }
+      /* The submenu's own header row does nothing on click -- only its
+         children do -- so it gets no hover affordance either. */
+      .menu-submenu-wrap > .menu-item:hover { background: none; cursor: default; }
+      .menu-submenu {
+        padding-left: 14px;
+        border-top: 1px solid #2a2540; border-bottom: 1px solid #2a2540;
+      }
+      .menu-check { width: 1.2em; text-align: center; color: #7cf0c2; }
+      .menu-note { font-size: 11px; opacity: 0.7; max-width: 9em; text-align: right; }
     </style>
     <script type="importmap">
       {

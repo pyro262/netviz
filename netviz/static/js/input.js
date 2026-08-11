@@ -11,8 +11,9 @@
 import { cfg } from './config.js';
 import { zoomBy, decay } from './orbit.js';
 import { pickCameraSphere, dragRotation, axisAngle } from './arcball.js';
+import { isDoubleTap, DOUBLE_TAP } from './menu.js';
 
-export function startInput({ canvas, rig }) {
+export function startInput({ canvas, rig, menu }) {
   // `enabled` is a live GATE, not an early return.
   //
   // It used to return a do-nothing stub, and that stub had to carry the whole
@@ -34,6 +35,20 @@ export function startInput({ canvas, rig }) {
   let hideAfter = cfg('input.hideCursorSeconds', 3);
 
   const pointers = new Map();          // pointerId -> {x, y}
+  // Down position and time per live pointer, keyed separately from `pointers`
+  // because that map is overwritten on every move -- the double-tap and drag
+  // checks both need where and when the finger FIRST touched, not where it
+  // ended up.
+  const downPos = new Map();
+  // True once this gesture has ever carried two live pointers. A pinch that
+  // ends with the last finger lifting must never read as a tap: without this
+  // flag the final lift of a two-finger gesture looks identical, at that one
+  // event, to a clean one-finger tap.
+  let gesturePinched = false;
+  // The previous qualifying tap, for isDoubleTap. Cleared after a double-tap
+  // fires so a third tap does not immediately re-toggle the menu, and after
+  // any tap that turns out to have been a drag.
+  let lastTap = null;
   // Camera-space unit vector of the sphere point under the pointer at grab.
   // Camera space, not world: the rotation that carries it under the pointer is
   // then the same maths at the equator, at a pole, and upside down past one.
@@ -67,11 +82,39 @@ export function startInput({ canvas, rig }) {
     }
   }
 
+  /** Open if closed, close if open. Every opener uses the same toggle -- `s`,
+   *  right-click and a double-tap all do this "for the same reason": `esc`
+   *  cannot be the documented close (it exits fullscreen first in an ordinary
+   *  window) so the openers have to double as the close. */
+  function toggleMenu(x, y, ndcPos) {
+    if (menu.isOpen()) { menu.close(); return; }
+    // menu.open() checks input.lock itself and returns false without
+    // touching the DOM when it refuses. Poking the rig and killing the fling
+    // are both side effects of the menu ACTUALLY opening -- doing them first
+    // and unconditionally meant a right-click on a locked public display
+    // still restarted the idle countdown (and cancelled any coast) for a
+    // menu that never appeared.
+    if (!menu.open(x, y, ndcPos)) return;
+    // A fling from an earlier drag can still be coasting -- decay() alone
+    // takes ~114s to reach its floor, and nothing else clears it for the
+    // `s` opener, which involves no pointer event at all to do it as a
+    // side effect (onDown zeros it on every new touch/click, which is why
+    // this went unnoticed on the mouse and double-tap openers). Without
+    // this, "the camera does not fly home while the menu is open" is kept
+    // for the autonomous walk but broken for residual momentum: the menu
+    // opens over a globe that keeps spinning underneath it.
+    spinRate = 0;
+    rig.poke();
+  }
+
   function onDown(ev) {
     if (!enabled) return;
     showCursor();
+    if (pointers.size === 0) gesturePinched = false;   // fresh gesture starting
     pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    downPos.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
     canvas.setPointerCapture(ev.pointerId);
+    if (pointers.size === 2) gesturePinched = true;
     if (pointers.size === 2 && zoomOn) {
       const [a, b] = [...pointers.values()];
       pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
@@ -132,7 +175,9 @@ export function startInput({ canvas, rig }) {
   function onUp(ev) {
     if (!enabled) return;
     const hadTwo = pointers.size === 2;
+    const down = downPos.get(ev.pointerId);
     pointers.delete(ev.pointerId);
+    downPos.delete(ev.pointerId);
     if (canvas.hasPointerCapture?.(ev.pointerId)) {
       canvas.releasePointerCapture(ev.pointerId);
     }
@@ -155,6 +200,30 @@ export function startInput({ canvas, rig }) {
     if (pointers.size === 0) {
       grabPoint = null;
       rig.release();
+      // Double-tap, touch only. Opened from pointerup, deliberately -- opening
+      // from pointerdown would let this same event bubble to the outside-click
+      // listener createMenu.open() just registered on document and close the
+      // menu it opened in the same tick.
+      if (ev.pointerType !== 'mouse' && !gesturePinched && down) {
+        const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y);
+        // <=, matching isDoubleTap's own boundary (pinned by a boundary
+        // test there): exactly maxPx used to be a tap by this check and a
+        // drag by that one, so a tap landing precisely on the line failed
+        // isDoubleTap's distance test for a different reason than the one
+        // that actually mattered.
+        if (moved <= DOUBLE_TAP.maxPx) {
+          const now = { t: performance.now(), x: ev.clientX, y: ev.clientY };
+          if (isDoubleTap(lastTap, now, DOUBLE_TAP)) {
+            toggleMenu(ev.clientX, ev.clientY, ndc(ev));
+            lastTap = null;   // a third tap must not immediately re-toggle it
+          } else {
+            lastTap = now;
+          }
+        } else {
+          lastTap = null;   // moved too far since its own pointerdown: a drag
+        }
+      }
+      gesturePinched = false;
     }
   }
 
@@ -175,6 +244,8 @@ export function startInput({ canvas, rig }) {
       if (canvas.hasPointerCapture?.(id)) canvas.releasePointerCapture(id);
     }
     pointers.clear();
+    downPos.clear();
+    gesturePinched = false;
     pinchDist = 0;
     grabPoint = null;
     // No fling: the gesture did not end in a throw, it ended in a loss.
@@ -190,6 +261,20 @@ export function startInput({ canvas, rig }) {
     // which also keeps a pinch's 2->1 transition off this path.
     if (!pointers.has(ev.pointerId)) return;
     releaseLost();
+  }
+
+  function onContextMenu(ev) {
+    // Not optional, not conditional on `enabled` or on the menu actually
+    // opening: a wall display must never offer the browser's Back / Reload /
+    // Save-as, even when input.lock refuses the menu itself. Bound on
+    // `window`, not the canvas -- `.menu` is a child of `#stage`, not of the
+    // canvas, and so are the rail, the degraded banner and the update mark.
+    // A canvas-only listener let a right-click ON any of those (including
+    // the open menu itself) through to the real browser context menu, which
+    // is exactly what this preventDefault exists to stop.
+    ev.preventDefault();
+    if (!enabled) return;
+    toggleMenu(ev.clientX, ev.clientY, ndc(ev));
   }
 
   function onWheel(ev) {
@@ -236,6 +321,23 @@ export function startInput({ canvas, rig }) {
         if (document.fullscreenElement) document.exitFullscreen();
         else document.documentElement.requestFullscreen?.();
         break;
+      case 's': {
+        // A keyboard has no pointer position, so open at the centre of the
+        // stage -- where the globe is -- rather than refusing for lack of one.
+        const r = canvas.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        toggleMenu(cx, cy, { x: 0, y: 0 });
+        break;
+      }
+      case 'Escape':
+        // NOT the documented close -- Escape exits fullscreen in an ordinary
+        // window and no handler can prevent that, so a menu that only closed
+        // on esc would cost the wall its fullscreen every time it was used.
+        // Bound anyway as a last resort: the menu must never be able to trap
+        // someone who does not know about `s` or right-click.
+        if (menu.isOpen()) menu.close();
+        break;
       default: return;
     }
     ev.preventDefault();
@@ -248,6 +350,11 @@ export function startInput({ canvas, rig }) {
   /** Called once per animation frame. Coasts the view after a fling. */
   function tick(dt) {
     if (!enabled) { spinRate = 0; return; }
+    // Opening the menu pokes the rig once; that is only enough if the idle
+    // countdown cannot expire underneath it. resumeSeconds is 30 -- long
+    // enough to read the menu -- so keep restarting it every frame it stays
+    // open, or the camera flies home mid-read.
+    if (menu.isOpen()) rig.poke();
     // The hand-back ends input's ownership of the view, full stop. Damping
     // 0.85/s has a ~6.2s time constant against a 1e-6 floor, so a fling coasts
     // for ~114 seconds -- nearly four times resumeSeconds. Without this guard
@@ -266,6 +373,7 @@ export function startInput({ canvas, rig }) {
   canvas.addEventListener('pointerup', onUp);
   canvas.addEventListener('pointercancel', onUp);
   canvas.addEventListener('lostpointercapture', onLostCapture);
+  window.addEventListener('contextmenu', onContextMenu);
   canvas.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('blur', onBlur);
   window.addEventListener('keydown', onKey);
@@ -313,6 +421,7 @@ export function startInput({ canvas, rig }) {
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onUp);
       canvas.removeEventListener('lostpointercapture', onLostCapture);
+      window.removeEventListener('contextmenu', onContextMenu);
       canvas.removeEventListener('wheel', onWheel);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('keydown', onKey);

@@ -5,12 +5,12 @@ import { cfg } from './config.js';
 import * as THREE from 'three';
 import {
   step, initialState, startVisit, beginManual, endManual, isManual,
-  setManualView, markInput, DEFAULTS,
+  forceHandBack, setManualView, markInput, DEFAULTS,
 } from './campath.js';
 import { clampDistance, validateZoomRange } from './orbit.js';
 import {
   quatFromLatLon, latLonFromQuat, eyeDirection, upVector, trackDrag,
-  rotateCamera, quatAngle, rollBetween,
+  rotateCamera, quatAngle, rollBetween, pickCameraSphere, unrotate, vecToLatLon,
 } from './arcball.js';
 
 // The view axis in camera space. Rolling about it changes which way is up and
@@ -203,9 +203,41 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
       easeRollHome(dt);
       place();
     },
-    /** Go and look at a blocked country. Refused while a visit is running and,
-     *  by default, while somebody is holding the globe. */
+    /**
+     * Go and look at a blocked country -- the automatic block-burst detour's
+     * own path (main.js). Refused while a visit is already running, and
+     * refused while the camera is manual unless camera.detour.interruptManual
+     * says otherwise: "a block burst never takes a held view, and a burst
+     * during a drag is dropped rather than queued" (see CLAUDE.md). This is
+     * a bare pass-through to startVisit's own guard on purpose -- do not add
+     * a hand-back here. See lookHere() for the one caller that is allowed to
+     * override a hold, and why the two must not share a code path.
+     */
     visit(lat, lon) {
+      return startVisit(state, lat, lon, params);
+    },
+    /**
+     * Go and look at a point the menu's "Look here" was clicked over --
+     * an explicit, one-shot, user-initiated request, and the ONLY caller
+     * allowed to override a manual hold.
+     *
+     * Every menu opener leaves the camera manual (toggleMenu pokes on open,
+     * input.tick re-pokes every frame the menu stays open), which is
+     * precisely the state startVisit()'s own guard refuses by default -- a
+     * plain visit() call here silently did nothing on every "Look here"
+     * click until this was split out (see forceHandBack's own comment).
+     *
+     * This must stay a SEPARATE method from visit(), not a flag on it: a
+     * shared method with no caller-distinguishing parameter previously made
+     * camera.detour.interruptManual dead for every call, because
+     * isManual(state) was already false by the time startVisit ran, and the
+     * automatic block-burst detour (main.js) started overriding a view
+     * somebody was actively holding -- the exact regression this comment
+     * exists to prevent a repeat of. The burst detector must keep calling
+     * visit(), never this.
+     */
+    lookHere(lat, lon) {
+      if (isManual(state)) forceHandBack(state);
       return startVisit(state, lat, lon, params);
     },
     grab() { beginManual(state); ensurePose(); },
@@ -243,6 +275,28 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
         fovDeg: camera.fov,
         aspect: camera.aspect,
       };
+    },
+    /**
+     * What point on the globe is under this normalised device coordinate --
+     * for a menu that opened over the globe, or `null` when it opened over
+     * empty sky.
+     *
+     * Deliberately WITHOUT the limb clamp: `pickCameraSphere`'s clampToLimb
+     * exists so a drag stays alive when the pointer leaves the globe, which is
+     * the opposite of what a menu wants. A right-click past the silhouette
+     * must report null, not the nearest bit of coastline -- and at 4.6 radii
+     * the globe's angular radius is 12.56 deg against a 29.27 deg half-FOV, so
+     * that miss is the common case, not the edge case.
+     *
+     * The pick comes back in camera space; `pose` (or the upright equivalent
+     * when nobody is holding the globe) carries it into world space, the same
+     * way eyeDirection/upVector do for the camera's own axes.
+     */
+    pointAt(ndc) {
+      const hit = pickCameraSphere(ndc, { distance, fovDeg: camera.fov, aspect: camera.aspect }, false);
+      if (!hit) return null;
+      const p = pose || uprightNow();
+      return vecToLatLon(unrotate(p, hit));
     },
     /**
      * One live setting that the rig or the motion maths owns.

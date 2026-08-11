@@ -143,6 +143,10 @@ export const HANDLERS = {
   'input.inertia': (v, ctx) => ctx.input.setParam('input.inertia', v),
   'input.invert': (v, ctx) => ctx.input.setParam('input.invert', v),
   'input.hideCursorSeconds': (v, ctx) => ctx.input.setParam('input.hideCursorSeconds', v),
+  // createMenu reads cfg('input.lock') itself at open time rather than
+  // holding a copy, so writing CONFIG is the whole of the work -- same as
+  // the other configOnly entries above.
+  'input.lock': configOnly,
   // Owned by camera.js and campath.js, not by input.js: the zoom clamp, the
   // framing it returns to and the idle countdown all live with the rig.
   // A pair, never one end at a time. Both of these compose the same final pair

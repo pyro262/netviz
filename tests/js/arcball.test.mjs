@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   IDENTITY, quatFromLatLon, latLonFromQuat, eyeDirection, upVector,
   pickCameraSphere, dragRotation, applyDrag, rotateCamera, slerp, quatAngle,
-  fromAxisAngle, axisAngle, rollBetween, trackDrag,
+  fromAxisAngle, axisAngle, rollBetween, trackDrag, vecToLatLon, unrotate,
 } from '../../netviz/static/js/arcball.js';
 
 const D = 4.6;
@@ -278,6 +278,47 @@ test('a roll can be rebuilt from the number, so nothing else drifts', () => {
   const rolled = rotateCamera(home, { x: 0, y: 0, z: 1 }, 63);
   const back = rotateCamera(home, { x: 0, y: 0, z: 1 }, rollBetween(rolled, home));
   assert.ok(quatAngle(rolled, back) < 1e-4, `off by ${quatAngle(rolled, back)}`);
+});
+
+// camera.js's pointAt() is built from three pieces that are all covered
+// elsewhere in this file already -- pickCameraSphere's null-past-the-limb
+// behaviour, and the eye-direction convention -- so the coverage that is
+// actually new here is the pose round-trip: unrotate() carrying a
+// camera-space pick into world space, then vecToLatLon() reading it back.
+test('a point picked at screen centre carries back to the camera\'s own lat/lon', () => {
+  for (const [lat, lon] of [[0, 0], [40, -74], [-35, 150], [62, 179]]) {
+    const pose = quatFromLatLon(lat, lon);
+    const hit = pickCameraSphere({ x: 0, y: 0 }, VIEW);   // nearest point: {0,0,1}
+    const world = unrotate(pose, hit);
+    const back = vecToLatLon(world);
+    assert.ok(Math.abs(back.lat - lat) < 1e-6, `lat ${lat} -> ${back.lat}`);
+    assert.ok(Math.abs(((back.lon - lon + 540) % 360) - 180) < 1e-6,
+      `lon ${lon} -> ${back.lon}`);
+  }
+});
+
+test('unrotate is the exact inverse of the rotation eyeDirection/upVector apply', () => {
+  // eyeDirection(q) is rotate(conj(q), {0,0,1}) internally -- unrotate must
+  // agree with it on that same vector, or pointAt and the camera's own
+  // placement would silently disagree about which way "world space" is.
+  const pose = quatFromLatLon(22, -60);
+  const camZ = { x: 0, y: 0, z: 1 };
+  const viaEyeDirection = eyeDirection(pose);
+  const viaUnrotate = unrotate(pose, camZ);
+  assert.ok(angleBetween(viaEyeDirection, viaUnrotate) < 1e-9,
+    `disagree by ${angleBetween(viaEyeDirection, viaUnrotate)} deg`);
+});
+
+test('vecToLatLon and latLonFromQuat agree on an eye direction', () => {
+  const pose = quatFromLatLon(-48, 133);
+  assert.deepEqual(vecToLatLon(eyeDirection(pose)), latLonFromQuat(pose));
+});
+
+test('a point picked past the limb -- pointAt\'s miss case -- is null before it ever reaches unrotate', () => {
+  // pickCameraSphere with clampToLimb false (pointAt's whole reason for not
+  // passing true) already returns null past the limb; this is that contract
+  // read from pointAt's call site rather than re-derived.
+  assert.equal(pickCameraSphere({ x: 0.9, y: 0.9 }, VIEW, false), null);
 });
 
 test('IDENTITY is a real quaternion and rotates nothing', () => {
