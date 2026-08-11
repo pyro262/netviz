@@ -139,6 +139,18 @@ export function deltaLon(a, b) {
   return ((b - a + 540) % 360) - 180;
 }
 
+/** Great-circle separation of two lat/lon points, in degrees. Not
+ *  `Math.hypot(dLat, dLon)`: longitude degrees shrink with latitude, so the
+ *  hypotenuse over-reports near the poles -- two points 180 degrees of
+ *  longitude apart at 60N are 60 degrees apart on the sphere. */
+export function angularDistance(latA, lonA, latB, lonB) {
+  const r = Math.PI / 180;
+  const a = latA * r, b = latB * r;
+  const d = Math.sin(a) * Math.sin(b)
+          + Math.cos(a) * Math.cos(b) * Math.cos((lonB - lonA) * r);
+  return (Math.acos(Math.max(-1, Math.min(1, d))) * 180) / Math.PI;
+}
+
 /** Move `pull` of the way from cur to target the short way round. */
 export function blendLon(cur, target, pull) {
   return cur + deltaLon(cur, target) * pull;
@@ -162,6 +174,9 @@ export function initialState() {
     lastEW: null,          // last east/west bearing, so the next one reverses it
     lastNS: null,          // likewise for north/south
     latDir: 1,             // flips when a walk reaches the latitude clamp
+    walkDuration: 0,       // length of the walk phase currently running
+    walkOriginLat: 0,      // where this walk set off from -- the span's anchor
+    walkOriginLon: 0,
     // Direct manipulation. `manual` covers the whole borrowed period --
     // pointer down, and the idle countdown after release -- because a burst
     // that yanks the view four seconds after the user let go breaks the same
@@ -448,6 +463,9 @@ export function step(s, dt, traffic, p = DEFAULTS) {
       // every 120s is the stalled display this cycle exists to avoid.
       s.phase = 'walk';
       s.phaseT = 0;
+      s.walkDuration = Math.max(1, p.cycleSeconds - s.cycleT);
+      s.walkOriginLat = s.targetLat;
+      s.walkOriginLon = s.targetLon;
     }
   }
   if (s.phase === 'return') {
@@ -460,6 +478,11 @@ export function step(s, dt, traffic, p = DEFAULTS) {
   } else if (s.phase === 'hold' && s.phaseT >= p.holdSeconds) {
     s.phase = 'walk';
     s.phaseT = 0;
+    s.walkDuration = Math.max(1, p.cycleSeconds - s.cycleT);
+    // The hold has just ended over the traffic, so this IS the traffic
+    // centroid -- captured rather than re-read, see the guard below.
+    s.walkOriginLat = s.targetLat;
+    s.walkOriginLon = s.targetLon;
   }
 
   if (s.phase === 'return' || s.phase === 'hold') {
@@ -502,11 +525,14 @@ export function step(s, dt, traffic, p = DEFAULTS) {
   // over the busy side. No limit cycle, no destination to overshoot.
   // Parked: the walk leg still runs, it just does not move the target. The
   // easing below then closes whatever gap is left and the camera settles.
-  let rate = p.walkEnabled === false ? 0 : p.walkRate;
+  let rate = walkRateAt(s.phaseT, s.walkDuration, p);
   if (traffic && p.linger > 0) {
     const off = (deltaLon(s.curLon, traffic.lon) * Math.PI) / 180;
     rate *= 1 - p.linger * Math.cos(off);
   }
+
+  const prevTargetLat = s.targetLat;
+  const prevTargetLon = s.targetLon;
 
   const b = ((s.bearing ?? 90) * Math.PI) / 180;
   // Longitude degrees are shorter near the poles, so the east component is
@@ -521,6 +547,28 @@ export function step(s, dt, traffic, p = DEFAULTS) {
   // the cycle, which looks like the display has frozen.
   if (s.targetLat > p.latClamp) { s.targetLat = p.latClamp; s.latDir = -s.latDir; }
   if (s.targetLat < -p.latClamp) { s.targetLat = -p.latClamp; s.latDir = -s.latDir; }
+
+  // The span is a guard on the ACTUAL distance from where this walk set off,
+  // not on the distance walked. A cardinal walk divides its east component by
+  // cos(lat), bounces off the latitude clamp, and the traffic drifts
+  // underneath it, so path length and distance from the origin are two
+  // different numbers -- sizing the ramp is what usually keeps this true, and
+  // this is what makes it always true. Reversing rather than stopping, for the
+  // same reason the latitude clamp bounces: a walk pinned against a limit
+  // reads as a frozen display.
+  //
+  // The anchor is FIXED for the walk, not read from `traffic` each frame. In
+  // the ordinary case they are the same point -- the return leg has just
+  // arrived over the traffic -- but a focus that drifts would quietly extend
+  // the walk past its limit, and on an empty feed there is no focus to read at
+  // all. campath.js knows nothing about `home`, and must not learn.
+  if (angularDistance(s.targetLat, s.targetLon,
+                      s.walkOriginLat, s.walkOriginLon) > p.spanDegrees) {
+    s.targetLat = prevTargetLat;
+    s.targetLon = prevTargetLon;
+    s.bearing = (s.bearing + 180) % 360;
+    s.latDir = -s.latDir;
+  }
 
   const k = Math.min(1, p.ease * dt);
   s.curLon += deltaLon(s.curLon, s.targetLon) * k;

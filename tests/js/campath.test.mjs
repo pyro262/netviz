@@ -2,7 +2,8 @@
 // "does it still favour the traffic" are both measurable over ten minutes.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { step, initialState, startVisit, deltaLon, blendLon, DEFAULTS, BEARINGS, walkRateAt } from
+import { step, initialState, startVisit, deltaLon, blendLon, DEFAULTS, BEARINGS, walkRateAt,
+  angularDistance } from
   '../../netviz/static/js/campath.js';
 
 /** Deterministic rng, so a heading sequence can be asserted rather than hoped for. */
@@ -93,6 +94,87 @@ test('a zero or missing duration cannot produce a NaN rate', () => {
   }
 });
 
+test('angularDistance is a great circle, not a lat/lon hypotenuse', () => {
+  // The naive Math.hypot answer is wrong wherever longitude degrees are short:
+  // two points 180 degrees apart in longitude at 60N are 60 degrees apart on
+  // the sphere, not 180. A span cap built on the hypotenuse would cut the walk
+  // short near the poles and let it run long at the equator.
+  assert.ok(Math.abs(angularDistance(0, 0, 0, 90) - 90) < 1e-6);
+  assert.ok(Math.abs(angularDistance(0, 0, 0, 0)) < 1e-9);
+  assert.ok(Math.abs(angularDistance(60, 0, 60, 180) - 60) < 1e-6);
+  assert.ok(Math.abs(angularDistance(-30, 170, -30, -170) - 17.3) < 0.2); // across the dateline
+});
+
+test('a walk never gets further than spanDegrees from the traffic', () => {
+  // The integral alone cannot prove this. A cardinal walk divides its east
+  // component by cos(lat), bounces off the latitude clamp, and the traffic
+  // itself drifts -- so path length walked and distance from home are two
+  // different numbers.
+  const traffic = { lat: 29.76, lon: -95.37 };
+  for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    const s = initialState();
+    s.curLat = traffic.lat; s.curLon = traffic.lon;
+    s.targetLat = traffic.lat; s.targetLon = traffic.lon;
+    let worst = 0;
+    // Four full cycles, so several different bearings run, at 30fps.
+    for (let i = 0; i < 4 * 120 * 30; i += 1) {
+      step(s, 1 / 30, traffic, { ...DEFAULTS, rng: () => (seed * 0.137 + i * 1e-6) % 1 });
+      worst = Math.max(worst, angularDistance(s.curLat, s.curLon, traffic.lat, traffic.lon));
+    }
+    assert.ok(worst <= DEFAULTS.spanDegrees + 2,
+              `seed ${seed} reached ${worst.toFixed(1)} deg, cap ${DEFAULTS.spanDegrees}`);
+  }
+});
+
+test('a walk that hits the span reverses instead of stalling', () => {
+  // Stalling against a limit reads as a frozen display -- the same reason the
+  // latitude clamp bounces rather than pinning.
+  //
+  // Window and threshold were widened from the plan's original 75s / 9.5deg
+  // by measurement: the guard compares the TARGET's distance to spanDegrees,
+  // but this test watches curLat/curLon -- the eased, on-screen position,
+  // which lags the target by design. With walkDuration=75 the target itself
+  // only reaches the 10-degree cap at t=82.5s (not by t=75, since `linger`
+  // -- ~15% here, because `off` never grows past ~10 degrees so its cos(off)
+  // stays near 1 the whole time -- scales the whole ramp down). The eased
+  // position then rounds the target's sharp reversal corner rather than
+  // tracking it, and settles into a stable oscillation peaking at 9.32
+  // degrees -- verified flat out to 3000 simulated seconds, never higher.
+  // 8.5 (spanDegrees * 0.85) is comfortably below that measured ceiling and
+  // still close enough to the cap to prove the walk actually got there.
+  const traffic = { lat: 0, lon: 0 };
+  const s = initialState();
+  s.curLat = 0; s.curLon = 0; s.targetLat = 0; s.targetLon = 0;
+  s.phase = 'walk'; s.phaseT = 0; s.cycleT = 0; s.walkDuration = 75;
+  s.walkOriginLat = 0; s.walkOriginLon = 0;
+  s.bearing = 90;                      // due east, so longitude does the moving
+  const p = { ...DEFAULTS, spanDegrees: 10 };
+  let hit = false;
+  let moved = 0;
+  let prev = 0;
+  for (let i = 0; i < 150 * 30; i += 1) {
+    step(s, 1 / 30, traffic, p);
+    const d = angularDistance(s.curLat, s.curLon, 0, 0);
+    if (d >= p.spanDegrees * 0.85) hit = true;
+    if (hit) moved += Math.abs(d - prev);
+    prev = d;
+  }
+  assert.ok(hit, 'the walk never reached the span at all');
+  assert.ok(moved > 1, 'the walk stopped dead at the span instead of turning back');
+});
+
+test('the walk still sweeps a real distance -- it is shorter, not parked', () => {
+  const traffic = { lat: 0, lon: 0 };
+  const s = initialState();
+  s.curLat = 0; s.curLon = 0; s.targetLat = 0; s.targetLon = 0;
+  let far = 0;
+  for (let i = 0; i < 120 * 30; i += 1) {
+    step(s, 1 / 30, traffic, DEFAULTS);
+    far = Math.max(far, angularDistance(s.curLat, s.curLon, 0, 0));
+  }
+  assert.ok(far > 25, `the walk only reached ${far.toFixed(1)} degrees from home`);
+});
+
 const HOME = { lat: 30.3, lon: -97.7 };      // the home site: where every arc roots
 
 /** Run the rig for `seconds` at 20fps, returning the longitudes visited. */
@@ -146,9 +228,14 @@ test('each cycle walks a real distance away from home', () => {
 });
 
 test('over many cycles it still sees the whole globe', () => {
+  // Threshold lowered 8 -> 5 (2026-08-11): spanDegrees dropped 150 -> 60, so a
+  // walk can no longer roam a whole hemisphere from home before turning back.
+  // Measured with this file's seeded rng: 6/12 sectors over 2400s, against 8+
+  // before the span cap existed. 5 keeps a margin under the measured value
+  // rather than asserting the exact number.
   const { lons } = simulate(2400, HOME);
   const covered = new Set(lons.map((l) => Math.floor(((l + 180) % 360) / 30)));
-  assert.ok(covered.size >= 8, `only visited ${covered.size}/12 longitude sectors`);
+  assert.ok(covered.size >= 5, `only visited ${covered.size}/12 longitude sectors`);
 });
 
 test('it comes back over the traffic once per cycle', () => {
@@ -288,9 +375,17 @@ test('a cycle is about two minutes', () => {
 });
 
 test('with no traffic at all it keeps drifting rather than stalling', () => {
+  // Threshold lowered 10 -> 2 (2026-08-11): spanDegrees dropped 150 -> 60, so
+  // in 600s the no-traffic walk (whose origin resets to wherever the PREVIOUS
+  // walk ended, so it can still drift over many cycles -- see the longer-run
+  // measurement below) covers far fewer sectors than the old ~150-degree
+  // sweep did. Measured with this file's seeded rng: 3/12 over 600s. This is
+  // still "not stalled": a genuinely frozen camera would cover 1 sector, and
+  // a longer run (2400s) reaches 7/12, confirming the origin keeps advancing
+  // rather than the walk settling into one repeating band.
   const { lons } = simulate(600, null);
   const covered = new Set(lons.map((l) => Math.floor(((l + 180) % 360) / 30)));
-  assert.ok(covered.size >= 10, `stalled: ${covered.size}/12 sectors`);
+  assert.ok(covered.size >= 2, `stalled: ${covered.size}/12 sectors`);
 });
 
 test('latitude varies between cycles instead of retracing one band', () => {
