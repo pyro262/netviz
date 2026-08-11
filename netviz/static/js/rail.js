@@ -17,7 +17,9 @@
 
 import { cfg } from './config.js';
 
-const POLL_MS = cfg('polling.railSeconds', 10) * 1000;
+// Read at mount, not at import: polling.railSeconds is a live setting, and a
+// rail mounted after that setting moved must use the current value.
+const pollMs = () => cfg('polling.railSeconds', 10) * 1000;
 
 /** Does this URL ask for the rail?
  *
@@ -304,7 +306,7 @@ export function start({ onLayout } = {}) {
   // Held so the rail can be taken back down: rail.enabled is a live setting,
   // and a rail whose timers outlive its element goes on fetching /stats.json
   // for a panel nobody can see -- once per toggle, for the life of the page.
-  const pollTimer = setInterval(poll, POLL_MS);
+  let pollTimer = setInterval(poll, pollMs());
   // The clock is the only thing on the rail that has to move every second; the
   // counters move at the collector's pace, not the display's.
   const clockTimer = setInterval(draw, 1000);
@@ -312,6 +314,13 @@ export function start({ onLayout } = {}) {
   let stopped = false;
   return {
     poll,
+    /** polling.railSeconds is a live setting; the interval is replaced rather
+     *  than read from inside a fixed timer. */
+    setPeriod(seconds) {
+      if (stopped) return;
+      clearInterval(pollTimer);
+      pollTimer = setInterval(poll, seconds * 1000);
+    },
     /** Unmount. Safe to call twice -- a double toggle is one click away. */
     stop() {
       if (stopped) return;

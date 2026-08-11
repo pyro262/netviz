@@ -40,6 +40,14 @@ export const DEFAULTS = {
   // ~95 degrees from home, so the far side of the globe was never seen at all
   // (6 of 12 longitude sectors over 40 minutes). This reaches ~140.
   walkRate: 1.6,
+  // Park the camera over the traffic instead of walking off. The return and
+  // the hold still run -- what is switched off is the drift, not the cycle --
+  // so a parked display sits on the traffic rather than freezing wherever it
+  // happened to be when the setting changed.
+  walkEnabled: true,
+  // A burst of blocks is the most interesting thing the wall can show, but a
+  // display somebody is reading may not want to be moved by one at all.
+  detourEnabled: true,
   // Nearly off. The old design used speed modulation as the whole home bias;
   // now the return leg does that job, and leaving linger high just throttled
   // the walk -- measured, a 98-second walk reached only 96 degrees instead of
@@ -95,6 +103,8 @@ Object.assign(DEFAULTS, {
   latClamp: cfg('camera.walk.latitudeClamp', DEFAULTS.latClamp),
   visitSeconds: cfg('camera.detour.visitSeconds', DEFAULTS.visitSeconds),
   visitMaxSeconds: cfg('camera.detour.visitMaxSeconds', DEFAULTS.visitMaxSeconds),
+  walkEnabled: cfg('camera.walk.enabled', DEFAULTS.walkEnabled),
+  detourEnabled: cfg('camera.detour.enabled', DEFAULTS.detourEnabled),
   resumeSeconds: cfg('input.resumeSeconds', DEFAULTS.resumeSeconds),
   detourInterruptManual: cfg('camera.detour.interruptManual',
                              DEFAULTS.detourInterruptManual),
@@ -254,6 +264,7 @@ export function setManualView(s, lat, lon, p = DEFAULTS) {
  * interruptible, because a burst outranks all of them.
  */
 export function startVisit(s, lat, lon, p = DEFAULTS) {
+  if (p.detourEnabled === false) return false;
   if (isVisiting(s)) return false;
   // A held view is not taken. Off by default; see detourInterruptManual.
   if (isManual(s) && !p.detourInterruptManual) return false;
@@ -427,7 +438,9 @@ export function step(s, dt, traffic, p = DEFAULTS) {
   // Slowing the drift near the traffic instead makes dwell time fall out of
   // the speed: the camera still goes all the way round, it just takes longer
   // over the busy side. No limit cycle, no destination to overshoot.
-  let rate = p.walkRate;
+  // Parked: the walk leg still runs, it just does not move the target. The
+  // easing below then closes whatever gap is left and the camera settles.
+  let rate = p.walkEnabled === false ? 0 : p.walkRate;
   if (traffic && p.linger > 0) {
     const off = (deltaLon(s.curLon, traffic.lon) * Math.PI) / 180;
     rate *= 1 - p.linger * Math.cos(off);

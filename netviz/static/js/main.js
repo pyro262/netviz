@@ -21,7 +21,8 @@ import { createApplier } from './apply.js';
 const GLOBE_RADIUS = 1.0;
 
 // The subsolar point moves 0.004 deg/sec, so per-frame updates are pure waste.
-const SUN_UPDATE_SECONDS = cfg('polling.sunSeconds', 1.0);
+// `let`, not a constant: polling.sunSeconds is a live setting.
+let sunUpdateSeconds = cfg('polling.sunSeconds', 1.0);
 
 const sunVec = new THREE.Vector3();
 // Set in boot(); the sun updater runs before it exists on the very first call.
@@ -43,7 +44,7 @@ function updateSun(globe, camera) {
 
 // How often the kiosk asks whether a new build has been deployed. Cheap: the
 // response is a 16-char hash and the collector stats the static tree.
-const BUILD_POLL_SECONDS = cfg('polling.buildSeconds', 30);
+let buildPollSeconds = cfg('polling.buildSeconds', 30);
 
 /** Reload the page when the deployed assets change.
  *
@@ -77,7 +78,14 @@ function watchForNewBuild() {
     }
   };
   check();
-  setInterval(check, BUILD_POLL_SECONDS * 1000);
+  let timer = setInterval(check, buildPollSeconds * 1000);
+  return {
+    setPeriod(seconds) {
+      buildPollSeconds = seconds;
+      clearInterval(timer);
+      timer = setInterval(check, seconds * 1000);
+    },
+  };
 }
 
 function connect(onEvent) {
@@ -139,6 +147,7 @@ async function boot() {
   if (cfg('layers.aurora', true)) {
     aurora = createAurora(GLOBE_RADIUS);
     globe.group.add(aurora.mesh);
+    globe.registerLayer('aurora', aurora.mesh);
   }
 
   // A disabled ripple layer still needs a spawn() to call, so the arc landing
@@ -147,6 +156,10 @@ async function boot() {
     ? createRipples(GLOBE_RADIUS)
     : { group: new THREE.Group(), spawn() {}, update() {} };
   globe.group.add(ripples.group);   // ripples sit on the surface, so they rotate
+  // Registered with the globe so `layers.*` has one toggle path rather than one
+  // per module. A layer that was off at boot is not registered at all, and
+  // setLayer says so instead of silently doing nothing.
+  if (cfg('layers.ripples', true)) globe.registerLayer('ripples', ripples.group);
 
   // The ripple and the country flash both fire on arrival, not on receipt --
   // an arc that is still travelling has not landed yet.
@@ -193,15 +206,30 @@ async function boot() {
     }
   });
 
-  watchForNewBuild();
-  startDegraded({ isOpen: link.isOpen });
+  const build = watchForNewBuild();
+  const degraded = startDegraded({ isOpen: link.isOpen });
 
+  // The stub carries the whole interface, as input.js's used to: main's render
+  // loop calls into it every frame, and a missing method there stops the loop.
+  // Its setters throw rather than no-op, so a settings patch that asks for
+  // something a build without stars cannot do is REPORTED as rejected instead
+  // of appearing to work.
+  const starsOff = () => {
+    throw new Error('stars were off at boot and the catalogue was never '
+                  + 'fetched; set layers.stars in config.js and reload');
+  };
   const stars = cfg('layers.stars', true)
     ? await createStars()
-    : { group: new THREE.Group(), update() {}, setPixelScale() {} };
+    : { group: new THREE.Group(), update() {}, setPixelScale() {},
+        setBrightness: starsOff, setDayGain: starsOff, setRampMinutes: starsOff,
+        setResync: starsOff, setVisible: starsOff };
   scene.add(stars.group);
   // not in globe.group: must not rotate
-  if (cfg('layers.atmosphere', true)) scene.add(createAtmosphere(GLOBE_RADIUS));
+  if (cfg('layers.atmosphere', true)) {
+    const atmosphere = createAtmosphere(GLOBE_RADIUS);
+    scene.add(atmosphere);
+    globe.registerLayer('atmosphere', atmosphere);
+  }
 
   // Declared before resize() so the first resize -- which runs before the
   // composer exists -- reads null instead of hitting the const's temporal
@@ -291,7 +319,7 @@ async function boot() {
     input.tick(dt);
     rig.update(dt, arcs.origins());
     sinceSun += dt;
-    if (sinceSun >= SUN_UPDATE_SECONDS) {
+    if (sinceSun >= sunUpdateSeconds) {
       sinceSun = 0;
       updateSun(globe, camera);
     }
@@ -301,9 +329,20 @@ async function boot() {
   // No setConfig here: the page wants the real one, which writes CONFIG so
   // anything reading cfg() later agrees with what is on screen. Passing a stub
   // would silently make every applied setting forget itself.
+  // One place that knows which timer owns which polling setting, so apply.js
+  // holds five one-line handlers rather than five module references.
+  const polling = (key, seconds) => {
+    if (key === 'health') degraded.setPeriod(seconds);
+    else if (key === 'rail') { if (railHandle) railHandle.setPeriod(seconds); }
+    else if (key === 'build') build.setPeriod(seconds);
+    else if (key === 'sun') sunUpdateSeconds = seconds;
+    else if (key === 'starResync') stars.setResync(seconds);
+    else throw new Error(`no polling timer ${key}`);
+  };
+
   const settings = createApplier({
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
-    resize, rail,
+    scene, input, polling, resize, rail,
   });
 
   // Diagnostics only -- no interaction, nothing reads this on the wall. It

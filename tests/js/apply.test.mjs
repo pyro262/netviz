@@ -4,17 +4,33 @@ import assert from 'node:assert/strict';
 import { createApplier, HANDLERS } from '../../netviz/static/js/apply.js';
 import { paths } from '../../netviz/static/js/settings.js';
 
-/** Records what the executor did, in order. */
+/** Records what the executor did, in order.
+ *
+ *  Every method a handler calls has to be here, or the coverage the schema
+ *  tests give would stop at "a handler exists" and say nothing about whether it
+ *  can run. */
 function fakeCtx(log) {
   return {
     setConfig: (p, v) => log.push(`config ${p}=${v}`),
-    arcs: { rebuild: () => log.push('arcs.rebuild'), setUniform: (p, v) => log.push(`arcs ${p}=${v}`) },
-    globe: { setUniform: (p, v) => log.push(`globe ${p}=${v}`) },
-    stars: { rebuild: () => log.push('stars.rebuild') },
-    post: { setUniform: (p, v) => log.push(`post ${p}=${v}`) },
-    ripples: {},
+    arcs: {
+      rebuild: () => log.push('arcs.rebuild'),
+      setUniform: (p, v) => log.push(`arcs ${p}=${v}`),
+      setSpec: (c, k, v) => log.push(`arcs ${c}.${k}=${v}`),
+    },
+    globe: { setLayer: (n, v) => log.push(`layer ${n}=${v}`) },
+    stars: {
+      setVisible: (v) => log.push(`stars visible=${v}`),
+      setBrightness: (v) => log.push(`stars brightness=${v}`),
+      setDayGain: (v) => log.push(`stars dayGain=${v}`),
+      setRampMinutes: (v) => log.push(`stars rampMinutes=${v}`),
+    },
+    post: { setBloom: (p, v) => log.push(`bloom ${p}=${v}`) },
+    scene: { background: { set: (v) => log.push(`background=${v}`) } },
+    ripples: { setCooldown: (v) => log.push(`ripples cooldown=${v}`) },
     camera: {},
-    rig: {},
+    rig: { setParam: (p, v) => log.push(`rig ${p}=${v}`) },
+    input: { setParam: (p, v) => log.push(`input ${p}=${v}`) },
+    polling: (k, v) => log.push(`polling ${k}=${v}`),
     renderer: {},
     resize: () => log.push('resize'),
     rail: {

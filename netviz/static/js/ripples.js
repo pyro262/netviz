@@ -141,5 +141,8 @@ export function createRipples(radius, capacity = 48) {
     return pool.reduce((n, s) => n + (s.active ? 1 : 0), 0);
   }
 
-  return { group, spawn, update, liveCount };
+  return {
+    group, spawn, update, liveCount,
+    setCooldown(v) { cooldown.setSeconds(v); },
+  };
 }

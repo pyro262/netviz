@@ -13,21 +13,25 @@ import { zoomBy, decay } from './orbit.js';
 import { pickCameraSphere, dragRotation, axisAngle } from './arcball.js';
 
 export function startInput({ canvas, rig }) {
-  const enabled = cfg('input.enabled', true);
-  // The disabled stub must carry the WHOLE interface, tick included. main.js
-  // calls input.tick(dt) every frame, and three.js re-schedules its animation
-  // frame only AFTER the callback returns -- so a missing method throws, the
-  // loop stops after one frame, and the wall is a black canvas until the next
-  // deploy. A config knob must never be able to do that.
-  if (!enabled) return { tick() {}, stop() {} };
+  // `enabled` is a live GATE, not an early return.
+  //
+  // It used to return a do-nothing stub, and that stub had to carry the whole
+  // interface -- tick() included -- because main.js calls input.tick(dt) every
+  // frame and three re-schedules its animation frame only AFTER the callback
+  // returns, so a missing method stops the loop after one frame and the wall
+  // goes black until the next deploy. A stub also cannot be turned back on:
+  // `input.enabled` is a setting now, and a control that needs a reload to take
+  // effect is the silently-does-nothing control the schema exists to prevent.
+  // So the listeners are always attached and every handler checks the gate.
+  let enabled = cfg('input.enabled', true);
 
-  const dragOn = cfg('input.drag', true);
-  const zoomOn = cfg('input.zoom', true);
-  const keysOn = cfg('input.keyboard', true);
-  const invert = cfg('input.invert', false) ? -1 : 1;
-  const damping = cfg('input.inertia', 0.85);
-  const zoomFactor = cfg('input.zoomFactor', 1.12);
-  const hideAfter = cfg('input.hideCursorSeconds', 3);
+  let dragOn = cfg('input.drag', true);
+  let zoomOn = cfg('input.zoom', true);
+  let keysOn = cfg('input.keyboard', true);
+  let invert = cfg('input.invert', false) ? -1 : 1;
+  let damping = cfg('input.inertia', 0.85);
+  let zoomFactor = cfg('input.zoomFactor', 1.12);
+  let hideAfter = cfg('input.hideCursorSeconds', 3);
 
   const pointers = new Map();          // pointerId -> {x, y}
   // Camera-space unit vector of the sphere point under the pointer at grab.
@@ -54,6 +58,7 @@ export function startInput({ canvas, rig }) {
   const ndc = (ev) => ndcFromClient(ev.clientX, ev.clientY);
 
   function showCursor() {
+    if (!enabled) return;
     canvas.classList.remove('cursor-hidden');
     if (cursorTimer) clearTimeout(cursorTimer);
     if (hideAfter > 0) {
@@ -63,6 +68,7 @@ export function startInput({ canvas, rig }) {
   }
 
   function onDown(ev) {
+    if (!enabled) return;
     showCursor();
     pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
     canvas.setPointerCapture(ev.pointerId);
@@ -82,6 +88,7 @@ export function startInput({ canvas, rig }) {
   }
 
   function onMove(ev) {
+    if (!enabled) return;
     showCursor();
     if (!pointers.has(ev.pointerId)) return;
     pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
@@ -123,6 +130,7 @@ export function startInput({ canvas, rig }) {
   }
 
   function onUp(ev) {
+    if (!enabled) return;
     const hadTwo = pointers.size === 2;
     pointers.delete(ev.pointerId);
     if (canvas.hasPointerCapture?.(ev.pointerId)) {
@@ -185,7 +193,7 @@ export function startInput({ canvas, rig }) {
   }
 
   function onWheel(ev) {
-    if (!zoomOn) return;
+    if (!enabled || !zoomOn) return;
     ev.preventDefault();
     showCursor();
     // poke(), not grab()/release(): a wheel notch is not a pointer going down,
@@ -200,7 +208,7 @@ export function startInput({ canvas, rig }) {
   }
 
   function onKey(ev) {
-    if (!keysOn || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (!enabled || !keysOn || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     const [min, max] = rig.zoomRange();
     const stepDeg = 5;
     // Every one of these is poke(), never grab()/release(). A keypress is an
@@ -239,6 +247,7 @@ export function startInput({ canvas, rig }) {
 
   /** Called once per animation frame. Coasts the view after a fling. */
   function tick(dt) {
+    if (!enabled) { spinRate = 0; return; }
     // The hand-back ends input's ownership of the view, full stop. Damping
     // 0.85/s has a ~6.2s time constant against a 1e-6 floor, so a fling coasts
     // for ~114 seconds -- nearly four times resumeSeconds. Without this guard
@@ -263,8 +272,41 @@ export function startInput({ canvas, rig }) {
   window.addEventListener('mousemove', showCursor);
   showCursor();
 
+  /** One live setting. Keyed by the settings path so apply.js can hand it
+   *  straight through; each case writes one field and nothing else. */
+  function setParam(path, value) {
+    switch (path) {
+      case 'input.enabled':
+        enabled = value;
+        // Turning it off mid-gesture: onUp is gated too, so without this the
+        // rig would stay `held` for ever and campath would refuse to move the
+        // camera at all -- a frozen wall on a healthy feed.
+        if (!enabled) {
+          releaseLost();
+          if (cursorTimer) clearTimeout(cursorTimer);
+          canvas.classList.remove('cursor-hidden');
+        } else {
+          showCursor();
+        }
+        return;
+      case 'input.drag': dragOn = value; return;
+      case 'input.zoom': zoomOn = value; return;
+      case 'input.keyboard': keysOn = value; return;
+      case 'input.invert': invert = value ? -1 : 1; return;
+      case 'input.inertia': damping = value; return;
+      case 'input.zoomFactor': zoomFactor = value; return;
+      case 'input.hideCursorSeconds':
+        hideAfter = value;
+        showCursor();       // restart the countdown on the new interval
+        return;
+      default:
+        throw new Error(`input: no parameter ${path}`);
+    }
+  }
+
   return {
     tick,
+    setParam,
     stop() {
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);

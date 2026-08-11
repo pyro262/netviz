@@ -10,6 +10,11 @@
 // still cost one.
 import { validate, planApply, paths } from './settings.js';
 import { CONFIG } from './config.js';
+// burst.js is three-free and its thresholds live in one exported object that
+// createBurstDetector() closes over by default, so the detour thresholds are
+// reached by mutating that object rather than through ctx. Importing it keeps
+// main.js from having to hand a fourth pure module into the context.
+import { BURST } from './burst.js';
 
 /** Write a dotted path into CONFIG, so anything reading cfg() later agrees
  *  with what was just applied to the live objects. */
@@ -31,15 +36,112 @@ function writeConfig(path, value) {
  * A handler receives (value, ctx) and mutates the live display. It does NOT
  * write CONFIG; the executor does that for every accepted key.
  */
+
+/** Writing CONFIG is the whole of the work. classify.js reads cfg() per event
+ *  rather than capturing it at import -- a couple of property lookups at this
+ *  event rate -- so the next event already sees the new value and there is no
+ *  live object to poke. Declared explicitly rather than left out of the table,
+ *  because a missing entry is what createApplier refuses to build on. */
+const configOnly = () => {};
+
+/** `arcs.<cls>.<key>` for a whole class, in one line each. `tube` also clears
+ *  the pool: the radius is baked into a slot's geometry when the arc spawns, so
+ *  without that it would show only on arcs that had not been drawn yet. */
+function arcHandlers(cls, keys) {
+  const out = {};
+  for (const key of keys) {
+    out[`arcs.${cls}.${key}`] = key === 'tube'
+      ? (v, ctx) => { ctx.arcs.setSpec(cls, 'tube', v); ctx.arcs.rebuild(); }
+      : (v, ctx) => ctx.arcs.setSpec(cls, key, v);
+  }
+  return out;
+}
+
+const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
+                  'maxRise', 'bloomScale'];
+const HIGHLIGHT_KEYS = ['life', 'tube', 'speed', 'lift', 'maxRise', 'bloomScale'];
+
+/** The ten `layers` booleans, all one call. */
+function layerHandlers(names) {
+  const out = {};
+  for (const name of names) {
+    out[`layers.${name}`] = name === 'stars'
+      ? (v, ctx) => ctx.stars.setVisible(v)
+      : (v, ctx) => ctx.globe.setLayer(name, v);
+  }
+  return out;
+}
+
 export const HANDLERS = {
   'traffic.flowsPerSecond': (v, ctx) => ctx.arcs.setUniform('flowsPerSecond', v),
+  'traffic.dropDns': configOnly,
+  'traffic.dnsPorts': configOnly,
+  'traffic.dropResolvers': configOnly,
+  'traffic.resolvers': configOnly,
+  'traffic.extraResolvers': configOnly,
+
   'arcs.bodyOpacity': (v, ctx) => ctx.arcs.setUniform('bodyOpacity', v),
-  'arcs.flow.tube': (v, ctx) => ctx.arcs.rebuild(),
-  'appearance.background': (v, ctx) => ctx.globe.setUniform('background', v),
+  ...arcHandlers('flow', ARC_KEYS),
+  ...arcHandlers('block', ARC_KEYS),
+  ...arcHandlers('highlight', HIGHLIGHT_KEYS),
+
+  'camera.distance': (v, ctx) => ctx.rig.setParam('camera.distance', v),
+  'camera.walk.enabled': (v, ctx) => ctx.rig.setParam('camera.walk.enabled', v),
+  'camera.walk.cycleSeconds': (v, ctx) => ctx.rig.setParam('camera.walk.cycleSeconds', v),
+  'camera.walk.holdSeconds': (v, ctx) => ctx.rig.setParam('camera.walk.holdSeconds', v),
+  'camera.walk.returnMaxSeconds': (v, ctx) => ctx.rig.setParam('camera.walk.returnMaxSeconds', v),
+  'camera.walk.arriveDegrees': (v, ctx) => ctx.rig.setParam('camera.walk.arriveDegrees', v),
+  'camera.walk.degreesPerSecond': (v, ctx) => ctx.rig.setParam('camera.walk.degreesPerSecond', v),
+  'camera.walk.latitudeClamp': (v, ctx) => ctx.rig.setParam('camera.walk.latitudeClamp', v),
+  'camera.detour.enabled': (v, ctx) => ctx.rig.setParam('camera.detour.enabled', v),
+  'camera.detour.visitSeconds': (v, ctx) => ctx.rig.setParam('camera.detour.visitSeconds', v),
+  'camera.detour.visitMaxSeconds': (v, ctx) => ctx.rig.setParam('camera.detour.visitMaxSeconds', v),
+  'camera.detour.interruptManual': (v, ctx) => ctx.rig.setParam('camera.detour.interruptManual', v),
+  // The detector's own thresholds, not the rig's: see the BURST import.
+  'camera.detour.blocks': (v) => { BURST.count = v; },
+  'camera.detour.withinSeconds': (v) => { BURST.windowSeconds = v; },
+  'camera.detour.quietSeconds': (v) => { BURST.cooldownSeconds = v; },
+
+  'input.enabled': (v, ctx) => ctx.input.setParam('input.enabled', v),
+  'input.drag': (v, ctx) => ctx.input.setParam('input.drag', v),
+  'input.zoom': (v, ctx) => ctx.input.setParam('input.zoom', v),
+  'input.keyboard': (v, ctx) => ctx.input.setParam('input.keyboard', v),
+  'input.zoomFactor': (v, ctx) => ctx.input.setParam('input.zoomFactor', v),
+  'input.inertia': (v, ctx) => ctx.input.setParam('input.inertia', v),
+  'input.invert': (v, ctx) => ctx.input.setParam('input.invert', v),
+  'input.hideCursorSeconds': (v, ctx) => ctx.input.setParam('input.hideCursorSeconds', v),
+  // Owned by camera.js and campath.js, not by input.js: the zoom clamp, the
+  // framing it returns to and the idle countdown all live with the rig.
+  'input.zoomRange': (v, ctx) => ctx.rig.setParam('input.zoomRange', v),
+  'input.zoomReturnEase': (v, ctx) => ctx.rig.setParam('input.zoomReturnEase', v),
+  'input.rollReturnEase': (v, ctx) => ctx.rig.setParam('input.rollReturnEase', v),
+  'input.resumeSeconds': (v, ctx) => ctx.rig.setParam('input.resumeSeconds', v),
+
+  ...layerHandlers(['cityLights', 'coastline', 'bordersWatched', 'bordersWorld',
+                    'admin1', 'stars', 'aurora', 'atmosphere', 'ripples',
+                    'countryFlash']),
+
+  'ripples.cooldownSeconds': (v, ctx) => ctx.ripples.setCooldown(v),
+
+  'appearance.background': (v, ctx) => ctx.scene.background.set(v),
+  'appearance.bloom.strength': (v, ctx) => ctx.post.setBloom('strength', v),
+  'appearance.bloom.radius': (v, ctx) => ctx.post.setBloom('radius', v),
+  'appearance.bloom.threshold': (v, ctx) => ctx.post.setBloom('threshold', v),
+  'appearance.bloom.knee': (v, ctx) => ctx.post.setBloom('knee', v),
+  'appearance.starBrightness': (v, ctx) => ctx.stars.setBrightness(v),
+  'appearance.starDayGain': (v, ctx) => ctx.stars.setDayGain(v),
+  'appearance.starRampMinutes': (v, ctx) => ctx.stars.setRampMinutes(v),
+
   'rail.enabled': (v, ctx) => {
     if (v && !ctx.rail.mounted()) ctx.rail.mount();
     if (!v && ctx.rail.mounted()) ctx.rail.unmount();
   },
+
+  'polling.healthSeconds': (v, ctx) => ctx.polling('health', v),
+  'polling.railSeconds': (v, ctx) => ctx.polling('rail', v),
+  'polling.buildSeconds': (v, ctx) => ctx.polling('build', v),
+  'polling.sunSeconds': (v, ctx) => ctx.polling('sun', v),
+  'polling.starResyncSeconds': (v, ctx) => ctx.polling('starResync', v),
 };
 
 /**

@@ -22,6 +22,25 @@ const CAM_Z = { x: 0, y: 0, z: 1 };
 // the globe fully framed with room for the arcs standing off it.
 const DISTANCE = cfg('camera.distance', 4.6);
 
+// Settings path -> the key it writes in campath's parameter object. The two
+// names differ where config.js says what the setting IS to a reader and campath
+// says what it does to the maths (`degreesPerSecond` / `walkRate`), so the
+// mapping is written down once here rather than guessed at either end.
+const PARAM_KEYS = {
+  'camera.walk.enabled': 'walkEnabled',
+  'camera.walk.cycleSeconds': 'cycleSeconds',
+  'camera.walk.holdSeconds': 'holdSeconds',
+  'camera.walk.returnMaxSeconds': 'returnMaxSeconds',
+  'camera.walk.arriveDegrees': 'arriveDegrees',
+  'camera.walk.degreesPerSecond': 'walkRate',
+  'camera.walk.latitudeClamp': 'latClamp',
+  'camera.detour.enabled': 'detourEnabled',
+  'camera.detour.visitSeconds': 'visitSeconds',
+  'camera.detour.visitMaxSeconds': 'visitMaxSeconds',
+  'camera.detour.interruptManual': 'detourInterruptManual',
+  'input.resumeSeconds': 'resumeSeconds',
+};
+
 /** Weighted mean direction of arc origins, as a unit vector. Averaging
  *  vectors rather than lat/lon avoids the wrap-around bug that makes a camera
  *  looking at the Pacific swing to Africa. */
@@ -42,15 +61,15 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
   // Mutable, because the wheel and pinch move it. The floor is not a taste
   // decision: below ~3.2 radii the globe's angular radius exceeds the 17.5 deg
   // half-FOV and the limb clips on a 16:9 wall.
-  const minD = cfg('input.zoomRange.0', 3.3);
-  const maxD = cfg('input.zoomRange.1', 9.0);
+  let minD = cfg('input.zoomRange.0', 3.3);
+  let maxD = cfg('input.zoomRange.1', 9.0);
   // The framing the display owns. Zoom is borrowed exactly as orientation is:
   // without this, a passer-by who pulls the globe in to 3.3 radii and walks
   // off leaves the wall wrongly framed forever -- the view comes home after
   // resumeSeconds and the distance never does.
-  const homeD = clampDistance(DISTANCE, minD, maxD);
-  const zoomReturnEase = cfg('input.zoomReturnEase', 0.35);
-  const rollReturnEase = cfg('input.rollReturnEase', 0.6);
+  let homeD = clampDistance(DISTANCE, minD, maxD);
+  let zoomReturnEase = cfg('input.zoomReturnEase', 0.35);
+  let rollReturnEase = cfg('input.rollReturnEase', 0.6);
   let distance = homeD;
 
   // The pose a HAND has put the camera in, as a world -> camera quaternion, or
@@ -212,6 +231,35 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
         fovDeg: camera.fov,
         aspect: camera.aspect,
       };
+    },
+    /**
+     * One live setting that the rig or the motion maths owns.
+     *
+     * Keyed by the settings path rather than by a short name, so apply.js can
+     * hand it straight through and there is no second vocabulary to keep in
+     * step. Everything in PARAM_KEYS lands in campath's parameter object --
+     * which is `DEFAULTS` unless a caller passed its own -- and the rest are
+     * this file's own fields.
+     */
+    setParam(path, value) {
+      if (PARAM_KEYS[path]) { params[PARAM_KEYS[path]] = value; return; }
+      if (path === 'camera.distance') {
+        homeD = clampDistance(value, minD, maxD);
+        // Nobody is holding it: put the display's own framing on screen now
+        // rather than waiting for the next hand-back that may never come.
+        if (!isManual(state)) { distance = homeD; place(); }
+        return;
+      }
+      if (path === 'input.zoomRange') {
+        [minD, maxD] = value;
+        homeD = clampDistance(homeD, minD, maxD);
+        distance = clampDistance(distance, minD, maxD);
+        place();
+        return;
+      }
+      if (path === 'input.zoomReturnEase') { zoomReturnEase = value; return; }
+      if (path === 'input.rollReturnEase') { rollReturnEase = value; return; }
+      throw new Error(`camera: no parameter ${path}`);
     },
     setDistance(d) { distance = clampDistance(d, minD, maxD); place(); },
     distance() { return distance; },

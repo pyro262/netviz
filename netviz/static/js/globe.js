@@ -336,9 +336,43 @@ export async function createGlobe(radius) {
     }
   }
 
+  // name -> the object whose `visible` that layer toggle owns. Filled in here
+  // for the layers this module builds; main.js registers the ones it adds
+  // itself (aurora, ripples, atmosphere) so there is one toggle path and not
+  // four. A layer that was off at boot is null: it was never fetched, and
+  // saying so is better than a toggle that silently does nothing.
+  const layerObjects = {
+    cityLights: cityPoints,
+    coastline: coastlines,
+    admin1,
+    bordersWorld: allBorders,
+    bordersWatched: borders && borders.lines,
+  };
+
+  function registerLayer(name, obj) {
+    if (obj) layerObjects[name] = obj;
+  }
+
+  function setLayer(name, on) {
+    if (name === 'countryFlash') {
+      // flashCountry() reads cfg() per call, so the setting is already live;
+      // this only clears a flash that is mid-fade when it is turned off.
+      if (!on && borders) {
+        for (const f of borders.flashes) { f.active = false; f.seg.visible = false; }
+      }
+      return;
+    }
+    const obj = layerObjects[name];
+    if (!obj) {
+      throw new Error(`layer ${name} was off at boot and was never loaded; `
+                    + 'set it in config.js and reload');
+    }
+    obj.visible = !!on;
+  }
+
   return {
     group, material, coastlines, admin1, allBorders,
     borders: borders && borders.lines, cityPoints, surface,
-    flashCountry, updateFlashes,
+    flashCountry, updateFlashes, setLayer, registerLayer,
   };
 }

@@ -119,13 +119,23 @@ export async function createStars() {
   // Daylight ramp. Recomputed on the same 5s tick as the sidereal re-sync --
   // a 30-minute ramp moves by 0.3% in that time, so anything finer is wasted
   // trigonometry.
-  const base = cfg('appearance.starBrightness', 1.0);
-  const dayGain = cfg('appearance.starDayGain', 1.0);
-  const rampMinutes = cfg('appearance.starRampMinutes', 30);
+  // All three are `let`: settings.js declares them, so a patch has to be able
+  // to move them without a reload.
+  let base = cfg('appearance.starBrightness', 1.0);
+  let dayGain = cfg('appearance.starDayGain', 1.0);
+  let rampMinutes = cfg('appearance.starRampMinutes', 30);
+  let resyncSeconds = cfg('polling.starResyncSeconds', 5);
 
   function applyBrightness(date) {
     const home = cfg('home', null);
-    if (!home || dayGain === 1) return;         // nothing to ramp between
+    if (!home || dayGain === 1) {
+      // Nothing to ramp between, so the base value IS the answer. Writing it
+      // rather than returning early matters once starBrightness is live: a
+      // page with no home would otherwise keep the boot-time brightness for
+      // ever and the setting would look like it had done nothing.
+      cat.material.uniforms.brightness.value = base;
+      return;
+    }
     const f = dayFraction(date, home.lat, home.lon, rampMinutes);
     cat.material.uniforms.brightness.value = base * (1 + (dayGain - 1) * f);
   }
@@ -141,11 +151,17 @@ export async function createStars() {
     setPixelScale(v) {
       cat.material.uniforms.pixelScale.value = v;
     },
+    // Each of these writes one live field and re-applies; nothing else.
+    setBrightness(v) { base = v; applyBrightness(new Date()); },
+    setDayGain(v) { dayGain = v; applyBrightness(new Date()); },
+    setRampMinutes(v) { rampMinutes = v; applyBrightness(new Date()); },
+    setResync(v) { resyncSeconds = v; },
+    setVisible(on) { group.visible = !!on; },
     update(dt) {
       // The sky turns 15 arcseconds a second. Re-syncing every 5s is far finer
       // than a pixel and costs one trig call.
       sinceSync += dt;
-      if (sinceSync < 5) return;
+      if (sinceSync < resyncSeconds) return;
       sinceSync = 0;
       const now = new Date();
       applyTime(now);

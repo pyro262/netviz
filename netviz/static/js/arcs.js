@@ -19,6 +19,16 @@ const RADIAL = 5;
 // collector still stores and streams everything.
 const FLOWS_PER_SECOND = cfg('traffic.flowsPerSecond', 14);
 
+// Colour is derived, not stored: `color` (an explicit hex) wins over `colorAt`
+// (a position on the plasma ramp) and `gain` multiplies the result down. Any of
+// the three changing means the derived value has to be recomputed.
+const COLOUR_KEYS = ['color', 'colorAt', 'gain'];
+
+function specColor(c) {
+  const base = c.color ? new THREE.Color(c.color) : plasmaAt(c.colorAt);
+  return base.multiplyScalar(c.gain === undefined ? 1 : c.gain);
+}
+
 // lift scales the apex with chord length so short hops stay flat and long ones
 // sweep. maxRise caps it: chord runs to 2r for a near-antipodal pair, so an
 // uncapped block arc peaked 0.9r above the surface and towered over the limb
@@ -29,8 +39,9 @@ const FLOWS_PER_SECOND = cfg('traffic.flowsPerSecond', 14);
  *  field does and why the defaults are where they are. */
 function classSpec(name, fallback) {
   const c = { ...fallback, ...cfg(`arcs.${name}`, {}) };
-  const base = c.color ? new THREE.Color(c.color) : plasmaAt(c.colorAt);
-  return { ...c, color: base.multiplyScalar(c.gain === undefined ? 1 : c.gain) };
+  // `hex` keeps the source of the colour around, because setSpec has to be able
+  // to recompute the derived THREE.Color when gain or colorAt moves later.
+  return { ...c, hex: c.color, color: specColor(c) };
 }
 
 /**
@@ -130,6 +141,10 @@ export function createArcs(radius, capacity = 220, onLand = null) {
   const CLASS = buildClasses();
   const group = new THREE.Group();
   const pool = [];
+  // Both are `let`, not constants read at import: settings.js declares them as
+  // live settings, so a patch has to be able to move them without a reload.
+  let flowsPerSecond = FLOWS_PER_SECOND;
+  let bodyOpacity = cfg('arcs.bodyOpacity', 0.18);
 
   for (let i = 0; i < capacity; i += 1) {
     const geom = new THREE.TubeGeometry(
@@ -144,6 +159,10 @@ export function createArcs(radius, capacity = 220, onLand = null) {
         color: { value: new THREE.Color(0xffffff) },
         head: { value: 0.0 },     // pulse position along the arc, 0..1
         fade: { value: 0.0 },     // whole-arc opacity
+        // Opacity of the tube behind the travelling head. A uniform rather than
+        // a shader constant so it can be moved without recompiling 220
+        // materials -- see arcs.setUniform.
+        body: { value: bodyOpacity },
       },
       vertexShader: /* glsl */`
         varying float vT;
@@ -156,12 +175,12 @@ export function createArcs(radius, capacity = 220, onLand = null) {
         uniform vec3 color;
         uniform float head;
         uniform float fade;
+        uniform float body;
         varying float vT;
         void main() {
           float trail = smoothstep(0.22, 0.0, head - vT) * step(vT, head);
-          // Opacity of the tube behind the travelling head. Deliberately low:
-          // these blend additively and overlap heavily. See FLOWS_PER_SECOND.
-          float body = 0.18;
+          // The body term is deliberately low: these blend additively and
+          // overlap heavily along the busiest corridor. See flowsPerSecond.
           gl_FragColor = vec4(color, (body + trail) * fade);
         }
       `,
@@ -205,7 +224,7 @@ export function createArcs(radius, capacity = 220, onLand = null) {
     if (spec !== CLASS.block) {
       const now = performance.now() / 1000;
       if (now - windowStart >= 1) { windowStart = now; flowsThisSecond = 0; }
-      if (flowsThisSecond >= FLOWS_PER_SECOND) return;
+      if (flowsThisSecond >= flowsPerSecond) return;
       flowsThisSecond += 1;
     }
     const a = latLonToVec3(ev.sll[0], ev.sll[1], radius * 1.005);
@@ -289,5 +308,54 @@ export function createArcs(radius, capacity = 220, onLand = null) {
     return out;
   }
 
-  return { group, spawn, update, liveCount, origins };
+  /** A live setting that is not per-class. Writes the field or the uniform and
+   *  nothing else; settings.js owns the bounds and apply.js the ordering. */
+  function setUniform(key, value) {
+    if (key === 'flowsPerSecond') { flowsPerSecond = value; return; }
+    if (key === 'bodyOpacity') {
+      bodyOpacity = value;
+      for (const slot of pool) slot.mat.uniforms.body.value = value;
+      return;
+    }
+    throw new Error(`arcs: no uniform ${key}`);
+  }
+
+  /**
+   * One field of one arc class.
+   *
+   * The spec object is mutated IN PLACE rather than replaced, because
+   * `slot.spec === CLASS.block` is how update() counts live blocks for the
+   * density gain -- swapping in a fresh object would orphan every arc already
+   * in the air and undercount them for the rest of their life.
+   *
+   * `highlight` is the shape shared by all three highlighted networks, so it
+   * writes through to each live highlightN class; their colour and gain come
+   * from the collector and are not settings here.
+   */
+  function setSpec(cls, key, value) {
+    const targets = cls === 'highlight'
+      ? Object.keys(CLASS).filter((n) => n.startsWith('highlight'))
+      : [cls];
+    for (const name of targets) {
+      const spec = CLASS[name];
+      if (!spec) continue;
+      spec[key] = value;
+      if (COLOUR_KEYS.includes(key)) {
+        spec.color = specColor({ ...spec, color: spec.hex });
+      }
+    }
+  }
+
+  /** Retire every arc in the air. The tube radius is baked into a slot's
+   *  geometry at spawn, so a changed `tube` shows on the next arc and not on
+   *  the ones already drawn -- which is what makes it a rebuild rather than a
+   *  uniform. Clearing the pool is how it becomes visible within a frame. */
+  function rebuild() {
+    for (const slot of pool) {
+      slot.active = false;
+      slot.mesh.visible = false;
+    }
+  }
+
+  return { group, spawn, update, liveCount, origins, setUniform, setSpec, rebuild };
 }
