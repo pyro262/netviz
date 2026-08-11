@@ -154,6 +154,8 @@ export const CONFIG = {
       returnMaxSeconds: 45, // cap, so drifting traffic cannot eat a whole cycle
       arriveDegrees: 3,     // close enough to call it home
       degreesPerSecond: 1.6,
+      spanDegrees: 60,      // how far from the traffic a walk may get
+      rampFloor: 0.15,      // the walk sets off at this fraction of its peak rate
       latitudeClamp: 62,    // the walk bounces off this rather than stalling
     },
     // A burst of blocks from one country is the most interesting thing the

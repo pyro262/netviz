@@ -33,6 +33,8 @@ const PARAM_KEYS = {
   'camera.walk.returnMaxSeconds': 'returnMaxSeconds',
   'camera.walk.arriveDegrees': 'arriveDegrees',
   'camera.walk.degreesPerSecond': 'walkRate',
+  'camera.walk.spanDegrees': 'spanDegrees',
+  'camera.walk.rampFloor': 'rampFloor',
   'camera.walk.latitudeClamp': 'latClamp',
   'camera.detour.enabled': 'detourEnabled',
   'camera.detour.visitSeconds': 'visitSeconds',
