@@ -142,6 +142,19 @@ test('a walk that hits the span reverses instead of stalling', () => {
   // degrees -- verified flat out to 3000 simulated seconds, never higher.
   // 8.5 (spanDegrees * 0.85) is comfortably below that measured ceiling and
   // still close enough to the cap to prove the walk actually got there.
+  //
+  // Round-1 review fix: the window used to run 150s, which crosses the 120s
+  // cycle rollover -- the return leg then flies the camera from the span back
+  // to (0,0), and THAT flight alone contributed ~10 of total variation,
+  // regardless of whether the span guard itself did anything. Proven toothless
+  // by deleting the guard's `s.bearing = ...` / `s.latDir = ...` lines (a
+  // revert-but-never-turn stall) and watching this test still pass. Fixed by
+  // (a) keeping the window inside one cycle (119s, cycleSeconds is 120) so the
+  // return leg cannot contribute, and (b) asserting the distance comes back
+  // DOWN after the hit, not just that it moved: a revert-only clamp holds
+  // near the cap forever (measured minimum after hit: 8.50 degrees), while a
+  // real reversal actually retreats (measured minimum after hit: 3.78
+  // degrees). `spanDegrees * 0.6` (6) sits cleanly between the two.
   const traffic = { lat: 0, lon: 0 };
   const s = initialState();
   s.curLat = 0; s.curLon = 0; s.targetLat = 0; s.targetLon = 0;
@@ -150,17 +163,16 @@ test('a walk that hits the span reverses instead of stalling', () => {
   s.bearing = 90;                      // due east, so longitude does the moving
   const p = { ...DEFAULTS, spanDegrees: 10 };
   let hit = false;
-  let moved = 0;
-  let prev = 0;
-  for (let i = 0; i < 150 * 30; i += 1) {
+  let minAfter = Infinity;
+  for (let i = 0; i < 119 * 30; i += 1) {
     step(s, 1 / 30, traffic, p);
     const d = angularDistance(s.curLat, s.curLon, 0, 0);
     if (d >= p.spanDegrees * 0.85) hit = true;
-    if (hit) moved += Math.abs(d - prev);
-    prev = d;
+    if (hit) minAfter = Math.min(minAfter, d);
   }
   assert.ok(hit, 'the walk never reached the span at all');
-  assert.ok(moved > 1, 'the walk stopped dead at the span instead of turning back');
+  assert.ok(minAfter < p.spanDegrees * 0.6,
+    `the walk stopped dead at the span instead of turning back: min after hit was ${minAfter.toFixed(2)}`);
 });
 
 test('the walk still sweeps a real distance -- it is shorter, not parked', () => {
