@@ -132,9 +132,15 @@ function arcCurve(a, b, radius, lift, maxRise) {
 }
 
 /** @param onLand called once per arc, when its travelling head reaches the
- *  destination: (lat, lon, className). Used for the impact ripples and the
- *  block flash. Fired from update(), not spawn(), so the ring appears when the
- *  arc arrives rather than when the event did. */
+ *  destination: (lat, lon, className, country, colour, bloomScale). Used for
+ *  the impact ripples and the block flash. Fired from update(), not spawn(),
+ *  so the ring appears when the arc arrives rather than when the event did.
+ *
+ *  `colour` is the slot's LIVE shader uniform, not a copy -- the pool rewrites
+ *  it when the slot is recycled, so a callback that keeps the reference will
+ *  watch its ring change colour under it. Copy it. This is what lets a ripple
+ *  be drawn in its own arc's colour, including the highlight classes, whose
+ *  colours come from the collector and are not in any hardcoded table. */
 export function createArcs(radius, capacity = 220, onLand = null) {
   // Built here, not at import: the highlight colours come from the
   // collector and main.js awaits that fetch before calling this.
@@ -285,7 +291,10 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       // recycled slot: `landed` is reset in spawn().
       if (!slot.landed && head >= 1) {
         slot.landed = true;
-        if (onLand) onLand(slot.dlat, slot.dlon, slot.cls, slot.country);
+        if (onLand) {
+          onLand(slot.dlat, slot.dlon, slot.cls, slot.country,
+                 slot.mat.uniforms.color.value, slot.mesh.userData.bloomScale);
+        }
       }
       // Fade in fast, hold, fade out over the last third.
       slot.mat.uniforms.fade.value =
@@ -375,5 +384,13 @@ export function createArcs(radius, capacity = 220, onLand = null) {
     }
   }
 
-  return { group, spawn, update, liveCount, origins, setUniform, setSpec, rebuild };
+  /** Diagnostics only -- tools/verify_walk.py names the expected ripple colour
+   *  with this rather than re-deriving it. Nothing on the wall reads it. */
+  function classColour(name) {
+    return CLASS[name] && CLASS[name].color;
+  }
+
+  return {
+    group, spawn, update, liveCount, origins, setUniform, setSpec, rebuild, classColour,
+  };
 }

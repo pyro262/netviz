@@ -96,8 +96,19 @@ export function createRipples(radius, capacity = 48) {
     return oldest;
   }
 
-  /** @param className one of RIPPLE's keys; anything else is treated as flow. */
-  function spawn(lat, lon, className) {
+  /**
+   * @param className one of RIPPLE's keys; anything else is treated as flow.
+   * @param colour    optional THREE.Color -- the landing arc's own colour.
+   *                  Copied, never retained: the caller passes a live uniform,
+   *                  which the arc pool rewrites when it recycles the slot.
+   * @param bloomScale optional number, same source.
+   *
+   * Size and life stay keyed by CLASS, not by the arc: a block ring is larger
+   * and slower than a flow ring, which is how severity reads without a legend.
+   * Only the colour follows the arc. RIPPLE's own colours stay as the fallback
+   * -- a colourless call must draw something sane rather than black.
+   */
+  function spawn(lat, lon, className, colour = null, bloomScale = null) {
     const spec = RIPPLE[className] || RIPPLE.flow;
     if (!cooldown.allow(lat, lon, className, performance.now() / 1000)) return;
     const slot = take();
@@ -112,10 +123,11 @@ export function createRipples(radius, capacity = 48) {
     const size = radius * spec.maxRadius * 2;
     slot.mesh.scale.set(size, size, 1);
 
-    slot.mat.uniforms.color.value.copy(spec.color);
+    slot.mat.uniforms.color.value.copy(colour || spec.color);
     slot.mat.uniforms.width.value = spec.width;
     slot.mat.uniforms.progress.value = 0;
-    slot.mesh.userData.bloomScale = spec.bloomScale;
+    slot.mesh.userData.bloomScale = bloomScale === null || bloomScale === undefined
+      ? spec.bloomScale : bloomScale;
     slot.age = 0;
     slot.spec = spec;
     slot.active = true;

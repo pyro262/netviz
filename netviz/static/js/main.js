@@ -180,8 +180,8 @@ async function boot() {
 
   // The ripple and the country flash both fire on arrival, not on receipt --
   // an arc that is still travelling has not landed yet.
-  const arcs = createArcs(GLOBE_RADIUS, 220, (lat, lon, cls, country) => {
-    ripples.spawn(lat, lon, cls);
+  const arcs = createArcs(GLOBE_RADIUS, 220, (lat, lon, cls, country, colour, bloomScale) => {
+    ripples.spawn(lat, lon, cls, colour, bloomScale);
     if (cls === 'block') globe.flashCountry(country);
   });
   globe.group.add(arcs.group);      // arcs rotate with the globe
