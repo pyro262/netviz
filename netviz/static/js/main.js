@@ -383,7 +383,13 @@ async function boot() {
     scene, input: null, polling, resize, rail,
   };
   const settings = createApplier(ctx);
-  const menu = createMenu({ rig, settings, root: stage });
+  // The menu mounts on `body`, NOT on `#stage`. `#stage` is `position:
+  // fixed`, which creates a stacking context, so a menu inside it ranks its
+  // z-index only among stage's own children -- and `#rail` is a later
+  // sibling of `#stage`, so the rail's numbers painted straight over the
+  // menu's opaque background and it read as transparent. Raising the menu's
+  // z-index cannot fix that (measured: 9999 changed nothing).
+  const menu = createMenu({ rig, settings, root: document.body });
   input = startInput({ canvas: renderer.domElement, rig, menu });
   ctx.input = input;
 

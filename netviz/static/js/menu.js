@@ -157,8 +157,11 @@ function clampPosition(node, x, y) {
  * every click that changes something goes through `settings.apply({path:
  * value})`, because the layer ids in menuModel's submenu ARE schema paths and
  * there is no second way to write one; the menu never touches CONFIG or a
- * live object directly. `root` is the DOM node the menu mounts under (`#stage`
- * on the real page).
+ * live object directly. `root` is the DOM node the menu mounts under --
+ * `document.body` on the real page, and deliberately NOT `#stage`: `#stage`
+ * is `position: fixed`, which creates a stacking context, so a menu inside it
+ * ranks its z-index only among stage's own children and the `#rail` sibling
+ * painted its numbers straight over the menu's opaque background.
  *
  * Built from menuModel() on every open, never cached across opens, so a
  * toggle flipped a minute ago -- by this menu or by anything else that calls

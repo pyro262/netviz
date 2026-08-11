@@ -233,6 +233,60 @@ def run_rail_url_case(ctx, url) -> bool:
         page.close()
 
 
+def run_menu_over_rail_case(ctx, url) -> bool:
+    """Case 15, on its own `?rail=1` page: the menu must be the topmost thing
+    where it overlaps the rail.
+
+    `#stage` is `position: fixed`, and a fixed element creates a STACKING
+    CONTEXT -- so a `.menu` mounted under it ranks its `z-index: 5` only
+    among `#stage`'s own children, while `#rail` is a later sibling of
+    `#stage` at the root level and paints over the entire stage subtree.
+    The menu's opaque background was drawn correctly and the rail's numbers
+    were simply painted on top of it, which reads as a transparent menu.
+    Raising the menu's z-index cannot fix it (measured: 9999 changes
+    nothing); the menu has to leave `#stage`.
+
+    Hit-testing is the check, not a screenshot: `elementsFromPoint` returns
+    the paint order the eye sees, and a pixel comparison of amber-on-near-
+    black would need a threshold nobody can defend."""
+    sep = "&" if "?" in url else "?"
+    page = ctx.new_page()
+    try:
+        page.goto(url + sep + "rail=1", wait_until="load")
+        page.wait_for_function("window.__netvizReady === true", timeout=20_000)
+        time.sleep(2.0)
+        # The rail is the right 26%; open the menu just inside its left edge
+        # so the panel is guaranteed to overlap it.
+        pos = page.evaluate("""() => {
+          const r = document.getElementById('rail').getBoundingClientRect();
+          return {x: r.left + 8, y: r.top + r.height * 0.25};
+        }""")
+        prevented = dispatch_contextmenu(page, pos["x"], pos["y"])
+        time.sleep(0.2)
+        probe = page.evaluate("""() => {
+          const el = document.querySelector('.menu');
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          const railRect = document.getElementById('rail').getBoundingClientRect();
+          const overlaps = r.right > railRect.left;
+          // A point well inside the menu, and inside the rail's column.
+          const px = Math.max(r.left + 12, railRect.left + 4);
+          const py = r.top + Math.min(40, r.height / 2);
+          const top = document.elementsFromPoint(px, py)
+                              .map((e) => (e.className || e.id || e.tagName).toString());
+          return {overlaps, point: [px, py], top: top.slice(0, 3),
+                  menuIsTopmost: !!(top.length && el.contains(document.elementFromPoint(px, py))),
+                  parent: el.parentElement.id || el.parentElement.tagName};
+        }""")
+        ok = report(
+            "15: the menu paints over the rail, not under it",
+            bool(probe) and prevented and probe["overlaps"] and probe["menuIsTopmost"],
+            f"probe={probe}")
+        return ok
+    finally:
+        page.close()
+
+
 def run(page, canvas_center, ctx, url) -> bool:
     cx, cy = canvas_center
     ok = True
@@ -579,6 +633,10 @@ def run(page, canvas_center, ctx, url) -> bool:
         and view_unchanged and after_state["manual"] and after_state["held"],
         f"before={before_view} burst_target={burst_target} mid_drag={mid_drag} "
         f"visit_result={visit_result} after={after_view} after_state={after_state}")
+
+    # --------------------------------------------------------- case 15 --
+    # Own page again, because it needs the rail actually mounted.
+    ok &= run_menu_over_rail_case(ctx, url)
 
     return ok
 
