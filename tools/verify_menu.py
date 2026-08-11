@@ -3,13 +3,17 @@
 
 Gestures are the half of Task 3 that cannot be judged by reading. This
 script drives a real Chromium (or a real deployment, with --url) through
-13 cases: the menu's three openers, its refusal to open on a plain mouse
+14 cases: the menu's three openers, its refusal to open on a plain mouse
 double-click, its interaction with the camera rig and the settings layer,
-and four cases added after a whole-branch review found real bugs a spy
+four cases added after a whole-branch review found real bugs a spy
 assertion had let through -- "Look here" silently doing nothing (case 10),
 the native context menu still appearing over an open menu (case 11), the
 rail toggle misreporting under the documented `?rail=1` kiosk setup
-(case 12), and the corner-clamp layout path (case 13).
+(case 12), and the corner-clamp layout path (case 13) -- and one more
+(case 14) added after a SCOPED RE-REVIEW of the case 10 fix found it had
+introduced a regression: a block burst could now steal a view someone was
+holding, because the fix's hand-back lived in the one method both the
+menu and the automatic burst detector called.
 
 Every case that claims the menu is OPEN asserts the menu ELEMENT is
 actually in the document with a non-zero bounding rect -- not just that
@@ -527,6 +531,54 @@ def run(page, canvas_center, ctx, url) -> bool:
         inside,
         f"rect={rect}")
     close_menu()
+
+    # --------------------------------------------------------- case 14 --
+    # A block burst must NOT steal a held view. Regression case for a bug a
+    # scoped re-review caught in the case 10 fix: camera.js's visit() used
+    # to unconditionally hand the camera back before starting a visit, which
+    # fixed "Look here" but also meant the automatic burst detour (main.js,
+    # calling this exact rig.visit()) could now fly away from underneath
+    # someone mid-drag -- exactly what CLAUDE.md documents as a guarantee
+    # ("a block burst never takes a held view, and a burst during a drag is
+    # dropped rather than queued"). camera.js's fix split the method in two:
+    # visit() (the burst detector's path, unconditionally respecting the
+    # manual/held guard) and lookHere() (the menu's path, which overrides
+    # it). This drives the REAL page through a REAL drag -- unlike
+    # campath.test.mjs's existing burst-vs-manual tests, which call
+    # startVisit() directly on raw state and so never exercised camera.js's
+    # visit()/lookHere() wrapper at all, the exact gap that let the
+    # regression through. camera.js cannot be imported under `node --test`
+    # in this repo (no local `three` package, no node_modules, no bundler --
+    # confirmed: `node --input-type=module --eval "import('camera.js')"`
+    # fails with "Cannot find package 'three'"), so this is the only place
+    # that can prove the wrapper itself, not just the state machine under it.
+    close_menu()
+    before_view = page.evaluate("() => window.__netviz.rig.view()")
+    burst_target = {
+        "lat": max(-60.0, min(60.0, -before_view["lat"])),
+        "lon": ((before_view["lon"] + 150 + 180) % 360) - 180,
+    }
+    page.mouse.move(cx, cy)
+    page.mouse.down()   # real pointerdown -> rig.grab(): manual=true, held=true
+    time.sleep(0.1)
+    mid_drag = page.evaluate(
+        "() => ({manual: window.__netviz.rig.manual(), held: window.__netviz.rig.held()})")
+    visit_result = page.evaluate(
+        "(t) => window.__netviz.rig.visit(t.lat, t.lon)", burst_target)
+    time.sleep(0.3)
+    after_view = page.evaluate("() => window.__netviz.rig.view()")
+    after_state = page.evaluate(
+        "() => ({manual: window.__netviz.rig.manual(), held: window.__netviz.rig.held()})")
+    page.mouse.up()     # real pointerup -> rig.release(), clean up the drag
+    time.sleep(0.1)
+    view_unchanged = (abs(after_view["lat"] - before_view["lat"]) < 0.01
+                       and abs(after_view["lon"] - before_view["lon"]) < 0.01)
+    ok &= report(
+        "14: a block burst (rig.visit) does not steal a view being held",
+        mid_drag["manual"] and mid_drag["held"] and visit_result is False
+        and view_unchanged and after_state["manual"] and after_state["held"],
+        f"before={before_view} burst_target={burst_target} mid_drag={mid_drag} "
+        f"visit_result={visit_result} after={after_view} after_state={after_state}")
 
     return ok
 

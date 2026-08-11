@@ -204,18 +204,39 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
       place();
     },
     /**
-     * Go and look at a blocked country. Refused while a visit is already
-     * running -- the display finishes looking at one thing before the next.
-     *
-     * NOT refused for being in manual mode, unlike the automatic block-burst
-     * detour: every menu opener leaves the camera manual (see
-     * forceHandBack's own comment), so a plain startVisit() call here would
-     * have silently done nothing on every "Look here" click. The explicit
-     * request hands the camera back first, exactly as the ordinary idle
-     * timeout would, then proceeds through the same startVisit the burst
-     * detector uses.
+     * Go and look at a blocked country -- the automatic block-burst detour's
+     * own path (main.js). Refused while a visit is already running, and
+     * refused while the camera is manual unless camera.detour.interruptManual
+     * says otherwise: "a block burst never takes a held view, and a burst
+     * during a drag is dropped rather than queued" (see CLAUDE.md). This is
+     * a bare pass-through to startVisit's own guard on purpose -- do not add
+     * a hand-back here. See lookHere() for the one caller that is allowed to
+     * override a hold, and why the two must not share a code path.
      */
     visit(lat, lon) {
+      return startVisit(state, lat, lon, params);
+    },
+    /**
+     * Go and look at a point the menu's "Look here" was clicked over --
+     * an explicit, one-shot, user-initiated request, and the ONLY caller
+     * allowed to override a manual hold.
+     *
+     * Every menu opener leaves the camera manual (toggleMenu pokes on open,
+     * input.tick re-pokes every frame the menu stays open), which is
+     * precisely the state startVisit()'s own guard refuses by default -- a
+     * plain visit() call here silently did nothing on every "Look here"
+     * click until this was split out (see forceHandBack's own comment).
+     *
+     * This must stay a SEPARATE method from visit(), not a flag on it: a
+     * shared method with no caller-distinguishing parameter previously made
+     * camera.detour.interruptManual dead for every call, because
+     * isManual(state) was already false by the time startVisit ran, and the
+     * automatic block-burst detour (main.js) started overriding a view
+     * somebody was actively holding -- the exact regression this comment
+     * exists to prevent a repeat of. The burst detector must keep calling
+     * visit(), never this.
+     */
+    lookHere(lat, lon) {
       if (isManual(state)) forceHandBack(state);
       return startVisit(state, lat, lon, params);
     },

@@ -150,7 +150,10 @@ function clampPosition(node, x, y) {
  * createMenu({ rig, settings, root }) -> { open(x, y, ndc), close(), isOpen() }
  *
  * `rig` supplies `pointAt(ndc)` (what the pointer was over, for "Look here")
- * and `visit(lat, lon)` (the action itself). `settings` is the live applier --
+ * and `lookHere(lat, lon)` (the action itself) -- NOT `visit()`, which is the
+ * automatic block-burst detour's path and, unlike this one, must never
+ * override a held view; see camera.js's own comment on the two methods for
+ * why they cannot share a code path. `settings` is the live applier --
  * every click that changes something goes through `settings.apply({path:
  * value})`, because the layer ids in menuModel's submenu ARE schema paths and
  * there is no second way to write one; the menu never touches CONFIG or a
@@ -219,7 +222,7 @@ export function createMenu({ rig, settings, root }) {
       if (item.note) row.append(el('span', 'menu-note', item.note));
       if (item.enabled) {
         row.addEventListener('click', act(() => {
-          if (item.id === 'lookHere' && point) rig.visit(point.lat, point.lon);
+          if (item.id === 'lookHere' && point) rig.lookHere(point.lat, point.lon);
         }));
       }
       return row;

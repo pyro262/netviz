@@ -245,7 +245,7 @@ test('open refuses and draws nothing when input.lock is set', () => {
     CONFIG.input.lock = true;
     try {
       const menu = createMenu({
-        rig: { pointAt: () => null, visit: () => {} },
+        rig: { pointAt: () => null, lookHere: () => {} },
         settings: { apply: () => { throw new Error('must not be called'); } },
         root: dom.root,
       });
@@ -263,7 +263,7 @@ test('open draws the menu when input.lock is not set', () => {
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
     });
@@ -282,7 +282,7 @@ test('open draws exactly the rows menuModel describes, not just SOMETHING', () =
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
     });
@@ -318,7 +318,7 @@ test('a toggle click applies the schema path with the flipped value, and closes'
   withFakeGlobals(dom, () => {
     const log = [];
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: (patch) => log.push(patch) },
       root: dom.root,
     });
@@ -339,7 +339,7 @@ test('a layer toggle applies its own id unchanged, since layer ids ARE schema pa
   withFakeGlobals(dom, () => {
     const log = [];
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: (patch) => log.push(patch) },
       root: dom.root,
     });
@@ -352,12 +352,18 @@ test('a layer toggle applies its own id unchanged, since layer ids ARE schema pa
   });
 });
 
-test('lookHere calls rig.visit with the lat/lon it was opened at, and closes', () => {
+test('lookHere calls rig.lookHere (NOT rig.visit) with the lat/lon it was opened at, and closes', () => {
+  // rig.lookHere, specifically -- not rig.visit, which is the automatic
+  // block-burst detour's own path and must never override a held view (see
+  // camera.js's comment on why the two cannot share a method). A menu whose
+  // rig fake happened to expose both would not catch a regression back to
+  // calling visit(); this fake only implements lookHere, so a regression
+  // throws here instead of silently passing.
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const visited = [];
     const menu = createMenu({
-      rig: { pointAt: () => ({ lat: 12.5, lon: -45.25 }), visit: (lat, lon) => visited.push([lat, lon]) },
+      rig: { pointAt: () => ({ lat: 12.5, lon: -45.25 }), lookHere: (lat, lon) => visited.push([lat, lon]) },
       settings: { apply: () => { throw new Error('must not be called'); } },
       root: dom.root,
     });
@@ -376,7 +382,7 @@ test('lookHere is disabled and inert when the pointer was over empty sky', () =>
   withFakeGlobals(dom, () => {
     const visited = [];
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: (lat, lon) => visited.push([lat, lon]) },
+      rig: { pointAt: () => null, lookHere: (lat, lon) => visited.push([lat, lon]) },
       settings: { apply: () => {} },
       root: dom.root,
     });
@@ -393,7 +399,7 @@ test('a click outside the menu closes it', () => {
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
     });
@@ -409,7 +415,7 @@ test('esc closes the menu', () => {
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
     });
@@ -423,7 +429,7 @@ test('losing focus closes the menu', () => {
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
     });
@@ -437,7 +443,7 @@ test('opening again replaces the old menu rather than stacking a second one', ()
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
     });
@@ -455,7 +461,7 @@ test('an open/close cycle leaves no listener behind on document or window', () =
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
     });
@@ -474,7 +480,7 @@ test('close() is idempotent', () => {
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
-      rig: { pointAt: () => null, visit: () => {} },
+      rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
     });
