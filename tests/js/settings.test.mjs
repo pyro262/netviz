@@ -48,6 +48,28 @@ test('the shipped default is inside its own bounds', () => {
   }
 });
 
+test('every list declares the type of its elements', () => {
+  // "Is it an array" is not validation. dnsPorts: ["53"] is a perfectly good
+  // array that then never matches anything, because isDnsPort tests numbers --
+  // DNS quietly stops being filtered with nothing reporting a problem.
+  for (const p of paths()) {
+    const e = entry(p);
+    if (e.type !== 'list') continue;
+    assert.ok(['number', 'string', 'boolean'].includes(e.of), `${p}: no 'of'`);
+  }
+});
+
+test('coerce rejects a list whose elements are the wrong type', () => {
+  assert.deepEqual(coerce('traffic.dnsPorts', [53, 853]), { ok: true, value: [53, 853] });
+  assert.deepEqual(coerce('traffic.dnsPorts', []), { ok: true, value: [] });
+  const bad = coerce('traffic.dnsPorts', [53, '853']);
+  assert.equal(bad.ok, false);
+  assert.match(bad.why, /element 1 is string, not number/);
+  // And the mirror case: an address list is strings, so a bare number is wrong.
+  assert.equal(coerce('traffic.resolvers', ['1.1.1.1']).ok, true);
+  assert.equal(coerce('traffic.resolvers', [1]).ok, false);
+});
+
 test('defaultOf reads config.js rather than a copy', () => {
   assert.equal(defaultOf('traffic.flowsPerSecond'), cfg('traffic.flowsPerSecond'));
   assert.equal(defaultOf('rail.enabled'), cfg('rail.enabled'));

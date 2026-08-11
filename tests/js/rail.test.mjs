@@ -217,7 +217,8 @@ test('a collector without spark support still renders its bars', () => {
 
 import { start } from '../../netviz/static/js/rail.js';
 
-/** Minimal DOM: rail.js touches only getElementById, classList and innerHTML. */
+/** Minimal DOM: rail.js touches getElementById, classList, and builds nodes
+ *  through createElement/append/replaceChildren -- never innerHTML. */
 function fakeDom() {
   const mk = () => {
     const el = {
@@ -257,22 +258,28 @@ test('the rail can be taken back down again', async () => {
   const timers = [];
   const realDoc = globalThis.document;
   const realSetInterval = globalThis.setInterval;
+  const realClearInterval = globalThis.clearInterval;
   const realFetch = globalThis.fetch;
   globalThis.document = dom.document;
   globalThis.setInterval = (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length; };
   globalThis.clearInterval = (id) => { if (timers[id - 1]) timers[id - 1].live = false; };
   globalThis.fetch = async () => ({ ok: false });
   try {
-    let layouts = 0;
-    const handle = start({ onLayout: () => { layouts += 1; } });
-    assert.equal(layouts, 1, 'onLayout must run while the rail is in the document');
+    const handle = start();
+    // start() does NOT resize -- the caller does, once. What it guarantees is
+    // the ORDERING: by the time it returns, body.rail is set and the rail is
+    // painted, so a caller measuring #stage next sees the narrowed box.
     assert.equal(dom.body.classList.contains('rail'), true);
+    assert.ok(dom.rail.children.length > 0, 'the rail was not painted before start() returned');
     assert.equal(timers.filter((t) => t.live).length, 2, 'poll and clock');
 
     handle.stop();
     assert.equal(dom.body.classList.contains('rail'), false, 'body.rail survived stop()');
     assert.equal(timers.filter((t) => t.live).length, 0, 'a timer outlived the rail');
-    assert.equal(dom.rail.innerHTML, '', 'the rail still has content after stop()');
+    // children, not innerHTML: paint() builds nodes with replaceChildren and
+    // never touches innerHTML, so the old assertion held on a fake that started
+    // at '' and would have passed with the teardown deleted entirely.
+    assert.equal(dom.rail.children.length, 0, 'the rail still has content after stop()');
 
     handle.stop();          // idempotent: a double toggle must not throw
     // Give pending async operations time to complete with stubbed globals
@@ -280,6 +287,7 @@ test('the rail can be taken back down again', async () => {
   } finally {
     globalThis.document = realDoc;
     globalThis.setInterval = realSetInterval;
+    globalThis.clearInterval = realClearInterval;
     globalThis.fetch = realFetch;
   }
 });

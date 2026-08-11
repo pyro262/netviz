@@ -273,16 +273,19 @@ function paint(root, data, clock) {
  * with the rail off nothing here runs, no element is created and no request is
  * made, so a wall that does not want it pays nothing for its existence.
  *
- * `onLayout` is called once, synchronously, after the rail element is in the
- * document: the globe's canvas is now narrower and the renderer has to be
- * resized against the new box before the first frame.
+ * THE CALLER RESIZES, and this function deliberately does not. It used to take
+ * an `onLayout` callback and fire it here, which meant mounting cost two
+ * resizes -- rail.js's and then the caller's -- against unmounting's one, while
+ * the settings executor's whole point is that however many keys ask for a
+ * relayout it happens once. What is guaranteed instead is the ORDERING: when
+ * this returns, `body.rail` is set and the rail is painted, so a caller that
+ * measures #stage next sees the narrowed box rather than the full viewport.
  */
-export function start({ onLayout } = {}) {
+export function start() {
   const root = document.getElementById('rail');
   if (!root) return null;
   document.body.classList.add('rail');
   root.classList.add('on');
-  if (onLayout) onLayout();
 
   let snapshot = null;
 
@@ -329,7 +332,9 @@ export function start({ onLayout } = {}) {
       clearInterval(clockTimer);
       document.body.classList.remove('rail');
       root.classList.remove('on');
-      root.innerHTML = '';
+      // replaceChildren, matching paint() -- innerHTML never held anything,
+      // because paint() has always built nodes rather than markup.
+      root.replaceChildren();
     },
   };
 }

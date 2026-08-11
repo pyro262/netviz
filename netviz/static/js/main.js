@@ -147,14 +147,25 @@ async function boot() {
   if (cfg('layers.aurora', true)) {
     aurora = createAurora(GLOBE_RADIUS);
     globe.group.add(aurora.mesh);
-    globe.registerLayer('aurora', aurora.mesh);
+    // The handle, not the mesh: aurora.setVisible owns the decision, because
+    // apply() recomputes mesh.visible from Kp on every poll.
+    globe.registerLayer('aurora', aurora);
   }
 
   // A disabled ripple layer still needs a spawn() to call, so the arc landing
   // callback below does not have to know whether it exists.
+  // The stub carries the whole interface, as the stars stub does and as
+  // input.js's used to: the render loop and the arc-landing callback both call
+  // into it, and setCooldown is reachable from a settings patch. setCooldown
+  // throws rather than no-opping, so `ripples.cooldownSeconds` on a build with
+  // no ripple layer is REPORTED as rejected instead of appearing to work.
+  const ripplesOff = () => {
+    throw new Error('the ripple layer was off at boot and was never built; '
+                  + 'set layers.ripples in config.js and reload');
+  };
   const ripples = cfg('layers.ripples', true)
     ? createRipples(GLOBE_RADIUS)
-    : { group: new THREE.Group(), spawn() {}, update() {} };
+    : { group: new THREE.Group(), spawn() {}, update() {}, setCooldown: ripplesOff };
   globe.group.add(ripples.group);   // ripples sit on the surface, so they rotate
   // Registered with the globe so `layers.*` has one toggle path rather than one
   // per module. A layer that was off at boot is not registered at all, and
@@ -277,7 +288,12 @@ async function boot() {
     mounted: () => railHandle !== null,
     mount() {
       if (railHandle) return;
-      railHandle = startRail({ onLayout: resize });
+      // No onLayout hook: the caller resizes. Boot calls resize() below and the
+      // settings executor calls ctx.resize() after any relayout key, so letting
+      // rail.js resize as well made mounting cost TWO resizes against
+      // unmounting's one -- and a resize rebuilds the composer's render
+      // targets, which is the whole reason the executor collapses them to one.
+      railHandle = startRail();
     },
     unmount() {
       if (!railHandle) return;

@@ -27,9 +27,19 @@ import { cfg } from './config.js';
 
 /**
  * type      bool | int | number | enum | color | list
+ * min/max   required on int and number; see the tests
+ * of        required on list: the typeof every element must equal it. Without
+ *           it a list is only checked for being an array, and a wrong element
+ *           type fails SILENTLY downstream -- dnsPorts: ["53"] is a perfectly
+ *           good array that never matches a numeric port again.
  * strategy  uniform  — write a uniform or a field; the next frame shows it
  *           rebuild  — dispose the affected object and construct it again
  *           relayout — rebuild AND resize, because the drawing area changed
+ *
+ *           The strategy must describe the MECHANISM, not the importance. It is
+ *           not a severity label: `rebuild` costs an extra pass and `relayout`
+ *           rebuilds the composer's render targets, so anything that is really
+ *           just a field write is `uniform` however dramatic it looks on screen.
  * help      why this value is what it is, lifted from the config.js comments
  */
 
@@ -102,12 +112,17 @@ const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
 // which the collector owns -- so the shared shape carries neither.
 const HIGHLIGHT_KEYS = ['life', 'tube', 'speed', 'lift', 'maxRise', 'bloomScale'];
 
-/** The ten `layers` booleans. Each is `mesh.visible` on one object, and each is
- *  independent of the others. */
+/** The ten `layers` booleans. Each is `mesh.visible` on one object -- or the
+ *  object's own setVisible where it has one -- and each is independent of the
+ *  others. `uniform`, not `rebuild`: nothing is torn down and rebuilt, and a
+ *  strategy that overstates what it does costs a needless pass on every toggle.
+ *  A layer switched OFF at boot was never loaded and cannot be switched on;
+ *  globe.setLayer throws and the executor reports that, rather than a control
+ *  appearing to work. */
 function layers(entries) {
   const out = {};
   for (const [name, help] of entries) {
-    out[`layers.${name}`] = { type: 'bool', strategy: 'rebuild', help };
+    out[`layers.${name}`] = { type: 'bool', strategy: 'uniform', help };
   }
   return out;
 }
@@ -129,7 +144,7 @@ export const SCHEMA = {
         + 'collector still records every one of them.',
   },
   'traffic.dnsPorts': {
-    type: 'list', strategy: 'uniform',
+    type: 'list', of: 'number', strategy: 'uniform',
     help: 'Ports that mean DNS, matched on either end: 53 plain, 853 '
         + 'DNS-over-TLS, 5353 mDNS. Resolvers answer FROM 53 and clients query '
         + 'TO 53, and both directions are on the feed.',
@@ -142,13 +157,13 @@ export const SCHEMA = {
         + '443 and looks exactly like web traffic. Blocks are never suppressed.',
   },
   'traffic.resolvers': {
-    type: 'list', strategy: 'uniform',
+    type: 'list', of: 'string', strategy: 'uniform',
     help: 'The known public resolvers. An entry ending in `.` or `:` is a '
         + 'prefix; anything else is matched whole, so 1.1.1.10 does not match '
         + '1.1.1.1.',
   },
   'traffic.extraResolvers': {
-    type: 'list', strategy: 'uniform',
+    type: 'list', of: 'string', strategy: 'uniform',
     help: 'Your own additions -- an upstream your resolver forwards to, a '
         + 'provider resolver, anything the built-in list misses. Additive, and '
         + 'the collector can add to it from NETVIZ_EXTRA_RESOLVERS.',
@@ -445,13 +460,17 @@ export const SCHEMA = {
     help: '/build.json -- reload the kiosk when the deployed assets change. '
         + 'Deploys are aperiodic, so this is the slowest of the three.',
   },
+  // These two are `uniform`, unlike the three above: they are counters compared
+  // against a variable in the render loop, so writing the variable IS the whole
+  // change. `rebuild` is kept for the three that genuinely clearInterval and
+  // start a new timer.
   'polling.sunSeconds': {
-    type: 'number', min: 0.1, max: 3600, strategy: 'rebuild',
+    type: 'number', min: 0.1, max: 3600, strategy: 'uniform',
     help: 'The subsolar point moves 0.004 deg/sec, so per-frame updates are '
         + 'pure waste.',
   },
   'polling.starResyncSeconds': {
-    type: 'number', min: 0.1, max: 3600, strategy: 'rebuild',
+    type: 'number', min: 0.1, max: 3600, strategy: 'uniform',
     help: 'The sky turns 15 arcseconds a second, so re-syncing sidereal time '
         + 'this often is far finer than a pixel and costs one trig call.',
   },
@@ -504,9 +523,23 @@ export function coerce(path, value) {
         return { ok: false, why: 'not a #rgb or #rrggbb colour' };
       }
       return { ok: true, value };
-    case 'list':
+    case 'list': {
       if (!Array.isArray(value)) return { ok: false, why: 'not a list' };
+      // Element type, not just "is it an array". `traffic.dnsPorts: ["53"]`
+      // coerced fine and then never matched anything, because isDnsPort tests
+      // with .includes(port) against a NUMBER -- so DNS quietly stopped being
+      // filtered and every resolver arc came back, with nothing reporting a
+      // problem. A list whose elements are the wrong type is the same class of
+      // silent failure as a number outside its bounds.
+      if (e.of) {
+        const bad = value.findIndex((el) => typeof el !== e.of); // eslint-disable-line valid-typeof
+        if (bad !== -1) {
+          return { ok: false,
+                   why: `element ${bad} is ${typeof value[bad]}, not ${e.of}` };
+        }
+      }
       return { ok: true, value };
+    }
     default:
       return { ok: false, why: `unhandled type ${e.type}` };
   }

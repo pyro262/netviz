@@ -367,7 +367,13 @@ export async function createGlobe(radius) {
       throw new Error(`layer ${name} was off at boot and was never loaded; `
                     + 'set it in config.js and reload');
     }
-    obj.visible = !!on;
+    // A layer that re-asserts its own visibility on a timer must be told, not
+    // overwritten. The aurora recomputes mesh.visible from the Kp reading on
+    // every poll, so writing .visible here turned itself back on up to three
+    // hours later while CONFIG still said the layer was off. Anything with a
+    // setVisible owns the decision; everything else is a plain mesh.
+    if (typeof obj.setVisible === 'function') obj.setVisible(!!on);
+    else obj.visible = !!on;
   }
 
   return {
