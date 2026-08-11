@@ -16,7 +16,7 @@ export function isDoubleTap(prev, now, opts) {
   if (!prev) return false;
 
   const timeDiff = now.t - prev.t;
-  if (timeDiff > opts.maxMs) return false;
+  if (timeDiff < 0 || timeDiff > opts.maxMs) return false;
 
   const distSq = (now.x - prev.x) ** 2 + (now.y - prev.y) ** 2;
   const maxDistSq = opts.maxPx ** 2;

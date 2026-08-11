@@ -94,3 +94,31 @@ test('the double-tap window is measured, not guessed', () => {
   assert.equal(DOUBLE_TAP.maxMs, 320);
   assert.equal(DOUBLE_TAP.maxPx, 24);
 });
+
+test('a backwards time jump is rejected', () => {
+  // Clock jumps or out-of-order events must not be misidentified as double-taps.
+  // Same location, but now.t < prev.t by a large margin.
+  assert.equal(isDoubleTap({ t: 2000, x: 500, y: 400 },
+                           { t: 1000, x: 500, y: 400 }, DOUBLE_TAP), false);
+});
+
+test('at boundary: time exactly at maxMs is included', () => {
+  // The boundary is inclusive: exactly 320ms apart, same location, is a double-tap.
+  assert.equal(isDoubleTap({ t: 1000, x: 500, y: 400 },
+                           { t: 1320, x: 500, y: 400 }, DOUBLE_TAP), true);
+});
+
+test('at boundary: distance exactly at maxPx is included', () => {
+  // The boundary is inclusive: exactly 24px apart, within time window, is a double-tap.
+  // 24px on one axis alone satisfies the 2D distance check.
+  assert.equal(isDoubleTap({ t: 1000, x: 500, y: 400 },
+                           { t: 1200, x: 524, y: 400 }, DOUBLE_TAP), true);
+});
+
+test('diagonal distance over the limit is rejected', () => {
+  // A diagonal move where both axes are under the limit but 2D distance exceeds it.
+  // dx=20, dy=20 → distSq=800 → dist≈28.3px, over the 24px limit.
+  // This catches a regression to per-axis checking (which would incorrectly accept it).
+  assert.equal(isDoubleTap({ t: 1000, x: 500, y: 400 },
+                           { t: 1200, x: 520, y: 420 }, DOUBLE_TAP), false);
+});
