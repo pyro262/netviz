@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createApplier, HANDLERS } from '../../netviz/static/js/apply.js';
-import { paths } from '../../netviz/static/js/settings.js';
+import { createApplier, HANDLERS, ARC_REBUILD_KEYS } from '../../netviz/static/js/apply.js';
+import { paths, entry } from '../../netviz/static/js/settings.js';
+import { validateZoomRange } from '../../netviz/static/js/orbit.js';
 
 /** Records what the executor did, in order.
  *
@@ -53,6 +54,64 @@ test('every schema path has a handler', () => {
 test('every handler has a schema path', () => {
   const strays = Object.keys(HANDLERS).filter((p) => !paths().includes(p));
   assert.deepEqual(strays, [], `handlers with no schema entry: ${strays.join(', ')}`);
+});
+
+test('the arc keys that clear the pool are exactly the ones declared rebuild', () => {
+  // The strategy has to describe what a viewer will SEE. lift, maxRise and tube
+  // are baked into a slot's TubeGeometry at spawn, so they cannot be pushed
+  // into the arcs already in the air; everything else about an arc can be, and
+  // is. If the two lists ever disagree, one of them is lying about the display.
+  const declaredRebuild = paths()
+    .filter((p) => p.startsWith('arcs.') && entry(p).strategy === 'rebuild')
+    .map((p) => p.split('.')[2]);
+  assert.deepEqual([...new Set(declaredRebuild)].sort(), [...ARC_REBUILD_KEYS].sort());
+});
+
+test('a rebuild arc key pushes the value AND clears the pool', () => {
+  // setSpec alone would show a new tube radius only on arcs not yet drawn, and
+  // the executor writes CONFIG after the handler runs -- so re-reading cfg()
+  // inside rebuild() would read the old value. The value has to be passed.
+  const log = [];
+  const applier = createApplier(fakeCtx(log));
+  applier.apply({ 'arcs.block.maxRise': 0.3 });
+  assert.ok(log.includes('arcs block.maxRise=0.3'), `no setSpec: ${log}`);
+  assert.ok(log.includes('arcs.rebuild'), `no rebuild: ${log}`);
+});
+
+test('a uniform arc key does not clear the pool', () => {
+  const log = [];
+  const applier = createApplier(fakeCtx(log));
+  applier.apply({ 'arcs.block.colorAt': 0.9 });
+  assert.ok(log.includes('arcs block.colorAt=0.9'), `no setSpec: ${log}`);
+  assert.equal(log.filter((l) => l === 'arcs.rebuild').length, 0);
+});
+
+test('a zoom range that would NaN the camera is rejected, not applied', () => {
+  // clampDistance propagates a bad bound rather than refusing it: the camera
+  // position goes NaN and the display goes black with nothing in the console.
+  // The rig's guard throws, and the executor turns that into a rejection.
+  const log = [];
+  const ctx = fakeCtx(log);
+  ctx.rig.setParam = (p, v) => {
+    if (p.startsWith('input.zoomRange')) validateZoomRange(
+      p.endsWith('.0') ? v : 3.3, p.endsWith('.1') ? v : 9.0);
+    log.push(`rig ${p}=${v}`);
+  };
+  const applier = createApplier(ctx);
+
+  // Below the limb-clip floor: coerce clamps it back up before the rig ever
+  // sees it, so this one is APPLIED at the floor rather than rejected.
+  const low = applier.apply({ 'input.zoomRange.0': 1.0 });
+  assert.deepEqual(low.applied, ['input.zoomRange.0']);
+  assert.ok(log.includes('rig input.zoomRange.0=3.3'), `not clamped: ${log}`);
+
+  // Reversed: in bounds at each end, invalid as a pair. Only the guard catches
+  // this, and it must reach the caller as a rejection.
+  const bad = applier.apply({ 'input.zoomRange.0': 9.0 });
+  assert.deepEqual(bad.applied, []);
+  assert.equal(bad.rejected.length, 1);
+  assert.equal(bad.rejected[0].path, 'input.zoomRange.0');
+  assert.match(bad.rejected[0].why, /not below/);
 });
 
 test('creating an applier with an orphaned path throws, loudly', () => {

@@ -33,40 +33,63 @@ import { cfg } from './config.js';
  * help      why this value is what it is, lifted from the config.js comments
  */
 
-/** The eight fields an arc class carries, and the bounds each one takes. The
- *  three classes differ only in their shipped values -- which live in config.js
- *  -- so declaring the shape once is the only way the three cannot drift. */
+/**
+ * The eight fields an arc class carries, and the bounds each one takes. The
+ * three classes differ only in their shipped values -- which live in config.js
+ * -- so declaring the shape once is the only way the three cannot drift.
+ *
+ * THE STRATEGY HERE DESCRIBES WHAT A VIEWER WILL SEE, not how the value is
+ * stored. Almost everything about an arc is copied out of the spec at spawn:
+ * colour into the slot's uniform, lift/maxRise into its TubeGeometry,
+ * bloomScale into userData, life into slot.life. Only `speed` is re-read from
+ * the live spec every frame. So a naive "it is only a field, call it uniform"
+ * gives six controls that do nothing until the next arc happens to spawn --
+ * and block arcs live 18s and arrive rarely, so changing block colour would
+ * read as a dead control. arcs.setSpec pushes the four that can be pushed into
+ * the slots already in the air; the three that are baked into geometry cannot
+ * be, so they are `rebuild` and clear the pool instead.
+ */
 function arcClass(cls, keys) {
   const FIELDS = {
     life: { type: 'number', min: 0.5, max: 60, strategy: 'uniform',
             help: 'Seconds on screen. Blocks live far longer than flows: a '
                 + 'block is what the wall is for, so it stays up long enough '
-                + 'to walk over and look at.' },
+                + 'to walk over and look at. Pushed into the arcs already in '
+                + 'the air, so a shortened life retires them now.' },
     tube: { type: 'number', min: 0.001, max: 0.02, strategy: 'rebuild',
             help: 'Radius of the tube, in globe radii. The geometry is built '
                 + 'per pool slot on spawn, so changing it clears the live arcs '
                 + 'rather than editing them in place.' },
     colorAt: { type: 'number', min: 0, max: 1, strategy: 'uniform',
                help: 'Position on the plasma ramp, 0 (indigo) to 1 (pale '
-                   + 'yellow). Ignored when the class carries an explicit hex.' },
+                   + 'yellow). Ignored when the class carries an explicit hex. '
+                   + 'Recoloured into the arcs already on screen, or a block '
+                   + 'recolour would wait up to 18s to show.' },
     gain: { type: 'number', min: 0, max: 3, strategy: 'uniform',
             help: 'Multiplies the colour down; the wall usually wants less '
-                + 'than 1. Use this when the line itself is too bright.' },
+                + 'than 1. Use this when the line itself is too bright. Same '
+                + 'live recolour as colorAt.' },
     speed: { type: 'number', min: 0.05, max: 5, strategy: 'uniform',
              help: 'How fast the travelling head runs along the arc. The head '
-                 + 'reaching 1 is what fires the impact ripple.' },
-    lift: { type: 'number', min: 0, max: 2, strategy: 'uniform',
+                 + 'reaching 1 is what fires the impact ripple. The one field '
+                 + 're-read from the spec every frame, so it was already live.' },
+    lift: { type: 'number', min: 0, max: 2, strategy: 'rebuild',
             help: 'Apex height, scaled by how far the arc travels, so short '
-                + 'hops stay flat and intercontinental arcs sweep.' },
-    maxRise: { type: 'number', min: 0.01, max: 1, strategy: 'uniform',
+                + 'hops stay flat and intercontinental arcs sweep. Baked into '
+                + "the slot's TubeGeometry at spawn, so changing it clears the "
+                + 'live arcs rather than bending them.' },
+    maxRise: { type: 'number', min: 0.01, max: 1, strategy: 'rebuild',
                help: 'Hard cap on the apex, in globe radii. Chord runs to 2r '
                    + 'for a near-antipodal pair, and uncapped that arc peaks '
-                   + '0.9r up and towers over the limb.' },
+                   + '0.9r up and towers over the limb. Baked into geometry '
+                   + 'like lift, so it clears the pool too.' },
     bloomScale: { type: 'number', min: 0, max: 3, strategy: 'uniform',
                   help: 'Glow only: 1 leaves the halo alone, 0.5 halves it, '
                       + 'above 1 lifts it. One bloom pass has a single '
                       + 'scene-wide threshold, so this is the only way to give '
-                      + 'one class less halo without dimming its line.' },
+                      + 'one class less halo without dimming its line. Pushed '
+                      + 'into the live slots, which is where the bloom pass '
+                      + 'reads it from.' },
   };
   const out = {};
   for (const k of keys) out[`arcs.${cls}.${k}`] = FIELDS[k];
@@ -250,11 +273,25 @@ export const SCHEMA = {
     help: 'Arrows to turn, +/- to zoom, f for fullscreen -- the things a '
         + 'pointer is clumsy at.',
   },
-  'input.zoomRange': {
-    type: 'list', strategy: 'uniform',
-    help: 'Closest and furthest, in globe radii. The floor is not taste: below '
-        + "~3.2 the globe's angular radius exceeds the 17.5 deg half-FOV of the "
-        + '35 deg camera and the limb clips on a 16:9 wall.',
+  // Two bounded numbers, NOT the `list` that config.js stores. A list type
+  // carries no length, no element type and no ordering, so [1.0, 9.0] would
+  // pass validation and walk straight past the limb-clip floor -- and [3.3]
+  // would leave the upper bound undefined, which makes clampDistance return
+  // NaN and blanks the display. Indexing the array keeps `cfg('input.zoomRange.0')`,
+  // which is how camera.js already reads it, working unchanged. Ordering is the
+  // one thing an independent bound per index cannot express; orbit.validateZoomRange
+  // is the guard for that.
+  'input.zoomRange.0': {
+    type: 'number', min: 3.3, max: 9.0, strategy: 'uniform',
+    help: 'Closest the view may come, in globe radii. The floor is not taste: '
+        + "below ~3.2 the globe's angular radius exceeds the 17.5 deg half-FOV "
+        + 'of the 35 deg camera and the limb clips on a 16:9 wall.',
+  },
+  'input.zoomRange.1': {
+    type: 'number', min: 3.3, max: 40, strategy: 'uniform',
+    help: 'Furthest the view may pull back, in globe radii. Must be above '
+        + 'input.zoomRange.0; a reversed pair is rejected rather than sorted, '
+        + 'because guessing which end was meant is how a control starts lying.',
   },
   'input.zoomFactor': {
     type: 'number', min: 1.01, max: 2.0, strategy: 'uniform',

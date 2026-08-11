@@ -44,14 +44,17 @@ function writeConfig(path, value) {
  *  because a missing entry is what createApplier refuses to build on. */
 const configOnly = () => {};
 
-/** `arcs.<cls>.<key>` for a whole class, in one line each. `tube` also clears
- *  the pool: the radius is baked into a slot's geometry when the arc spawns, so
- *  without that it would show only on arcs that had not been drawn yet. */
+/** `arcs.<cls>.<key>` for a whole class, in one line each.
+ *
+ *  The three keys in ARC_REBUILD_KEYS are baked into a slot's TubeGeometry when
+ *  the arc spawns, so setSpec alone would show them only on arcs not yet drawn.
+ *  Clearing the pool is what makes them visible within a frame -- and is why
+ *  they are declared `rebuild` rather than `uniform`. See settings.js. */
 function arcHandlers(cls, keys) {
   const out = {};
   for (const key of keys) {
-    out[`arcs.${cls}.${key}`] = key === 'tube'
-      ? (v, ctx) => { ctx.arcs.setSpec(cls, 'tube', v); ctx.arcs.rebuild(); }
+    out[`arcs.${cls}.${key}`] = ARC_REBUILD_KEYS.includes(key)
+      ? (v, ctx) => { ctx.arcs.setSpec(cls, key, v); ctx.arcs.rebuild(); }
       : (v, ctx) => ctx.arcs.setSpec(cls, key, v);
   }
   return out;
@@ -60,6 +63,9 @@ function arcHandlers(cls, keys) {
 const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
                   'maxRise', 'bloomScale'];
 const HIGHLIGHT_KEYS = ['life', 'tube', 'speed', 'lift', 'maxRise', 'bloomScale'];
+// Shape of the curve, baked into geometry at spawn. Must match the `rebuild`
+// strategies in settings.js; a test asserts the two lists agree.
+export const ARC_REBUILD_KEYS = ['tube', 'lift', 'maxRise'];
 
 /** The ten `layers` booleans, all one call. */
 function layerHandlers(names) {
@@ -112,7 +118,8 @@ export const HANDLERS = {
   'input.hideCursorSeconds': (v, ctx) => ctx.input.setParam('input.hideCursorSeconds', v),
   // Owned by camera.js and campath.js, not by input.js: the zoom clamp, the
   // framing it returns to and the idle countdown all live with the rig.
-  'input.zoomRange': (v, ctx) => ctx.rig.setParam('input.zoomRange', v),
+  'input.zoomRange.0': (v, ctx) => ctx.rig.setParam('input.zoomRange.0', v),
+  'input.zoomRange.1': (v, ctx) => ctx.rig.setParam('input.zoomRange.1', v),
   'input.zoomReturnEase': (v, ctx) => ctx.rig.setParam('input.zoomReturnEase', v),
   'input.rollReturnEase': (v, ctx) => ctx.rig.setParam('input.rollReturnEase', v),
   'input.resumeSeconds': (v, ctx) => ctx.rig.setParam('input.resumeSeconds', v),

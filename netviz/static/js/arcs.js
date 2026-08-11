@@ -331,6 +331,16 @@ export function createArcs(radius, capacity = 220, onLand = null) {
    * `highlight` is the shape shared by all three highlighted networks, so it
    * writes through to each live highlightN class; their colour and gain come
    * from the collector and are not settings here.
+   *
+   * Almost every field is COPIED OUT of the spec at spawn -- colour into the
+   * slot's uniform, bloomScale into userData, life into slot.life -- so writing
+   * the spec alone changes nothing a viewer can see until the next arc of that
+   * class happens to spawn. Block arcs live 18s and arrive rarely, so a block
+   * recolour would read as a control that did nothing. The four that can be
+   * pushed into the arcs already in the air are pushed here; `speed` needs
+   * nothing, since update() reads it from the spec every frame; and
+   * lift/maxRise/tube are baked into the TubeGeometry and cannot be pushed at
+   * all, which is why apply.js clears the pool for those three instead.
    */
   function setSpec(cls, key, value) {
     const targets = cls === 'highlight'
@@ -342,6 +352,14 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       spec[key] = value;
       if (COLOUR_KEYS.includes(key)) {
         spec.color = specColor({ ...spec, color: spec.hex });
+      }
+      for (const slot of pool) {
+        // Identity, not name: a slot keeps the spec object it spawned with, and
+        // setSpec mutates in place precisely so that comparison stays valid.
+        if (!slot.active || slot.spec !== spec) continue;
+        if (COLOUR_KEYS.includes(key)) slot.mat.uniforms.color.value.copy(spec.color);
+        else if (key === 'bloomScale') slot.mesh.userData.bloomScale = value;
+        else if (key === 'life') slot.life = value;
       }
     }
   }

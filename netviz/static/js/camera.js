@@ -7,7 +7,7 @@ import {
   step, initialState, startVisit, beginManual, endManual, isManual,
   setManualView, markInput, DEFAULTS,
 } from './campath.js';
-import { clampDistance } from './orbit.js';
+import { clampDistance, validateZoomRange } from './orbit.js';
 import {
   quatFromLatLon, latLonFromQuat, eyeDirection, upVector, trackDrag,
   rotateCamera, quatAngle, rollBetween,
@@ -61,8 +61,20 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
   // Mutable, because the wheel and pinch move it. The floor is not a taste
   // decision: below ~3.2 radii the globe's angular radius exceeds the 17.5 deg
   // half-FOV and the limb clips on a 16:9 wall.
+  // Validated at boot as well as on write, but the two failures want opposite
+  // answers: a settings patch is REJECTED and reported, while a hand-edited
+  // config.js falls back to the shipped pair with a warning. Throwing here
+  // would blank the wall over an edit somebody made months ago, which is the
+  // one outcome worse than ignoring their number.
   let minD = cfg('input.zoomRange.0', 3.3);
   let maxD = cfg('input.zoomRange.1', 9.0);
+  try {
+    validateZoomRange(minD, maxD);
+  } catch (err) {
+    console.warn(`${err.message}; falling back to [3.3, 9.0]`);
+    minD = 3.3;
+    maxD = 9.0;
+  }
   // The framing the display owns. Zoom is borrowed exactly as orientation is:
   // without this, a passer-by who pulls the globe in to 3.3 radii and walks
   // off leaves the wall wrongly framed forever -- the view comes home after
@@ -250,8 +262,18 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
         if (!isManual(state)) { distance = homeD; place(); }
         return;
       }
-      if (path === 'input.zoomRange') {
-        [minD, maxD] = value;
+      // One end of the zoom range at a time. Validated as a PAIR against the
+      // end that is not moving, and validated BEFORE anything is assigned:
+      // clampDistance propagates a bad bound as NaN rather than refusing it, so
+      // an unchecked write here reaches camera.position and blanks the wall
+      // with nothing in the console. The throw becomes a reported rejection.
+      if (path === 'input.zoomRange.0' || path === 'input.zoomRange.1') {
+        const [lo, hi] = validateZoomRange(
+          path.endsWith('.0') ? value : minD,
+          path.endsWith('.1') ? value : maxD,
+        );
+        minD = lo;
+        maxD = hi;
         homeD = clampDistance(homeD, minD, maxD);
         distance = clampDistance(distance, minD, maxD);
         place();
