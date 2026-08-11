@@ -25,10 +25,13 @@ log = logging.getLogger("netviz")
 
 API = "https://api.github.com/repos/{repo}/releases/latest"
 
-# GitHub's unauthenticated limit is 60 requests an hour per address. At six
-# hours this is four a day, so the interval is set by how often a release
-# plausibly appears, not by the limit.
-POLL_SECONDS = 6 * 3600.0
+# GitHub's unauthenticated limit is 60 requests an hour per address. At one
+# hour this is 24 a day against that 60/hour ceiling -- one request per hour
+# is 1/60th of the budget, so even a host running several collectors behind
+# one address stays clear of it. The interval is still set by how often a
+# release plausibly appears rather than by the limit; it was 6h and is 1h so
+# a kiosk notices a release the same working session it lands.
+POLL_SECONDS = 3600.0
 RETRY_SECONDS = 15 * 60.0
 TIMEOUT = 10.0
 

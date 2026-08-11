@@ -67,8 +67,8 @@ class Config:
     # was the wrong call for released software: the people most likely to be
     # running a stale build are exactly the ones who never read the
     # configuration reference, so an opt-in update notice reaches everybody
-    # except its audience. The cost is one unauthenticated GET to GitHub every
-    # six hours, carrying nothing about the network it runs on, and the README
+    # except its audience. The cost is one unauthenticated GET to GitHub once
+    # an hour, carrying nothing about the network it runs on, and the README
     # says so plainly rather than leaving it to be discovered.
     update_repo: str = os.environ.get("NETVIZ_UPDATE_REPO",
                                       "pyro262/netviz").strip()

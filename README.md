@@ -241,7 +241,7 @@ Read in `netviz/config.py`. `INFLUX_TOKEN` is the only secret.
 
 ### The update check
 
-The collector asks GitHub once every six hours whether there is a newer release
+The collector asks GitHub once an hour whether there is a newer release
 than the one it is running, and the kiosk shows a dim, slowly pulsing
 `UPDATE AVAILABLE` in the lower left when there is. **This is on by default.**
 
