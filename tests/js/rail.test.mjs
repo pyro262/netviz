@@ -214,3 +214,80 @@ test('a collector without spark support still renders its bars', () => {
   assert.equal(rows[0].bar, 1);
   assert.equal(rows[0].spark, null);
 });
+
+import { start } from '../../netviz/static/js/rail.js';
+
+/** Minimal DOM: rail.js touches getElementById, classList, and builds nodes
+ *  through createElement/append/replaceChildren -- never innerHTML. */
+function fakeDom() {
+  const mk = () => {
+    const el = {
+      className: '', innerHTML: '', children: [],
+      style: {},
+      setAttribute: () => {},
+      classList: {
+        _s: new Set(),
+        add(c) { this._s.add(c); },
+        remove(c) { this._s.delete(c); },
+        contains(c) { return this._s.has(c); },
+      },
+      appendChild(c) { this.children.push(c); return c; },
+      querySelector() { return null; },
+      replaceChildren(...children) { this.children = children; },
+      append(...children) { this.children.push(...children); },
+      textContent: '',
+    };
+    return el;
+  };
+  const rail = mk();
+  const body = mk();
+  return {
+    rail,
+    body,
+    document: {
+      body,
+      getElementById: (id) => (id === 'rail' ? rail : null),
+      createElement: () => mk(),
+      createElementNS: () => mk(),
+    },
+  };
+}
+
+test('the rail can be taken back down again', async () => {
+  const dom = fakeDom();
+  const timers = [];
+  const realDoc = globalThis.document;
+  const realSetInterval = globalThis.setInterval;
+  const realClearInterval = globalThis.clearInterval;
+  const realFetch = globalThis.fetch;
+  globalThis.document = dom.document;
+  globalThis.setInterval = (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length; };
+  globalThis.clearInterval = (id) => { if (timers[id - 1]) timers[id - 1].live = false; };
+  globalThis.fetch = async () => ({ ok: false });
+  try {
+    const handle = start();
+    // start() does NOT resize -- the caller does, once. What it guarantees is
+    // the ORDERING: by the time it returns, body.rail is set and the rail is
+    // painted, so a caller measuring #stage next sees the narrowed box.
+    assert.equal(dom.body.classList.contains('rail'), true);
+    assert.ok(dom.rail.children.length > 0, 'the rail was not painted before start() returned');
+    assert.equal(timers.filter((t) => t.live).length, 2, 'poll and clock');
+
+    handle.stop();
+    assert.equal(dom.body.classList.contains('rail'), false, 'body.rail survived stop()');
+    assert.equal(timers.filter((t) => t.live).length, 0, 'a timer outlived the rail');
+    // children, not innerHTML: paint() builds nodes with replaceChildren and
+    // never touches innerHTML, so the old assertion held on a fake that started
+    // at '' and would have passed with the teardown deleted entirely.
+    assert.equal(dom.rail.children.length, 0, 'the rail still has content after stop()');
+
+    handle.stop();          // idempotent: a double toggle must not throw
+    // Give pending async operations time to complete with stubbed globals
+    await new Promise((r) => setTimeout(r, 10));
+  } finally {
+    globalThis.document = realDoc;
+    globalThis.setInterval = realSetInterval;
+    globalThis.clearInterval = realClearInterval;
+    globalThis.fetch = realFetch;
+  }
+});

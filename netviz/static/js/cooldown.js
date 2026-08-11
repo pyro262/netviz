@@ -11,7 +11,8 @@
  *  a city's coordinates between records, and those are the same place. */
 const CELL_DEGREES = 1;
 
-export function createCooldown(seconds, cell = CELL_DEGREES) {
+export function createCooldown(initialSeconds, cell = CELL_DEGREES) {
+  let seconds = initialSeconds;
   const last = new Map();
   let lastPrune = -Infinity;
 
@@ -48,6 +49,11 @@ export function createCooldown(seconds, cell = CELL_DEGREES) {
       last.set(k, now);
       return true;
     },
+    /** Live, because the window is a setting. Shortening it does not
+     *  retroactively release the targets already recorded -- the next allow()
+     *  compares against the new window, which is what "shorter from now on"
+     *  means. */
+    setSeconds(v) { seconds = v; },
     size() {
       return last.size;
     },

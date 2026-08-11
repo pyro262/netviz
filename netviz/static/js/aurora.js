@@ -7,7 +7,7 @@
 // and serves at /aurora.json. No Kp, no aurora: an aurora that is always there
 // says nothing.
 import * as THREE from 'three';
-import { nextPollDelay } from './schedule.js';
+import { nextPollDelay, auroraFromReading } from './schedule.js';
 
 // IGRF-13 geomagnetic north pole for epoch 2025: 80.7N, 72.7W. The south
 // magnetic pole is not antipodal in reality, but the dipole axis is what sets
@@ -143,28 +143,29 @@ export function createAurora(radius) {
     setTimeout(poll, nextPollDelay(Date.now(), PERIOD_MS, OFFSET_MS, healthy, RETRY_MS));
   }
 
+  // The `layers.aurora` setting, held rather than read once at construction.
+  // apply() runs again on EVERY poll, so a layer toggle that only wrote the
+  // mesh would be undone by the next reading -- up to three hours later, or ten
+  // minutes on an unhealthy poll -- while CONFIG still said the layer was off.
+  let enabled = true;
+
   function apply() {
-    // No reading at all means no aurora drawn. Kp 0 is a real, very quiet sky
-    // and would still show a thin oval; "we cannot reach NOAA" must not.
-    if (kp === null || kp === undefined) {
-      mesh.visible = false;
-      return;
-    }
-    mesh.visible = true;
-    // Same rule as aurora.oval_boundary() on the collector: ~66.5 degrees
-    // magnetic when quiet, ~1.7 degrees equatorward per Kp step.
-    const edgeLat = 66.5 - 1.7 * Math.max(0, Math.min(9, kp));
-    material.uniforms.boundary.value = Math.cos(((90 - edgeLat) * Math.PI) / 180);
-    // Brightness follows activity too, and a stale reading is shown dimmer
-    // rather than confidently.
-    const s = Math.min(1, 0.25 + kp / 7);
-    material.uniforms.strength.value = stale ? s * 0.4 : s;
+    const want = auroraFromReading({ enabled, kp, stale });
+    mesh.visible = want.visible;
+    if (!want.visible) return;
+    material.uniforms.boundary.value =
+      Math.cos(((90 - want.edgeLat) * Math.PI) / 180);
+    material.uniforms.strength.value = want.strength;
   }
 
   poll();   // once now, then on the source's own cadence
 
   return {
     mesh,
+    /** The `layers.aurora` toggle. Goes through here rather than through
+     *  mesh.visible directly, or the next poll would put the oval back. */
+    setVisible(on) { enabled = !!on; apply(); },
+    visible: () => mesh.visible,
     update(dt, sunLocal) {
       material.uniforms.time.value += dt;
       material.uniforms.sunDir.value.copy(sunLocal);

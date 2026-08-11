@@ -82,5 +82,15 @@ export function start({ isOpen }) {
   };
 
   poll();
-  setInterval(poll, POLL_MS);
+  let timer = setInterval(poll, POLL_MS);
+  return {
+    /** The poll interval is a setting, and this is the alarm -- so it has to be
+     *  changeable without a reload, which means tearing the interval down and
+     *  starting a new one rather than reading a variable inside a fixed timer. */
+    setPeriod(seconds) {
+      clearInterval(timer);
+      timer = setInterval(poll, seconds * 1000);
+    },
+    stop() { clearInterval(timer); },
+  };
 }

@@ -58,12 +58,13 @@ export function createComposer(renderer, scene, camera) {
   // strength, radius, threshold. 0.9/0.05 blew the arc bodies out into a haze
   // on a bright wall panel; 0.7 with a slightly higher threshold keeps the
   // travelling heads glowing while the tube bodies stay linear.
-  bloomComposer.addPass(new UnrealBloomPass(
+  const bloomPass = new UnrealBloomPass(
     size,
     cfg('appearance.bloom.strength', 0.7),
     cfg('appearance.bloom.radius', 0.5),
     cfg('appearance.bloom.threshold', 0.08),
-  ));
+  );
+  bloomComposer.addPass(bloomPass);
 
   const finalComposer = new EffectComposer(renderer);
   finalComposer.addPass(new RenderPass(scene, camera));
@@ -193,6 +194,18 @@ export function createComposer(renderer, scene, camera) {
     setSize(w, h) {
       bloomComposer.setSize(w, h);
       finalComposer.setSize(w, h);
+    },
+    /** One bloom parameter, live. `knee` belongs to the combine shader rather
+     *  than to UnrealBloomPass; the other three are the pass's own fields, and
+     *  writing them is all that is needed -- none of the three re-allocates a
+     *  render target. */
+    setBloom(key, value) {
+      if (key === 'knee') { combine.uniforms.knee.value = value; return; }
+      if (key === 'strength' || key === 'radius' || key === 'threshold') {
+        bloomPass[key] = value;
+        return;
+      }
+      throw new Error(`post: no bloom parameter ${key}`);
     },
   };
 }

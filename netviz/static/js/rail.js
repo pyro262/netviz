@@ -17,7 +17,9 @@
 
 import { cfg } from './config.js';
 
-const POLL_MS = cfg('polling.railSeconds', 10) * 1000;
+// Read at mount, not at import: polling.railSeconds is a live setting, and a
+// rail mounted after that setting moved must use the current value.
+const pollMs = () => cfg('polling.railSeconds', 10) * 1000;
 
 /** Does this URL ask for the rail?
  *
@@ -271,16 +273,19 @@ function paint(root, data, clock) {
  * with the rail off nothing here runs, no element is created and no request is
  * made, so a wall that does not want it pays nothing for its existence.
  *
- * `onLayout` is called once, synchronously, after the rail element is in the
- * document: the globe's canvas is now narrower and the renderer has to be
- * resized against the new box before the first frame.
+ * THE CALLER RESIZES, and this function deliberately does not. It used to take
+ * an `onLayout` callback and fire it here, which meant mounting cost two
+ * resizes -- rail.js's and then the caller's -- against unmounting's one, while
+ * the settings executor's whole point is that however many keys ask for a
+ * relayout it happens once. What is guaranteed instead is the ORDERING: when
+ * this returns, `body.rail` is set and the rail is painted, so a caller that
+ * measures #stage next sees the narrowed box rather than the full viewport.
  */
-export function start({ onLayout } = {}) {
+export function start() {
   const root = document.getElementById('rail');
   if (!root) return null;
   document.body.classList.add('rail');
   root.classList.add('on');
-  if (onLayout) onLayout();
 
   let snapshot = null;
 
@@ -301,9 +306,35 @@ export function start({ onLayout } = {}) {
 
   draw();
   poll();
-  setInterval(poll, POLL_MS);
+  // Held so the rail can be taken back down: rail.enabled is a live setting,
+  // and a rail whose timers outlive its element goes on fetching /stats.json
+  // for a panel nobody can see -- once per toggle, for the life of the page.
+  let pollTimer = setInterval(poll, pollMs());
   // The clock is the only thing on the rail that has to move every second; the
   // counters move at the collector's pace, not the display's.
-  setInterval(draw, 1000);
-  return { poll };
+  const clockTimer = setInterval(draw, 1000);
+
+  let stopped = false;
+  return {
+    poll,
+    /** polling.railSeconds is a live setting; the interval is replaced rather
+     *  than read from inside a fixed timer. */
+    setPeriod(seconds) {
+      if (stopped) return;
+      clearInterval(pollTimer);
+      pollTimer = setInterval(poll, seconds * 1000);
+    },
+    /** Unmount. Safe to call twice -- a double toggle is one click away. */
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(pollTimer);
+      clearInterval(clockTimer);
+      document.body.classList.remove('rail');
+      root.classList.remove('on');
+      // replaceChildren, matching paint() -- innerHTML never held anything,
+      // because paint() has always built nodes rather than markup.
+      root.replaceChildren();
+    },
+  };
 }
