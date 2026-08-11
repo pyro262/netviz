@@ -274,7 +274,7 @@ def run(page, canvas_center) -> bool:
     }""")
     ok &= report(
         "7: rail toggle end to end (body.rail + drawing buffer to 1894)",
-        prevented and st["present"] and row_ok
+        prevented and st["present"] and st.get("visible") and row_ok
         and not before["rail"] and after["rail"] and after["w"] == 1894,
         f"before={before} after={after} row_ok={row_ok}")
     # restore: rail off again, close the menu the click already closed
@@ -305,11 +305,17 @@ def run(page, canvas_center) -> bool:
     samples = []
     manual_flags = []
     t_start = time.time()
-    # 8 samples over 35s: dense enough to catch a drift, sparse enough that
-    # the polling itself isn't what keeps the rig "poked". Shortening this
-    # run would silently skip the very thing it exists to catch.
+    # 8 samples spanning 35s: dense enough to catch a drift, sparse enough
+    # that the polling itself isn't what keeps the rig "poked". The interval
+    # divides by (n_samples - 1), not n_samples -- 8 samples have 7 GAPS
+    # between them, and dividing by the sample count under-delivers the
+    # promised span by one interval's worth (measured: 30.6s instead of 35s
+    # in an earlier version of this script, barely past resumeSeconds=30,
+    # the exact threshold this case exists to outlast). The elapsed time is
+    # asserted below, not just printed, so a regression here fails loudly
+    # instead of silently shipping a shorter run.
     n_samples = 8
-    interval = 35.0 / n_samples
+    interval = 35.0 / (n_samples - 1)
     for i in range(n_samples):
         snap = page.evaluate("""() => ({
           view: window.__netviz.rig.view(),
@@ -327,7 +333,7 @@ def run(page, canvas_center) -> bool:
     max_drift = max(great_circle_deg(samples[0], s) for s in samples)
     ok &= report(
         "9: camera stays manual and still while the menu is open (35s)",
-        opened and all(manual_flags) and max_drift < 1.0,
+        opened and all(manual_flags) and max_drift < 1.0 and total_elapsed >= 35.0,
         f"opened={opened} all_manual={all(manual_flags)} "
         f"max_drift_deg={max_drift:.4f} elapsed={total_elapsed:.1f}s")
     close_menu()
