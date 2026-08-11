@@ -5,7 +5,7 @@ import { cfg } from './config.js';
 import * as THREE from 'three';
 import {
   step, initialState, startVisit, beginManual, endManual, isManual,
-  setManualView, markInput, DEFAULTS,
+  forceHandBack, setManualView, markInput, DEFAULTS,
 } from './campath.js';
 import { clampDistance, validateZoomRange } from './orbit.js';
 import {
@@ -203,9 +203,20 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
       easeRollHome(dt);
       place();
     },
-    /** Go and look at a blocked country. Refused while a visit is running and,
-     *  by default, while somebody is holding the globe. */
+    /**
+     * Go and look at a blocked country. Refused while a visit is already
+     * running -- the display finishes looking at one thing before the next.
+     *
+     * NOT refused for being in manual mode, unlike the automatic block-burst
+     * detour: every menu opener leaves the camera manual (see
+     * forceHandBack's own comment), so a plain startVisit() call here would
+     * have silently done nothing on every "Look here" click. The explicit
+     * request hands the camera back first, exactly as the ordinary idle
+     * timeout would, then proceeds through the same startVisit the burst
+     * detector uses.
+     */
     visit(lat, lon) {
+      if (isManual(state)) forceHandBack(state);
       return startVisit(state, lat, lon, params);
     },
     grab() { beginManual(state); ensurePose(); },

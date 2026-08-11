@@ -3,7 +3,7 @@ import { BACKGROUND } from './palette.js';
 import { createGlobe, latLonToVec3 } from './globe.js';
 import { sunDirection } from './sun.js';
 import { createArcs } from './arcs.js';
-import { cfg, loadServerConfig } from './config.js';
+import { cfg, CONFIG, loadServerConfig } from './config.js';
 import { createRipples } from './ripples.js';
 import { createAurora } from './aurora.js';
 import { start as startDegraded } from './degraded.js';
@@ -307,7 +307,18 @@ async function boot() {
       railHandle = null;
     },
   };
-  if (railEnabled(window.location.search, cfg('rail.enabled', false))) rail.mount();
+  // Resolved once, at boot, and reconciled into CONFIG immediately: the URL
+  // (`?rail=1`) can override the config default, and everything downstream
+  // that asks cfg('rail.enabled') -- the menu's toggle state chief among them
+  // -- must agree with what actually got mounted. Without this, the documented
+  // kiosk setup (?rail=1, CONFIG.rail.enabled false) draws the menu's "Stats
+  // rail" item unchecked while the rail is visibly on screen, and the first
+  // click applies rail.enabled: true, which apply.js's handler then skips
+  // because the rail is already mounted -- a control that reads as dead and
+  // needs two clicks to do anything.
+  const railWanted = railEnabled(window.location.search, cfg('rail.enabled', false));
+  CONFIG.rail.enabled = railWanted;
+  if (railWanted) rail.mount();
 
   window.addEventListener('resize', resize);
   resize();

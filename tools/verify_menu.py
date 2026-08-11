@@ -3,9 +3,13 @@
 
 Gestures are the half of Task 3 that cannot be judged by reading. This
 script drives a real Chromium (or a real deployment, with --url) through
-the nine cases the menu's three openers, its refusal to open on a plain
-mouse double-click, and its interaction with the camera rig and the
-settings layer must satisfy.
+13 cases: the menu's three openers, its refusal to open on a plain mouse
+double-click, its interaction with the camera rig and the settings layer,
+and four cases added after a whole-branch review found real bugs a spy
+assertion had let through -- "Look here" silently doing nothing (case 10),
+the native context menu still appearing over an open menu (case 11), the
+rail toggle misreporting under the documented `?rail=1` kiosk setup
+(case 12), and the corner-clamp layout path (case 13).
 
 Every case that claims the menu is OPEN asserts the menu ELEMENT is
 actually in the document with a non-zero bounding rect -- not just that
@@ -109,6 +113,25 @@ def dispatch_contextmenu(page, x, y):
     }""", {"x": x, "y": y})
 
 
+def dispatch_contextmenu_on_menu(page):
+    """A contextmenu Event dispatched on the `.menu` element ITSELF, not the
+    canvas -- proves the listener also covers a right-click on the menu
+    (and, by the same fix, the rail / degraded banner / update mark, all
+    children of #stage rather than of the canvas). Returns None if no menu
+    is present, else whether preventDefault() was called."""
+    return page.evaluate("""() => {
+      const el = document.querySelector('.menu');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const ev = new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true,
+        clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+      });
+      const notCanceled = el.dispatchEvent(ev);
+      return !notCanceled;
+    }""")
+
+
 def install_touch_patch(page):
     """Patch setPointerCapture/releasePointerCapture on the canvas to
     swallow Chromium's "no active pointer" exception for a JS-dispatched
@@ -156,7 +179,57 @@ def js_tap_pair(page, x1, y1, x2, y2, gap_ms, moved=None):
     }""", {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "gapMs": gap_ms, "moved": moved})
 
 
-def run(page, canvas_center) -> bool:
+def run_rail_url_case(ctx, url) -> bool:
+    """Case 12, on its own page: the documented kiosk setup is `?rail=1`
+    with CONFIG.rail.enabled at its false default -- main.js must reconcile
+    that at boot, or the menu reads cfg('rail.enabled') and draws the item
+    unchecked while the rail is visibly mounted, and the first click applies
+    rail.enabled: true, which apply.js's handler skips because the rail is
+    already mounted (a control that reads as dead and needs two clicks)."""
+    sep = "&" if "?" in url else "?"
+    page = ctx.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    page.on("console", lambda m: errors.append(f"{m.type}: {m.text}")
+            if m.type == "error" else None)
+    try:
+        page.goto(url + sep + "rail=1", wait_until="load")
+        page.wait_for_function("window.__netvizReady === true", timeout=20_000)
+        time.sleep(2.0)
+        install_touch_patch(page)
+
+        rail_on_boot = page.evaluate("() => document.body.classList.contains('rail')")
+        rect = page.evaluate("""() => {
+          const r = document.querySelector('canvas').getBoundingClientRect();
+          return {cx: r.left + r.width / 2, cy: r.top + r.height / 2};
+        }""")
+        prevented = dispatch_contextmenu(page, rect["cx"], rect["cy"])
+        time.sleep(0.2)
+        rail_row_on = page.evaluate("""() => {
+          const row = document.querySelector('.menu [data-id="rail"]');
+          if (!row) return null;
+          const check = row.querySelector('.menu-check');
+          return check ? check.classList.contains('on') : null;
+        }""")
+        page.evaluate("""() => {
+          const row = document.querySelector('.menu [data-id="rail"]');
+          row.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+        }""")
+        time.sleep(0.6)
+        rail_after_click = page.evaluate("() => document.body.classList.contains('rail')")
+
+        ok = report(
+            "12: ?rail=1 reconciled into the menu; one click turns it off",
+            prevented and rail_on_boot and rail_row_on is True
+            and not rail_after_click and not errors,
+            f"rail_on_boot={rail_on_boot} rail_row_on={rail_row_on} "
+            f"rail_after_click={rail_after_click} errors={errors[:5] or 'none'}")
+        return ok
+    finally:
+        page.close()
+
+
+def run(page, canvas_center, ctx, url) -> bool:
     cx, cy = canvas_center
     ok = True
     install_touch_patch(page)
@@ -338,6 +411,123 @@ def run(page, canvas_center) -> bool:
         f"max_drift_deg={max_drift:.4f} elapsed={total_elapsed:.1f}s")
     close_menu()
 
+    # --------------------------------------------------------- case 10 --
+    # "Look here" must actually move the camera. The bug this catches: every
+    # menu opener leaves rig.manual() true (toggleMenu pokes on open,
+    # input.tick re-pokes every frame the menu stays open), which used to be
+    # exactly the ONE state startVisit() refuses to interrupt by default --
+    # so the menu closed and the camera never moved, silently, every time.
+    # A spy assertion (menu.test.mjs's own lookHere test) only proves
+    # rig.visit() was CALLED, not that it did anything; this polls the real
+    # rig.view() until it settles and checks it actually arrived.
+    close_menu()
+    before_view = page.evaluate("() => window.__netviz.rig.view()")
+    # NDC (0.15, 0.1), not dead centre: pointAt({x:0,y:0}) always equals the
+    # camera's OWN current lat/lon (the camera looks at the origin every
+    # frame), which would make "arrived" trivially true whether visit() did
+    # anything or not -- an early version of this case had exactly that bug,
+    # caught by dist_deg reading 0.0 before the click even fired. This NDC
+    # stays inside the globe's disc (angular radius 12.56 deg vs the 17.5 deg
+    # vertical half-FOV, i.e. NDC ~0.718) while landing somewhere the camera
+    # was not already looking, so a non-trivial `initial_gap` proves the case
+    # tests something.
+    offset_ndc = {"x": 0.15, "y": 0.1}
+    look_target = page.evaluate("(ndc) => window.__netviz.rig.pointAt(ndc)", offset_ndc)
+    initial_gap = great_circle_deg(before_view, look_target) if look_target else None
+    click_pt = page.evaluate("""(ndc) => {
+      const r = document.querySelector('canvas').getBoundingClientRect();
+      return {x: r.left + (ndc.x + 1) / 2 * r.width, y: r.top + (1 - ndc.y) / 2 * r.height};
+    }""", offset_ndc)
+    prevented = dispatch_contextmenu(page, click_pt["x"], click_pt["y"])
+    time.sleep(0.2)
+    st = menu_state(page)
+    row_ok = False
+    if st["present"]:
+        row_ok = page.evaluate("""() => {
+          const row = document.querySelector('.menu [data-id="lookHere"]');
+          if (!row || row.className.includes('disabled')) return false;
+          row.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+          return true;
+        }""")
+    # Poll on the STATE MACHINE'S OWN arrival signal (phase leaving 'visit'),
+    # not a distance guess against a fixed timeout. Measured: under this
+    # headless/swiftshader setup with a live synthetic feed competing for the
+    # main thread, `dt` accumulates at roughly 1/3 of wall-clock speed (the
+    # animation loop's own `Math.min(0.1, now - last)` clamp means a slow
+    # frame loses ground rather than catching up), so the SIMULATED time
+    # startVisit's own arriveDegrees=3 check runs against lags well behind
+    # real time. A fixed 20s wall-clock timeout against a ~19deg offset
+    # measured arrival at 28.6s in isolation, and slower still alongside the
+    # rest of this suite -- so this polls for up to 90s of real time, which
+    # is generous even accounting for that slowdown, and stops the moment
+    # the app itself declares arrival rather than when a re-derived distance
+    # threshold happens to agree with it.
+    arrived = False
+    last_view = None
+    last_phase = None
+    t0 = time.time()
+    while time.time() - t0 < 90.0:
+        snap = page.evaluate(
+            "() => ({view: window.__netviz.rig.view(), phase: window.__netviz.rig.state.phase})")
+        last_view = snap["view"]
+        last_phase = snap["phase"]
+        if last_phase != "visit":
+            arrived = True
+            break
+        time.sleep(1.0)
+    dist = great_circle_deg(look_target, last_view) if look_target and last_view else None
+    ok &= report(
+        "10: 'Look here' actually moves the camera to the clicked point",
+        prevented and st["present"] and row_ok and look_target is not None
+        and initial_gap is not None and initial_gap > 5.0 and arrived
+        and dist is not None and dist < 5.0,
+        f"before={before_view} target={look_target} initial_gap_deg={initial_gap} "
+        f"final_view={last_view} final_phase={last_phase} dist_deg={dist} row_ok={row_ok} "
+        f"elapsed={time.time() - t0:.1f}s")
+    close_menu()
+
+    # --------------------------------------------------------- case 11 --
+    # The native context menu must be suppressed on a right-click landing
+    # ON the open menu itself, not just on the canvas -- `.menu` is a child
+    # of #stage, not of the canvas, so a canvas-only listener let Chrome's
+    # own Back/Reload/Save-as through over an open menu.
+    close_menu()
+    dispatch_contextmenu(page, cx, cy)
+    time.sleep(0.2)
+    st = menu_state(page)
+    prevented_on_menu = dispatch_contextmenu_on_menu(page) if st["present"] else None
+    ok &= report(
+        "11: right-click on the OPEN MENU itself is still suppressed",
+        st["present"] and prevented_on_menu is True,
+        f"state={st} preventedOnMenu={prevented_on_menu}")
+    close_menu()
+
+    # --------------------------------------------------------- case 12 --
+    # Own page, own query string -- see run_rail_url_case's docstring.
+    ok &= run_rail_url_case(ctx, url)
+
+    # --------------------------------------------------------- case 13 --
+    # clampPosition's real offsetWidth/offsetHeight path is exercised by
+    # nothing else in either suite -- node --test's DOM fake returns 0 for
+    # both, which only reaches the nominal-size fallback branch.
+    close_menu()
+    dispatch_contextmenu(page, 5, 5)   # top-left corner
+    time.sleep(0.2)
+    rect = page.evaluate("""() => {
+      const el = document.querySelector('.menu');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+              vw: window.innerWidth, vh: window.innerHeight};
+    }""")
+    inside = bool(rect) and (rect["left"] >= 0 and rect["top"] >= 0
+                              and rect["right"] <= rect["vw"] and rect["bottom"] <= rect["vh"])
+    ok &= report(
+        "13: menu opened near a corner stays fully inside the viewport",
+        inside,
+        f"rect={rect}")
+    close_menu()
+
     return ok
 
 
@@ -381,7 +571,7 @@ def main() -> int:
               return {cx: r.left + r.width / 2, cy: r.top + r.height / 2};
             }""")
 
-            ok = run(page, (rect["cx"], rect["cy"]))
+            ok = run(page, (rect["cx"], rect["cy"]), ctx, url)
             b.close()
     finally:
         if col:

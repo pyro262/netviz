@@ -203,7 +203,15 @@ function fakeDom() {
     },
     dispatch(type, evt) { (winListeners[type] || []).slice().forEach((fn) => fn(evt)); },
   };
-  return { root, document, window };
+  return { root, document, window, docListeners, winListeners };
+}
+
+/** Total handler count across every event type currently registered,
+ *  regardless of type name -- so a leak in any listener the menu adds to
+ *  document/window (pointerdown, keydown, blur, ...) fails this the same
+ *  way. */
+function listenerCount(listeners) {
+  return Object.values(listeners).reduce((n, fns) => n + fns.length, 0);
 }
 
 /** Depth-first search for the row this test built, by the `data-id`
@@ -263,6 +271,45 @@ test('open draws the menu when input.lock is not set', () => {
     assert.equal(opened, true);
     assert.equal(menu.isOpen(), true);
     assert.ok(dom.root.children.length > 0, 'nothing was drawn');
+  });
+});
+
+test('open draws exactly the rows menuModel describes, not just SOMETHING', () => {
+  // children.length > 0 alone would pass against a menu that appended one
+  // empty div and nothing else -- this walks the actual tree and checks the
+  // rendered id set (top level plus the always-expanded Layers submenu)
+  // against menuModel's own output for the equivalent state.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(10, 10, { x: 0, y: 0 });
+
+    function collectIds(node, out) {
+      if (node.getAttribute && node.getAttribute('data-id')) out.push(node.getAttribute('data-id'));
+      for (const c of node.children || []) collectIds(c, out);
+      return out;
+    }
+    const rendered = collectIds(dom.root, []).sort();
+
+    // The state createMenu.open() builds when pointAt() returns null and
+    // rail/layers are at their config.js defaults -- menuModel is pure, so
+    // this expected set is derived the same way the page derives it.
+    const expectedState = {
+      railOn: false,
+      layers: { stars: true, aurora: true, bordersWatched: true, cityLights: true, ripples: true },
+      canLookHere: false,
+      settingsPanel: false,
+    };
+    const expected = [];
+    for (const item of menuModel(expectedState)) {
+      expected.push(item.id);
+      for (const sub of item.items || []) expected.push(sub.id);
+    }
+    assert.deepEqual(rendered, expected.sort());
   });
 });
 
@@ -397,6 +444,29 @@ test('opening again replaces the old menu rather than stacking a second one', ()
     menu.open(0, 0, { x: 0, y: 0 });
     menu.open(50, 50, { x: 0, y: 0 });
     assert.equal(dom.root.children.length, 1, 'a second open left the first one drawn too');
+  });
+});
+
+test('an open/close cycle leaves no listener behind on document or window', () => {
+  // The fake already tracks docListeners/winListeners; nothing previously
+  // asserted they end up empty. A leaked outside-click or blur listener
+  // would still work by accident on a single menu, but pile up handler by
+  // handler across many open/close cycles on a kiosk that never reloads.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    assert.equal(listenerCount(dom.docListeners), 0, 'listener present before any open');
+    assert.equal(listenerCount(dom.winListeners), 0, 'listener present before any open');
+    menu.open(0, 0, { x: 0, y: 0 });
+    assert.ok(listenerCount(dom.docListeners) > 0, 'open registered nothing on document');
+    assert.ok(listenerCount(dom.winListeners) > 0, 'open registered nothing on window');
+    menu.close();
+    assert.equal(listenerCount(dom.docListeners), 0, 'close left a document listener behind');
+    assert.equal(listenerCount(dom.winListeners), 0, 'close left a window listener behind');
   });
 });
 

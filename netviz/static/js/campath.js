@@ -234,6 +234,32 @@ export function endManual(s) {
   s.idleT = 0;
 }
 
+/**
+ * Force the camera out of manual mode immediately, bypassing the idle
+ * countdown -- for an explicit one-shot request, not a passive resume.
+ *
+ * "Look here" (the menu's action) is the caller this exists for. Every menu
+ * opener leaves the camera in manual mode (`toggleMenu` pokes the rig, and
+ * `input.tick` re-pokes every frame the menu stays open), which is exactly
+ * the ONE state `startVisit`'s own guard refuses to interrupt by default --
+ * that guard exists so an automatic block-burst detour never steals a view
+ * somebody is actively holding, but a menu click is not a burst arriving
+ * unannounced, it is the person looking at the menu asking for this by name.
+ * Without this hand-back, "Look here" silently did nothing on every opener,
+ * every time: the menu closed and the camera never moved.
+ *
+ * Deliberately does not queue a fresh autonomous heading the way the natural
+ * idle-resume does (see step()'s manual branch) -- the caller is about to
+ * set phase to 'visit' itself via startVisit, and picking a heading here
+ * would be immediately overwritten and pointless.
+ */
+export function forceHandBack(s) {
+  s.manual = false;
+  s.held = false;
+  s.heldT = 0;
+  s.idleT = 0;
+}
+
 /** Somebody is still here, without claiming a pointer is down.
  *
  *  Wheel, pinch and the zoom/arrow keys go through this rather than through

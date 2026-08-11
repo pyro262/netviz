@@ -183,11 +183,17 @@ export function createMenu({ rig, settings, root }) {
     if (typeof window !== 'undefined') window.removeEventListener('blur', onBlur);
   }
 
-  /** Wrap an action so any successful click closes the menu -- one of the
-   *  close triggers named in the brief, and leaving a stale menu open over
-   *  whatever the click just changed would read as unfinished. */
+  /** Wrap an action so any click closes the menu -- one of the close
+   *  triggers named in the brief, and leaving a stale menu open over
+   *  whatever the click just changed would read as unfinished.
+   *
+   *  try/finally, not fn() followed by close(): a throwing settings.apply
+   *  (a rejected patch is reported, not thrown, but nothing guarantees every
+   *  future action stays that well-behaved) used to leave the menu open over
+   *  a change that never happened -- the one state this wrapper exists to
+   *  prevent, reached by the one path that skipped it. */
   function act(fn) {
-    return () => { fn(); close(); };
+    return () => { try { fn(); } finally { close(); } };
   }
 
   function renderItem(item, point) {

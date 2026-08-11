@@ -88,6 +88,13 @@ export function startInput({ canvas, rig, menu }) {
    *  window) so the openers have to double as the close. */
   function toggleMenu(x, y, ndcPos) {
     if (menu.isOpen()) { menu.close(); return; }
+    // menu.open() checks input.lock itself and returns false without
+    // touching the DOM when it refuses. Poking the rig and killing the fling
+    // are both side effects of the menu ACTUALLY opening -- doing them first
+    // and unconditionally meant a right-click on a locked public display
+    // still restarted the idle countdown (and cancelled any coast) for a
+    // menu that never appeared.
+    if (!menu.open(x, y, ndcPos)) return;
     // A fling from an earlier drag can still be coasting -- decay() alone
     // takes ~114s to reach its floor, and nothing else clears it for the
     // `s` opener, which involves no pointer event at all to do it as a
@@ -98,7 +105,6 @@ export function startInput({ canvas, rig, menu }) {
     // opens over a globe that keeps spinning underneath it.
     spinRate = 0;
     rig.poke();
-    menu.open(x, y, ndcPos);
   }
 
   function onDown(ev) {
@@ -200,7 +206,12 @@ export function startInput({ canvas, rig, menu }) {
       // menu it opened in the same tick.
       if (ev.pointerType !== 'mouse' && !gesturePinched && down) {
         const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y);
-        if (moved < DOUBLE_TAP.maxPx) {
+        // <=, matching isDoubleTap's own boundary (pinned by a boundary
+        // test there): exactly maxPx used to be a tap by this check and a
+        // drag by that one, so a tap landing precisely on the line failed
+        // isDoubleTap's distance test for a different reason than the one
+        // that actually mattered.
+        if (moved <= DOUBLE_TAP.maxPx) {
           const now = { t: performance.now(), x: ev.clientX, y: ev.clientY };
           if (isDoubleTap(lastTap, now, DOUBLE_TAP)) {
             toggleMenu(ev.clientX, ev.clientY, ndc(ev));
@@ -255,7 +266,12 @@ export function startInput({ canvas, rig, menu }) {
   function onContextMenu(ev) {
     // Not optional, not conditional on `enabled` or on the menu actually
     // opening: a wall display must never offer the browser's Back / Reload /
-    // Save-as, even when input.lock refuses the menu itself.
+    // Save-as, even when input.lock refuses the menu itself. Bound on
+    // `window`, not the canvas -- `.menu` is a child of `#stage`, not of the
+    // canvas, and so are the rail, the degraded banner and the update mark.
+    // A canvas-only listener let a right-click ON any of those (including
+    // the open menu itself) through to the real browser context menu, which
+    // is exactly what this preventDefault exists to stop.
     ev.preventDefault();
     if (!enabled) return;
     toggleMenu(ev.clientX, ev.clientY, ndc(ev));
@@ -357,7 +373,7 @@ export function startInput({ canvas, rig, menu }) {
   canvas.addEventListener('pointerup', onUp);
   canvas.addEventListener('pointercancel', onUp);
   canvas.addEventListener('lostpointercapture', onLostCapture);
-  canvas.addEventListener('contextmenu', onContextMenu);
+  window.addEventListener('contextmenu', onContextMenu);
   canvas.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('blur', onBlur);
   window.addEventListener('keydown', onKey);
@@ -405,7 +421,7 @@ export function startInput({ canvas, rig, menu }) {
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onUp);
       canvas.removeEventListener('lostpointercapture', onLostCapture);
-      canvas.removeEventListener('contextmenu', onContextMenu);
+      window.removeEventListener('contextmenu', onContextMenu);
       canvas.removeEventListener('wheel', onWheel);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('keydown', onKey);
