@@ -348,6 +348,12 @@ export const SCHEMA = {
     help: 'An arrow parked on a dark wall for a week is the most visible thing '
         + 'in the room. 0 keeps it visible.',
   },
+  'input.lock': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Looking is always allowed; configuring is not. With this on, the '
+        + 'menu refuses to open at all -- for a display in a public space, '
+        + 'where the globe is the point and the controls are not.',
+  },
 
   // -------------------------------------------------------------- layers --
   ...layers([

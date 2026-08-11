@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { menuModel, isDoubleTap, DOUBLE_TAP } from '../../netviz/static/js/menu.js';
+import { menuModel, isDoubleTap, DOUBLE_TAP, createMenu } from '../../netviz/static/js/menu.js';
+import { CONFIG } from '../../netviz/static/js/config.js';
 
 const STATE = {
   railOn: false,
@@ -121,4 +122,279 @@ test('diagonal distance over the limit is rejected', () => {
   // This catches a regression to per-axis checking (which would incorrectly accept it).
   assert.equal(isDoubleTap({ t: 1000, x: 500, y: 400 },
                            { t: 1200, x: 520, y: 420 }, DOUBLE_TAP), false);
+});
+
+// ---------------------------------------------------------------- createMenu --
+//
+// Minimal DOM fake, same pattern as tests/js/rail.test.mjs: createElement,
+// classList, append/appendChild/replaceChildren, never innerHTML. Extended
+// with addEventListener/removeEventListener and parent links, since the menu
+// (unlike the rail) has to find out about outside clicks and remove itself.
+
+function fakeDom() {
+  function mk(tag) {
+    const listeners = {};
+    const node = {
+      tagName: tag, className: '', style: {}, textContent: '',
+      dataset: {},
+      children: [],
+      parentNode: null,
+      classList: {
+        _s: new Set(),
+        add(c) { this._s.add(c); },
+        remove(c) { this._s.delete(c); },
+        contains(c) { return this._s.has(c); },
+      },
+      appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
+      append(...cs) { for (const c of cs) this.appendChild(c); },
+      remove() {
+        if (!this.parentNode) return;
+        const i = this.parentNode.children.indexOf(this);
+        if (i >= 0) this.parentNode.children.splice(i, 1);
+        this.parentNode = null;
+      },
+      contains(other) {
+        let n = other;
+        while (n) { if (n === this) return true; n = n.parentNode; }
+        return false;
+      },
+      addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+      removeEventListener(type, fn) {
+        if (listeners[type]) listeners[type] = listeners[type].filter((f) => f !== fn);
+      },
+      // Test-only: fire a fake event at this node.
+      dispatch(type, evt) { (listeners[type] || []).slice().forEach((fn) => fn(evt)); },
+    };
+    return node;
+  }
+
+  const root = mk('div');
+  const docListeners = {};
+  const document = {
+    createElement: (tag) => mk(tag),
+    addEventListener(type, fn) { (docListeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) {
+      if (docListeners[type]) docListeners[type] = docListeners[type].filter((f) => f !== fn);
+    },
+    dispatch(type, evt) { (docListeners[type] || []).slice().forEach((fn) => fn(evt)); },
+  };
+  const winListeners = {};
+  const window = {
+    innerWidth: 1920, innerHeight: 1080,
+    addEventListener(type, fn) { (winListeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) {
+      if (winListeners[type]) winListeners[type] = winListeners[type].filter((f) => f !== fn);
+    },
+    dispatch(type, evt) { (winListeners[type] || []).slice().forEach((fn) => fn(evt)); },
+  };
+  return { root, document, window };
+}
+
+/** Depth-first search for the row this test built, by the item id menu.js
+ *  stamps into dataset.id. */
+function findByDataId(node, id) {
+  if (node.dataset && node.dataset.id === id) return node;
+  for (const c of node.children || []) {
+    const found = findByDataId(c, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function withFakeGlobals(dom, fn) {
+  const realDoc = globalThis.document;
+  const realWin = globalThis.window;
+  globalThis.document = dom.document;
+  globalThis.window = dom.window;
+  try {
+    return fn();
+  } finally {
+    globalThis.document = realDoc;
+    globalThis.window = realWin;
+  }
+}
+
+test('open refuses and draws nothing when input.lock is set', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    CONFIG.input.lock = true;
+    try {
+      const menu = createMenu({
+        rig: { pointAt: () => null, visit: () => {} },
+        settings: { apply: () => { throw new Error('must not be called'); } },
+        root: dom.root,
+      });
+      const opened = menu.open(10, 10, { x: 0, y: 0 });
+      assert.equal(opened, false);
+      assert.equal(menu.isOpen(), false);
+      assert.equal(dom.root.children.length, 0, 'the menu drew something anyway');
+    } finally {
+      CONFIG.input.lock = false;
+    }
+  });
+});
+
+test('open draws the menu when input.lock is not set', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    const opened = menu.open(10, 10, { x: 0, y: 0 });
+    assert.equal(opened, true);
+    assert.equal(menu.isOpen(), true);
+    assert.ok(dom.root.children.length > 0, 'nothing was drawn');
+  });
+});
+
+test('a toggle click applies the schema path with the flipped value, and closes', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const log = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: (patch) => log.push(patch) },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    // 'rail' is the top-level toggle's id, but rail.enabled (default false)
+    // is the schema path it actually has to write -- the two are not spelled
+    // the same, and that mapping is exactly what this test guards.
+    const railRow = findByDataId(dom.root, 'rail');
+    assert.ok(railRow, 'no row with data-id=rail');
+    railRow.dispatch('click', { target: railRow });
+    assert.deepEqual(log, [{ 'rail.enabled': true }]);
+    assert.equal(menu.isOpen(), false, 'a successful action must close the menu');
+  });
+});
+
+test('a layer toggle applies its own id unchanged, since layer ids ARE schema paths', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const log = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: (patch) => log.push(patch) },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    assert.ok(starsRow, 'no row with data-id=layers.stars');
+    starsRow.dispatch('click', { target: starsRow });
+    // stars defaults true, so the flip is to false.
+    assert.deepEqual(log, [{ 'layers.stars': false }]);
+  });
+});
+
+test('lookHere calls rig.visit with the lat/lon it was opened at, and closes', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const visited = [];
+    const menu = createMenu({
+      rig: { pointAt: () => ({ lat: 12.5, lon: -45.25 }), visit: (lat, lon) => visited.push([lat, lon]) },
+      settings: { apply: () => { throw new Error('must not be called'); } },
+      root: dom.root,
+    });
+    menu.open(20, 20, { x: 0.1, y: -0.05 });
+    const row = findByDataId(dom.root, 'lookHere');
+    assert.ok(row, 'no row with data-id=lookHere');
+    assert.ok(!row.className.includes('disabled'), 'lookHere should be enabled');
+    row.dispatch('click', { target: row });
+    assert.deepEqual(visited, [[12.5, -45.25]]);
+    assert.equal(menu.isOpen(), false);
+  });
+});
+
+test('lookHere is disabled and inert when the pointer was over empty sky', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const visited = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: (lat, lon) => visited.push([lat, lon]) },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(20, 20, { x: 0.9, y: 0.9 });
+    const row = findByDataId(dom.root, 'lookHere');
+    assert.ok(row.className.includes('disabled'));
+    row.dispatch('click', { target: row });   // disabled items get no listener
+    assert.equal(visited.length, 0);
+    assert.equal(menu.isOpen(), true, 'a click with no listener must not close the menu');
+  });
+});
+
+test('a click outside the menu closes it', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    assert.equal(menu.isOpen(), true);
+    const outsider = dom.document.createElement('div');
+    dom.document.dispatch('pointerdown', { target: outsider });
+    assert.equal(menu.isOpen(), false);
+  });
+});
+
+test('esc closes the menu', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    dom.document.dispatch('keydown', { key: 'Escape' });
+    assert.equal(menu.isOpen(), false);
+  });
+});
+
+test('losing focus closes the menu', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    dom.window.dispatch('blur', {});
+    assert.equal(menu.isOpen(), false);
+  });
+});
+
+test('opening again replaces the old menu rather than stacking a second one', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    menu.open(50, 50, { x: 0, y: 0 });
+    assert.equal(dom.root.children.length, 1, 'a second open left the first one drawn too');
+  });
+});
+
+test('close() is idempotent', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, visit: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.close();               // never opened
+    menu.open(0, 0, { x: 0, y: 0 });
+    menu.close();
+    menu.close();                // already closed
+    assert.equal(menu.isOpen(), false);
+  });
 });

@@ -223,6 +223,11 @@ export const CONFIG = {
     // An arrow parked on a dark wall for a week is the most visible thing in
     // the room. 0 keeps it visible.
     hideCursorSeconds: 3,
+    // Looking is always allowed; configuring is not. With this on, the menu
+    // (opened by right-click, `s`, or a double tap) refuses to open at all --
+    // for a display in a public space, where the globe is the point and the
+    // controls are not.
+    lock: false,
   },
 
   // --------------------------------------------------------------- layers --

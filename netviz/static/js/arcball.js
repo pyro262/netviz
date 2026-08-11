@@ -134,14 +134,29 @@ function matrixToQuat(x, y, z) {
   return norm({ w: (m10 - m01) / s, x: (m02 + m20) / s, y: (m12 + m21) / s, z: s / 4 });
 }
 
+/**
+ * The lat/lon a world-space unit vector sits at, in the same theta = -lon
+ * convention as quatFromLatLon. General over any point on the sphere -- not
+ * just an eye direction -- which is what a menu's "Look here" needs: the
+ * point picked under the pointer is not where the camera is.
+ */
+export function vecToLatLon(v) {
+  const lat = Math.asin(Math.max(-1, Math.min(1, v.y))) * R2D;
+  const lon = -Math.atan2(v.z, v.x) * R2D;
+  return { lat, lon: ((lon + 180) % 360 + 360) % 360 - 180 };
+}
+
 /** Where the camera is, in the two numbers the rest of the display speaks. The
  *  roll is dropped on purpose: campath owns lat/lon and nothing else. */
 export function latLonFromQuat(q) {
-  const e = eyeDirection(q);
-  const lat = Math.asin(Math.max(-1, Math.min(1, e.y))) * R2D;
-  const lon = -Math.atan2(e.z, e.x) * R2D;
-  return { lat, lon: ((lon + 180) % 360 + 360) % 360 - 180 };
+  return vecToLatLon(eyeDirection(q));
 }
+
+/** Carry a CAMERA-space vector into world space through pose `q` -- the
+ *  inverse of what eyeDirection/upVector do for the camera's own axes. What
+ *  `pointAt` needs: pickCameraSphere hands back a camera-space hit, and it
+ *  has to be read as a lat/lon, which is a world-space question. */
+export function unrotate(q, v) { return rotate(conj(q), v); }
 
 /**
  * The sphere point under a normalised device coordinate, in CAMERA space.

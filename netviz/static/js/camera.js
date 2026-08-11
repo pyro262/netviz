@@ -10,7 +10,7 @@ import {
 import { clampDistance, validateZoomRange } from './orbit.js';
 import {
   quatFromLatLon, latLonFromQuat, eyeDirection, upVector, trackDrag,
-  rotateCamera, quatAngle, rollBetween,
+  rotateCamera, quatAngle, rollBetween, pickCameraSphere, unrotate, vecToLatLon,
 } from './arcball.js';
 
 // The view axis in camera space. Rolling about it changes which way is up and
@@ -243,6 +243,28 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
         fovDeg: camera.fov,
         aspect: camera.aspect,
       };
+    },
+    /**
+     * What point on the globe is under this normalised device coordinate --
+     * for a menu that opened over the globe, or `null` when it opened over
+     * empty sky.
+     *
+     * Deliberately WITHOUT the limb clamp: `pickCameraSphere`'s clampToLimb
+     * exists so a drag stays alive when the pointer leaves the globe, which is
+     * the opposite of what a menu wants. A right-click past the silhouette
+     * must report null, not the nearest bit of coastline -- and at 4.6 radii
+     * the globe's angular radius is 12.56 deg against a 29.27 deg half-FOV, so
+     * that miss is the common case, not the edge case.
+     *
+     * The pick comes back in camera space; `pose` (or the upright equivalent
+     * when nobody is holding the globe) carries it into world space, the same
+     * way eyeDirection/upVector do for the camera's own axes.
+     */
+    pointAt(ndc) {
+      const hit = pickCameraSphere(ndc, { distance, fovDeg: camera.fov, aspect: camera.aspect }, false);
+      if (!hit) return null;
+      const p = pose || uprightNow();
+      return vecToLatLon(unrotate(p, hit));
     },
     /**
      * One live setting that the rig or the motion maths owns.
