@@ -193,6 +193,14 @@ export const CONFIG = {
     // 35 deg camera and the limb clips on a 16:9 wall.
     zoomRange: [3.3, 9.0],
     zoomFactor: 1.12,      // per wheel notch, multiplicative
+    // A hand rotates the globe freely -- over the poles, upside down, as far as
+    // it likes -- so there is no latitude limit to configure here. The walk
+    // still bounces off camera.walk.latitudeClamp; see arcball.js for why the
+    // two cannot share one number. How fast the roll a drag leaves behind
+    // unwinds once the display has taken itself back, as a fraction of the
+    // remaining angle per second: the view is already easing home over the
+    // return leg, and the horizon should be level by the time it arrives.
+    rollReturnEase: 0.6,
     // Fraction of a fling's speed remaining after one second. 0 stops dead,
     // which reads as broken; 1 never settles.
     inertia: 0.85,

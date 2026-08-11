@@ -9,7 +9,8 @@
 // alternative -- mousedown plus touchstart -- duplicates every handler and
 // invites synthetic-click confusion on the overlap.
 import { cfg } from './config.js';
-import { pickSphere, solveDrag, zoomBy, decay } from './orbit.js';
+import { zoomBy, decay } from './orbit.js';
+import { pickCameraSphere, dragRotation, axisAngle } from './arcball.js';
 
 export function startInput({ canvas, rig }) {
   const enabled = cfg('input.enabled', true);
@@ -29,9 +30,17 @@ export function startInput({ canvas, rig }) {
   const hideAfter = cfg('input.hideCursorSeconds', 3);
 
   const pointers = new Map();          // pointerId -> {x, y}
-  let grabPoint = null;                // sphere point under the pointer at grab
+  // Camera-space unit vector of the sphere point under the pointer at grab.
+  // Camera space, not world: the rotation that carries it under the pointer is
+  // then the same maths at the equator, at a pole, and upside down past one.
+  let grabPoint = null;
   let pinchDist = 0;
-  let vLat = 0, vLon = 0;              // degrees per second, for inertia
+  // The fling, as a camera-space axis and a rate in degrees per second. One
+  // axis and one number replace the old vLat/vLon pair, which could not express
+  // a spin about the view direction at all -- and that is most of what a drag
+  // near the limb, or any drag after a pole crossing, actually is.
+  let spinAxis = { x: 0, y: 1, z: 0 };
+  let spinRate = 0;
   let lastMove = 0;
   let cursorTimer = null;
 
@@ -63,10 +72,11 @@ export function startInput({ canvas, rig }) {
       return;
     }
     if (!dragOn) return;
-    const v = rig.view();
-    grabPoint = pickSphere(v.lat, v.lon, v.distance, ndc(ev).x, ndc(ev).y,
-                           v.fovDeg, v.aspect);
-    vLat = 0; vLon = 0;
+    // No limb clamp on the GRAB: pressing on empty sky is not a grab, and
+    // pretending it landed on the nearest bit of globe would jump the view by
+    // however far away the press was.
+    grabPoint = pickCameraSphere(ndc(ev), rig.view());
+    spinRate = 0;
     lastMove = performance.now();
     rig.grab();
   }
@@ -91,19 +101,25 @@ export function startInput({ canvas, rig }) {
     }
 
     if (!dragOn || !grabPoint) return;
-    const v = rig.view();
-    const before = { lat: v.lat, lon: v.lon };
-    const solved = solveDrag(before, grabPoint, ndc(ev), v);
-    const lat = before.lat + (solved.lat - before.lat) * invert;
-    const dLonRaw = ((solved.lon - before.lon + 540) % 360) - 180;
-    const lon = before.lon + dLonRaw * invert;
-    rig.look(lat, lon);
+    // Clamped to the limb HERE, unlike the grab: a pointer that runs off the
+    // globe mid-drag is the ordinary way a fling ends, and without the clamp
+    // the globe stops dead under a finger that is still moving.
+    const hit = pickCameraSphere(ndc(ev), rig.view(), true);
+    if (!hit) return;
+    // The step since the LAST move, not since the press -- see trackDrag. The
+    // reference advances with the pointer, or the rotation compounds and the
+    // turn per pixel scales with the browser's event rate.
+    const from = grabPoint;
+    rig.drag(from, hit, invert !== 1);
+    grabPoint = hit;
 
     const now = performance.now();
     const dt = Math.max(0.001, (now - lastMove) / 1000);
     lastMove = now;
-    vLat = (lat - before.lat) / dt;
-    vLon = dLonRaw * invert / dt;
+    const spin = axisAngle(invert === 1 ? dragRotation(from, hit)
+                                        : dragRotation(hit, from));
+    spinAxis = spin.axis;
+    spinRate = spin.deg / dt;
   }
 
   function onUp(ev) {
@@ -122,12 +138,9 @@ export function startInput({ canvas, rig }) {
       // pointer is still down.
       if (dragOn) {
         const [, p] = [...pointers.entries()][0];
-        const v = rig.view();
-        const n = ndcFromClient(p.x, p.y);
-        grabPoint = pickSphere(v.lat, v.lon, v.distance, n.x, n.y,
-                               v.fovDeg, v.aspect);
+        grabPoint = pickCameraSphere(ndcFromClient(p.x, p.y), rig.view());
       }
-      vLat = 0; vLon = 0;
+      spinRate = 0;
       lastMove = performance.now();
       return;
     }
@@ -157,7 +170,7 @@ export function startInput({ canvas, rig }) {
     pinchDist = 0;
     grabPoint = null;
     // No fling: the gesture did not end in a throw, it ended in a loss.
-    vLat = 0; vLon = 0;
+    spinRate = 0;
     rig.release();
   }
 
@@ -188,17 +201,21 @@ export function startInput({ canvas, rig }) {
 
   function onKey(ev) {
     if (!keysOn || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    const v = rig.view();
     const [min, max] = rig.zoomRange();
     const stepDeg = 5;
     // Every one of these is poke(), never grab()/release(). A keypress is an
     // instant, not a hold: grabbing and releasing on the same key would clear
     // `held` out from under a pointer that is genuinely down.
+    // Arrows turn about the camera's own axes rather than adding to lat/lon, so
+    // they keep working at a pole and past one -- the same reason the drag does.
     switch (ev.key) {
-      case 'ArrowLeft':  rig.poke(); rig.look(v.lat, v.lon - stepDeg); break;
-      case 'ArrowRight': rig.poke(); rig.look(v.lat, v.lon + stepDeg); break;
-      case 'ArrowUp':    rig.poke(); rig.look(v.lat + stepDeg, v.lon); break;
-      case 'ArrowDown':  rig.poke(); rig.look(v.lat - stepDeg, v.lon); break;
+      // Signs measured, not derived: a positive turn about camera +Y takes the
+      // camera WEST (lon -5), and about camera +X it takes it north. These four
+      // preserve the previous behaviour -- right/up move the camera east/north.
+      case 'ArrowLeft':  rig.poke(); rig.spin(CAM_Y, stepDeg); break;
+      case 'ArrowRight': rig.poke(); rig.spin(CAM_Y, -stepDeg); break;
+      case 'ArrowUp':    rig.poke(); rig.spin(CAM_X, stepDeg); break;
+      case 'ArrowDown':  rig.poke(); rig.spin(CAM_X, -stepDeg); break;
       case '+': case '=':
         rig.poke();
         rig.setDistance(zoomBy(rig.distance(), -1, zoomFactor, min, max));
@@ -216,6 +233,10 @@ export function startInput({ canvas, rig }) {
     ev.preventDefault();
   }
 
+  // Camera-space axes for the arrow keys and nothing else.
+  const CAM_X = { x: 1, y: 0, z: 0 };
+  const CAM_Y = { x: 0, y: 1, z: 0 };
+
   /** Called once per animation frame. Coasts the view after a fling. */
   function tick(dt) {
     // The hand-back ends input's ownership of the view, full stop. Damping
@@ -224,13 +245,11 @@ export function startInput({ canvas, rig }) {
     // both campath.step() and this function write curLat/curLon at once, and
     // 5.6 degrees of longitude nobody asked for arrive AFTER the display has
     // taken itself back. Two owners of one piece of state is the whole bug.
-    if (!rig.manual()) { vLat = 0; vLon = 0; return; }
-    if (rig.held() || (vLat === 0 && vLon === 0)) return;
-    vLat = decay(vLat, damping, dt);
-    vLon = decay(vLon, damping, dt);
-    if (vLat === 0 && vLon === 0) return;
-    const v = rig.view();
-    rig.look(v.lat + vLat * dt, v.lon + vLon * dt);
+    if (!rig.manual()) { spinRate = 0; return; }
+    if (rig.held() || spinRate === 0) return;
+    spinRate = decay(spinRate, damping, dt);
+    if (spinRate === 0) return;
+    rig.spin(spinAxis, spinRate * dt);
   }
 
   canvas.addEventListener('pointerdown', onDown);

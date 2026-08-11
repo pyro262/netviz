@@ -481,9 +481,53 @@ test('grabbing the globe interrupts a running detour', () => {
 test('setManualView clamps latitude and wraps longitude', () => {
   const s = initialState();
   beginManual(s);
-  setManualView(s, 89, 200);
-  assert.equal(s.curLat, 62);                // latClamp
+  setManualView(s, 95, 200);
+  assert.equal(s.curLat, DEFAULTS.manualLatClamp);
   assert.equal(s.curLon, -160);              // wrapped into [-180, 180)
+});
+
+test('a hand can hold a polar view the walk never adopts', () => {
+  // The walk bounces off latitudeClamp so it never looks down a pole on its
+  // own. A hand on the globe is not the walk: stopping the drag dead at 62
+  // reads as an axis lock, since longitude keeps turning while latitude does
+  // not.
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 85, 0);
+  assert.equal(s.curLat, 85);
+  setManualView(s, -85, 0);
+  assert.equal(s.curLat, -85);
+});
+
+test('the hand-back eases down from a polar view instead of snapping', () => {
+  // curLat is above the walk clamp when the display takes itself back. Clamping
+  // it per frame would teleport the view 23 degrees on the first autonomous
+  // frame -- the jump the hand-back exists to avoid.
+  const s = initialState();
+  beginManual(s);
+  setManualView(s, 85, 0);
+  endManual(s);
+  for (let i = 0; i < 301; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);  // past 30s
+  assert.equal(isManual(s), false);
+  assert.ok(s.curLat > 80, `snapped to ${s.curLat} on the first frame back`);
+  for (let i = 0; i < 600; i++) step(s, 0.1, { lat: 0, lon: 0 }, P2);  // 60s more
+  assert.ok(s.curLat <= DEFAULTS.latClamp + 1e-9,
+    `never came back inside the walk clamp: ${s.curLat}`);
+});
+
+test('a detour to a polar country still stops at the walk clamp', () => {
+  // The curLat guard is the manual limit now, so nothing downstream catches an
+  // out-of-range visit target. A block CAN geolocate above 62 -- Svalbard,
+  // northern Greenland -- and the autonomous display must not look down the
+  // pole to show it.
+  const s = initialState();
+  startVisit(s, 78, 15, P2);
+  let peak = -90;
+  for (let i = 0; i < 400; i++) {
+    step(s, 0.1, HOME, P2);
+    peak = Math.max(peak, s.curLat);
+  }
+  assert.ok(peak <= DEFAULTS.latClamp + 1e-9, `detoured to ${peak}`);
 });
 
 test('the cycle clock is frozen during a detour, not eaten by it', () => {

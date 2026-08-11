@@ -52,7 +52,16 @@ export const DEFAULTS = {
   // 3 degrees; at 0.2 it needs 20s, which leaves the walk its share of the
   // cycle. The easing character is unchanged, only its rate.
   ease: 0.2,              // fraction of the remaining gap per second
-  latClamp: 62,           // never look down the pole
+  latClamp: 62,           // the WALK never looks down the pole
+  // A hand is not the walk, and is not clamped like one: a drag stopping dead
+  // at 62 while longitude keeps turning under the same finger reads as an axis
+  // lock rather than as a limit. 90 is not a policy, it is the range of the
+  // coordinate -- a hand rotates on a quaternion in arcball.js, which has no
+  // pole at all, and going over the top arrives here as a latitude coming back
+  // down with longitude flipped by 180. curLat is guarded at THIS on every
+  // autonomous frame too, so a hand-back from 85 eases down into the walk's
+  // range rather than teleporting into it.
+  manualLatClamp: 90,
   // Direct manipulation (2026-08-10). The display is autonomous and a person
   // borrows it: after this many idle seconds the camera eases home and resumes
   // its cycle. 0 means never, which makes a panned view permanent -- the right
@@ -227,11 +236,12 @@ export function markInput(s) {
   s.idleT = 0;
 }
 
-/** The view the user is holding. Clamped and wrapped exactly like the
- *  autonomous path, so a dragged camera can never reach a pose the walk
- *  cannot. */
+/** The view the user is holding. Wrapped like the autonomous path, but held
+ *  only to `manualLatClamp` -- a hand may look down a pole the walk never
+ *  visits. See the DEFAULTS note; the solver in orbit.js clamps to the same
+ *  number, or the globe slides out from under the finger. */
 export function setManualView(s, lat, lon, p = DEFAULTS) {
-  s.curLat = Math.max(-p.latClamp, Math.min(p.latClamp, lat));
+  s.curLat = Math.max(-p.manualLatClamp, Math.min(p.manualLatClamp, lat));
   s.curLon = ((lon + 180) % 360 + 360) % 360 - 180;
 }
 
@@ -252,7 +262,11 @@ export function startVisit(s, lat, lon, p = DEFAULTS) {
     s.held = false;
     s.heldT = 0;
   }
-  s.visitLat = lat;
+  // Clamped here, not downstream: curLat is guarded only at the manual limit
+  // now, so an unclamped visit target is the one autonomous path that could
+  // walk the display onto a pole. A block above 62 -- Svalbard, northern
+  // Greenland -- is looked at from the edge of the walk's range instead.
+  s.visitLat = Math.max(-p.latClamp, Math.min(p.latClamp, lat));
   s.visitLon = lon;
   s.phase = 'visit';
   s.phaseT = 0;
@@ -333,7 +347,11 @@ export function step(s, dt, traffic, p = DEFAULTS) {
     s.curLon += deltaLon(s.curLon, s.targetLon) * kv;
     s.curLon = ((s.curLon + 180) % 360 + 360) % 360 - 180;
     s.curLat += (s.targetLat - s.curLat) * kv;
-    s.curLat = Math.max(-p.latClamp, Math.min(p.latClamp, s.curLat));
+    // manualLatClamp, not latClamp: a hand-back from a polar view must EASE into
+  // the walk's range, and clamping curLat to 62 here would teleport it there on
+  // the first autonomous frame. The targets are all inside latClamp already, so
+  // the easing is what enforces the walk's range; this is only a runaway guard.
+  s.curLat = Math.max(-p.manualLatClamp, Math.min(p.manualLatClamp, s.curLat));
     return s;
   }
 
@@ -378,12 +396,21 @@ export function step(s, dt, traffic, p = DEFAULTS) {
     if (traffic) {
       s.targetLon = blendLon(s.targetLon, traffic.lon, Math.min(1, 1.6 * dt));
       s.targetLat += (traffic.lat - s.targetLat) * Math.min(1, p.latPull * dt);
+      // Traffic at 89N is a real case (a Svalbard peer, a satellite uplink) and
+      // the autonomous display still must not look down the pole. The walk
+      // enforces this by bouncing its target; the return leg has to clamp its
+      // own, because curLat is now only guarded at the wider manual limit.
+      s.targetLat = Math.max(-p.latClamp, Math.min(p.latClamp, s.targetLat));
     }
     const k0 = Math.min(1, p.ease * dt);
     s.curLon += deltaLon(s.curLon, s.targetLon) * k0;
     s.curLon = ((s.curLon + 180) % 360 + 360) % 360 - 180;
     s.curLat += (s.targetLat - s.curLat) * k0;
-    s.curLat = Math.max(-p.latClamp, Math.min(p.latClamp, s.curLat));
+    // manualLatClamp, not latClamp: a hand-back from a polar view must EASE into
+  // the walk's range, and clamping curLat to 62 here would teleport it there on
+  // the first autonomous frame. The targets are all inside latClamp already, so
+  // the easing is what enforces the walk's range; this is only a runaway guard.
+  s.curLat = Math.max(-p.manualLatClamp, Math.min(p.manualLatClamp, s.curLat));
     return s;
   }
 
@@ -425,7 +452,11 @@ export function step(s, dt, traffic, p = DEFAULTS) {
   s.curLon = ((s.curLon + 180) % 360 + 360) % 360 - 180;
   const wantLat = s.targetLat;
   s.curLat += (wantLat - s.curLat) * k;
-  s.curLat = Math.max(-p.latClamp, Math.min(p.latClamp, s.curLat));
+  // manualLatClamp, not latClamp: a hand-back from a polar view must EASE into
+  // the walk's range, and clamping curLat to 62 here would teleport it there on
+  // the first autonomous frame. The targets are all inside latClamp already, so
+  // the easing is what enforces the walk's range; this is only a runaway guard.
+  s.curLat = Math.max(-p.manualLatClamp, Math.min(p.manualLatClamp, s.curLat));
 
   return s;
 }
