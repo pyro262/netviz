@@ -217,9 +217,21 @@ export const SCHEMA = {
   },
   'camera.walk.degreesPerSecond': {
     type: 'number', min: 0, max: 20, strategy: 'uniform',
-    help: 'Walk rate. At 1.15 a 98-second walk only ever reached ~95 degrees '
-        + 'from home and the far side of the globe was never seen; 1.6 reaches '
-        + '~140.',
+    help: 'The fastest the walk may ever move. The rate itself is derived from '
+        + 'spanDegrees and the length of the walk phase; this is the ceiling on '
+        + 'that, so a short phase cannot whip the globe round.',
+  },
+  'camera.walk.spanDegrees': {
+    type: 'number', min: 5, max: 180, strategy: 'uniform',
+    help: 'How far from the traffic the walk may get, and the distance its '
+        + 'ramp is sized to cover. Low keeps the arcs on screen; high sweeps '
+        + 'more of the planet and puts home behind the limb.',
+  },
+  'camera.walk.rampFloor': {
+    type: 'number', min: 0, max: 1, strategy: 'uniform',
+    help: 'The fraction of its peak rate the walk sets off at. Low means it '
+        + 'starts almost still and finishes fast; 1 is a flat rate, the way '
+        + 'the walk behaved before the ramp.',
   },
   'camera.walk.latitudeClamp': {
     type: 'number', min: 0, max: 89, strategy: 'uniform',
