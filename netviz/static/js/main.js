@@ -17,6 +17,7 @@ import { createBurstDetector } from './burst.js';
 import { railEnabled, start as startRail } from './rail.js';
 import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
+import { createMenu } from './menu.js';
 
 const GLOBE_RADIUS = 1.0;
 
@@ -137,7 +138,12 @@ async function boot() {
   // Position and aim come from the rig every frame; nothing is set here.
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
   const rig = createCameraRig(camera, GLOBE_RADIUS);
-  const input = startInput({ canvas: renderer.domElement, rig });
+  // Built once `settings` exists, near the bottom of boot() -- the menu needs
+  // settings.apply() and startInput needs the menu. `input` is referenced by
+  // the render loop below via closure, so declaring it here and assigning it
+  // later is safe: the loop's callback cannot run before boot() has finished
+  // running synchronously past the assignment.
+  let input;
 
   const globe = await createGlobe(GLOBE_RADIUS);
   scene.add(globe.group);
@@ -356,17 +362,26 @@ async function boot() {
     else throw new Error(`no polling timer ${key}`);
   };
 
-  const settings = createApplier({
+  // ctx is a real object, not a literal captured by value: settings.apply()
+  // reads ctx.input at call time, so patching ctx.input below -- once input
+  // actually exists -- is enough. createMenu needs `settings` itself, and
+  // startInput needs the menu, so the order has to be settings -> menu ->
+  // input, with input's slot in ctx filled in last.
+  const ctx = {
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
-    scene, input, polling, resize, rail,
-  });
+    scene, input: null, polling, resize, rail,
+  };
+  const settings = createApplier(ctx);
+  const menu = createMenu({ rig, settings, root: stage });
+  input = startInput({ canvas: renderer.domElement, rig, menu });
+  ctx.input = input;
 
   // Diagnostics only -- no interaction, nothing reads this on the wall. It
   // exists so tools/shoot.py can assert the scene has live arcs rather than
   // leaving "looks about right" as the only check.
   window.__netviz = {
     arcs, globe, ripples, aurora, renderer, camera, scene, rig, stars, input,
-    settings,
+    settings, menu,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
     project(lat, lon) {
