@@ -301,9 +301,26 @@ export function start({ onLayout } = {}) {
 
   draw();
   poll();
-  setInterval(poll, POLL_MS);
+  // Held so the rail can be taken back down: rail.enabled is a live setting,
+  // and a rail whose timers outlive its element goes on fetching /stats.json
+  // for a panel nobody can see -- once per toggle, for the life of the page.
+  const pollTimer = setInterval(poll, POLL_MS);
   // The clock is the only thing on the rail that has to move every second; the
   // counters move at the collector's pace, not the display's.
-  setInterval(draw, 1000);
-  return { poll };
+  const clockTimer = setInterval(draw, 1000);
+
+  let stopped = false;
+  return {
+    poll,
+    /** Unmount. Safe to call twice -- a double toggle is one click away. */
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(pollTimer);
+      clearInterval(clockTimer);
+      document.body.classList.remove('rail');
+      root.classList.remove('on');
+      root.innerHTML = '';
+    },
+  };
 }

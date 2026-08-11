@@ -214,3 +214,72 @@ test('a collector without spark support still renders its bars', () => {
   assert.equal(rows[0].bar, 1);
   assert.equal(rows[0].spark, null);
 });
+
+import { start } from '../../netviz/static/js/rail.js';
+
+/** Minimal DOM: rail.js touches only getElementById, classList and innerHTML. */
+function fakeDom() {
+  const mk = () => {
+    const el = {
+      className: '', innerHTML: '', children: [],
+      style: {},
+      setAttribute: () => {},
+      classList: {
+        _s: new Set(),
+        add(c) { this._s.add(c); },
+        remove(c) { this._s.delete(c); },
+        contains(c) { return this._s.has(c); },
+      },
+      appendChild(c) { this.children.push(c); return c; },
+      querySelector() { return null; },
+      replaceChildren(...children) { this.children = children; },
+      append(...children) { this.children.push(...children); },
+      textContent: '',
+    };
+    return el;
+  };
+  const rail = mk();
+  const body = mk();
+  return {
+    rail,
+    body,
+    document: {
+      body,
+      getElementById: (id) => (id === 'rail' ? rail : null),
+      createElement: () => mk(),
+      createElementNS: () => mk(),
+    },
+  };
+}
+
+test('the rail can be taken back down again', async () => {
+  const dom = fakeDom();
+  const timers = [];
+  const realDoc = globalThis.document;
+  const realSetInterval = globalThis.setInterval;
+  const realFetch = globalThis.fetch;
+  globalThis.document = dom.document;
+  globalThis.setInterval = (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length; };
+  globalThis.clearInterval = (id) => { if (timers[id - 1]) timers[id - 1].live = false; };
+  globalThis.fetch = async () => ({ ok: false });
+  try {
+    let layouts = 0;
+    const handle = start({ onLayout: () => { layouts += 1; } });
+    assert.equal(layouts, 1, 'onLayout must run while the rail is in the document');
+    assert.equal(dom.body.classList.contains('rail'), true);
+    assert.equal(timers.filter((t) => t.live).length, 2, 'poll and clock');
+
+    handle.stop();
+    assert.equal(dom.body.classList.contains('rail'), false, 'body.rail survived stop()');
+    assert.equal(timers.filter((t) => t.live).length, 0, 'a timer outlived the rail');
+    assert.equal(dom.rail.innerHTML, '', 'the rail still has content after stop()');
+
+    handle.stop();          // idempotent: a double toggle must not throw
+    // Give pending async operations time to complete with stubbed globals
+    await new Promise((r) => setTimeout(r, 10));
+  } finally {
+    globalThis.document = realDoc;
+    globalThis.setInterval = realSetInterval;
+    globalThis.fetch = realFetch;
+  }
+});
