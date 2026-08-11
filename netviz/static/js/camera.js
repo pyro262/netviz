@@ -3,7 +3,19 @@
 // position and averages the arc origins.
 import { cfg } from './config.js';
 import * as THREE from 'three';
-import { step, initialState, startVisit, DEFAULTS } from './campath.js';
+import {
+  step, initialState, startVisit, beginManual, endManual, isManual,
+  setManualView, markInput, DEFAULTS,
+} from './campath.js';
+import { clampDistance } from './orbit.js';
+import {
+  quatFromLatLon, latLonFromQuat, eyeDirection, upVector, trackDrag,
+  rotateCamera, quatAngle, rollBetween,
+} from './arcball.js';
+
+// The view axis in camera space. Rolling about it changes which way is up and
+// nothing else, which is what makes the hand-back separable.
+const CAM_Z = { x: 0, y: 0, z: 1 };
 
 // 3.1 radii put the globe's angular radius (18.8 deg) outside the 17.5 deg
 // half-FOV of the 35 deg camera, clipping the limb on a 16:9 wall. 4.6 leaves
@@ -27,6 +39,126 @@ function centroid(origins) {
 
 export function createCameraRig(camera, radius, params = DEFAULTS) {
   const state = initialState();
+  // Mutable, because the wheel and pinch move it. The floor is not a taste
+  // decision: below ~3.2 radii the globe's angular radius exceeds the 17.5 deg
+  // half-FOV and the limb clips on a 16:9 wall.
+  const minD = cfg('input.zoomRange.0', 3.3);
+  const maxD = cfg('input.zoomRange.1', 9.0);
+  // The framing the display owns. Zoom is borrowed exactly as orientation is:
+  // without this, a passer-by who pulls the globe in to 3.3 radii and walks
+  // off leaves the wall wrongly framed forever -- the view comes home after
+  // resumeSeconds and the distance never does.
+  const homeD = clampDistance(DISTANCE, minD, maxD);
+  const zoomReturnEase = cfg('input.zoomReturnEase', 0.35);
+  const rollReturnEase = cfg('input.rollReturnEase', 0.6);
+  let distance = homeD;
+
+  // The pose a HAND has put the camera in, as a world -> camera quaternion, or
+  // null whenever the display owns the view. Two representations, because they
+  // answer two different questions: the walk is a latitude and a longitude with
+  // world north up, which is simulable in two numbers and is what every other
+  // module speaks; a drag is a free rotation, which has no pole to stop at and
+  // no north to keep up. campath still holds lat/lon throughout -- every drag
+  // writes the pose's own lat/lon back into it -- so the hand-back has
+  // somewhere to return FROM and the rest of the display is none the wiser.
+  let pose = null;
+  // Hand-back only: the residual tilt in degrees, and whether it has been read
+  // off the pose yet. Cleared by any new input, or the next drag would inherit
+  // an unwind that was half-finished.
+  let roll = 0;
+  let unwinding = false;
+
+  function place() {
+    if (pose) {
+      const e = eyeDirection(pose);
+      const u = upVector(pose);
+      const d = distance * radius;
+      camera.position.set(e.x * d, e.y * d, e.z * d);
+      // lookAt resolves the roll through camera.up, so the up vector has to be
+      // set BEFORE it, and reset to world north the moment the pose is dropped
+      // -- otherwise the autonomous walk inherits whatever roll the last drag
+      // left and the wall runs tilted until the next reload.
+      camera.up.set(u.x, u.y, u.z);
+      camera.lookAt(0, 0, 0);
+      return;
+    }
+    const phi = THREE.MathUtils.degToRad(90 - state.curLat);
+    const theta = THREE.MathUtils.degToRad(-state.curLon);  // sign per latLonToVec3
+    camera.position.set(
+      distance * radius * Math.sin(phi) * Math.cos(theta),
+      distance * radius * Math.cos(phi),
+      distance * radius * Math.sin(phi) * Math.sin(theta),
+    );
+    camera.up.set(0, 1, 0);
+    camera.lookAt(0, 0, 0);
+  }
+
+  /** Write a hand's pose back into the two numbers campath owns, so a hand-back
+   *  starts from where the view actually is. */
+  function syncPose() {
+    const ll = latLonFromQuat(pose);
+    setManualView(state, ll.lat, ll.lon, params);
+    place();          // paint immediately: a drag must not wait for the next update
+  }
+
+  /** The pose the autonomous camera would be in right now: same lat/lon, no
+   *  roll. What a hand-back eases towards. */
+  function uprightNow() { return quatFromLatLon(state.curLat, state.curLon); }
+
+  function ensurePose() {
+    unwinding = false;      // a hand is back on it; whatever was unwinding stops
+    if (!pose) pose = uprightNow();
+  }
+
+  /**
+   * Unwind the roll a drag left behind, once the display has taken itself back.
+   *
+   * A drag over a pole legitimately leaves the world upside down, and campath
+   * knows nothing about that -- it would go on easing lat/lon home while the
+   * horizon stayed inverted for ever.
+   *
+   * Position and roll are unwound SEPARATELY, and that is not a stylistic
+   * choice. Slerping the whole pose towards the upright of wherever campath
+   * currently is looks equivalent and is not: the target moves every frame with
+   * the return leg, so what converges is the gap between two moving things
+   * rather than the tilt. Measured on the live page, a released view was still
+   * 6 degrees off level 30 seconds after the hand-back and only levelled when
+   * the camera stopped. Taking the roll as a number, easing THAT to zero, and
+   * rebuilding the pose from campath's own lat/lon each frame gives the
+   * position to campath and the roll to rollReturnEase, with neither waiting on
+   * the other.
+   */
+  function easeRollHome(dt) {
+    if (!pose || isManual(state)) return;
+    if (!unwinding) {
+      // Read the tilt once, at the moment the display takes the view back.
+      // Valid here precisely because every drag synced its own lat/lon into
+      // campath, so `pose` and `uprightNow()` still share an eye direction.
+      roll = rollBetween(pose, uprightNow());
+      unwinding = true;
+    }
+    roll -= roll * Math.min(1, rollReturnEase * dt);
+    // Level enough to hand back to the plain lat/lon path, which is also the
+    // only thing that clears camera.up. An exponential never actually lands,
+    // and a pose a millionth off upright is a permanent no-op that isn't.
+    if (Math.abs(roll) < 0.05) { pose = null; roll = 0; unwinding = false; return; }
+    pose = rotateCamera(uprightNow(), CAM_Z, roll);
+  }
+
+  /** Ease the distance back to the configured framing once the display has
+   *  taken itself back. Same easing style as campath's -- a fraction of the
+   *  remaining gap per second -- so it reads as the same motion, and it never
+   *  runs while somebody has the globe, or it would fight a live pinch. */
+  function easeDistanceHome(dt) {
+    if (isManual(state)) return;
+    if (distance === homeD) return;                 // no-op at home
+    const k = Math.min(1, zoomReturnEase * dt);
+    distance += (homeD - distance) * k;
+    // Snap rather than approach forever; an exponential never actually lands,
+    // and a distance a millionth off home is a permanent no-op that isn't.
+    if (Math.abs(homeD - distance) < 1e-4) distance = homeD;
+    distance = clampDistance(distance, minD, maxD);
+  }
 
   return {
     update(dt, origins) {
@@ -35,23 +167,55 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
         lat: THREE.MathUtils.radToDeg(Math.asin(c.y)),
         lon: -THREE.MathUtils.radToDeg(Math.atan2(c.z, c.x)),
       };
-
       step(state, dt, traffic, params);
-
-      const phi = THREE.MathUtils.degToRad(90 - state.curLat);
-      const theta = THREE.MathUtils.degToRad(-state.curLon);  // sign per latLonToVec3
-      camera.position.set(
-        DISTANCE * radius * Math.sin(phi) * Math.cos(theta),
-        DISTANCE * radius * Math.cos(phi),
-        DISTANCE * radius * Math.sin(phi) * Math.sin(theta),
-      );
-      camera.lookAt(0, 0, 0);
+      easeDistanceHome(dt);
+      easeRollHome(dt);
+      place();
     },
-    /** Go and look at a blocked country. Ignored while a visit is running;
-     *  see startVisit in campath.js. */
+    /** Go and look at a blocked country. Refused while a visit is running and,
+     *  by default, while somebody is holding the globe. */
     visit(lat, lon) {
-      return startVisit(state, lat, lon);
+      return startVisit(state, lat, lon, params);
     },
+    grab() { beginManual(state); ensurePose(); },
+    release() { endManual(state); },
+    /** Somebody is still here. For inputs that are not a grab -- wheel, pinch,
+     *  the zoom and arrow keys -- which must restart the idle countdown
+     *  without claiming a pointer is down. */
+    poke() { markInput(state); },
+    held() { return state.held === true; },
+    manual() { return isManual(state); },
+    /** One step of a drag: turn the globe so the point at `ref` moves to `hit`.
+     *  Both are camera-space unit vectors from arcball.pickCameraSphere, and
+     *  `ref` is the PREVIOUS move's hit, not the original press -- see
+     *  arcball.trackDrag for what happens otherwise. */
+    drag(ref, hit, invert = false) {
+      ensurePose();
+      ({ pose } = trackDrag(pose, ref, hit, invert));
+      syncPose();
+    },
+    /** Turn about one of the camera's OWN axes: a fling coasting, or an arrow
+     *  key. Camera-space, so it behaves the same at the equator and at a pole. */
+    spin(axisCam, deg) {
+      ensurePose();
+      pose = rotateCamera(pose, axisCam, deg);
+      syncPose();
+    },
+    /** The rolled-ness of the current view, in degrees -- 0 when world north is
+     *  up. For verification from the console; nothing in the page reads it. */
+    roll() { return pose ? quatAngle(pose, uprightNow()) : 0; },
+    view() {
+      return {
+        lat: state.curLat,
+        lon: state.curLon,
+        distance,
+        fovDeg: camera.fov,
+        aspect: camera.aspect,
+      };
+    },
+    setDistance(d) { distance = clampDistance(d, minD, maxD); place(); },
+    distance() { return distance; },
+    zoomRange() { return [minD, maxD]; },
     state,
   };
 }

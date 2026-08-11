@@ -52,7 +52,35 @@ export const DEFAULTS = {
   // 3 degrees; at 0.2 it needs 20s, which leaves the walk its share of the
   // cycle. The easing character is unchanged, only its rate.
   ease: 0.2,              // fraction of the remaining gap per second
-  latClamp: 62,           // never look down the pole
+  latClamp: 62,           // the WALK never looks down the pole
+  // A hand is not the walk, and is not clamped like one: a drag stopping dead
+  // at 62 while longitude keeps turning under the same finger reads as an axis
+  // lock rather than as a limit. 90 is not a policy, it is the range of the
+  // coordinate -- a hand rotates on a quaternion in arcball.js, which has no
+  // pole at all, and going over the top arrives here as a latitude coming back
+  // down with longitude flipped by 180. curLat is guarded at THIS on every
+  // autonomous frame too, so a hand-back from 85 eases down into the walk's
+  // range rather than teleporting into it.
+  manualLatClamp: 90,
+  // Direct manipulation (2026-08-10). The display is autonomous and a person
+  // borrows it: after this many idle seconds the camera eases home and resumes
+  // its cycle. 0 means never, which makes a panned view permanent -- the right
+  // choice for a desk, and the wrong one for a wall nobody is standing at.
+  resumeSeconds: 30,
+  // Safety net, not a feature. `held` is normally cleared by pointerup or
+  // pointercancel, and input.js also releases on window blur and on a lost
+  // pointer capture -- but every one of those is a DOM event that something
+  // outside this page can swallow: a mouse unplugged mid-press, a compositor
+  // taking the pointer, an OS-level capture. Without a cap, `step()` would be
+  // the one place in this file that returns early with no bound, and the wall
+  // would sit frozen on a healthy feed with no degraded banner until the next
+  // deploy. Nobody holds a wall display for five minutes.
+  maxHeldSeconds: 300,
+  // A block burst does not take a view somebody is holding, and a burst that
+  // arrives during a drag is dropped rather than queued: letting go must not
+  // launch a flight to somewhere the user did not ask for, seconds after the
+  // event that caused it.
+  detourInterruptManual: false,
   rng: Math.random,
 };
 
@@ -67,6 +95,9 @@ Object.assign(DEFAULTS, {
   latClamp: cfg('camera.walk.latitudeClamp', DEFAULTS.latClamp),
   visitSeconds: cfg('camera.detour.visitSeconds', DEFAULTS.visitSeconds),
   visitMaxSeconds: cfg('camera.detour.visitMaxSeconds', DEFAULTS.visitMaxSeconds),
+  resumeSeconds: cfg('input.resumeSeconds', DEFAULTS.resumeSeconds),
+  detourInterruptManual: cfg('camera.detour.interruptManual',
+                             DEFAULTS.detourInterruptManual),
 });
 
 /** The four cardinal points, in degrees clockwise from north. A walk follows
@@ -109,6 +140,14 @@ export function initialState() {
     lastEW: null,          // last east/west bearing, so the next one reverses it
     lastNS: null,          // likewise for north/south
     latDir: 1,             // flips when a walk reaches the latitude clamp
+    // Direct manipulation. `manual` covers the whole borrowed period --
+    // pointer down, and the idle countdown after release -- because a burst
+    // that yanks the view four seconds after the user let go breaks the same
+    // promise as one that yanks it mid-drag.
+    manual: false,
+    held: false,           // pointer currently down
+    idleT: 0,              // seconds since the last input, while manual
+    heldT: 0,              // seconds the pointer has been down, for maxHeldSeconds
     cycles: 0,
   };
 }
@@ -159,6 +198,53 @@ export function isVisiting(s) {
   return s.phase === 'visit' || s.phase === 'visitHold';
 }
 
+/** True while the user has the globe -- held, or released and not yet handed
+ *  back. */
+export function isManual(s) {
+  return s.manual === true;
+}
+
+/** Pointer down. Takes the camera off its cycle and abandons any running
+ *  detour: an input that gets overridden by the display feels broken. */
+export function beginManual(s) {
+  s.manual = true;
+  s.held = true;
+  s.idleT = 0;
+  s.heldT = 0;
+  if (isVisiting(s)) {
+    s.phase = 'return';
+    s.phaseT = 0;
+  }
+}
+
+/** Pointer up. Still manual -- the idle countdown starts here. */
+export function endManual(s) {
+  s.held = false;
+  s.heldT = 0;
+  s.idleT = 0;
+}
+
+/** Somebody is still here, without claiming a pointer is down.
+ *
+ *  Wheel, pinch and the zoom/arrow keys go through this rather than through
+ *  beginManual/endManual. Faking a grab for them would work by accident and
+ *  break on the overlap: a wheel notch during a drag would clear `held` on the
+ *  way out and hand the globe back mid-gesture. This only says "the idle
+ *  countdown restarts", which is the whole of what those inputs mean. */
+export function markInput(s) {
+  s.manual = true;
+  s.idleT = 0;
+}
+
+/** The view the user is holding. Wrapped like the autonomous path, but held
+ *  only to `manualLatClamp` -- a hand may look down a pole the walk never
+ *  visits. See the DEFAULTS note; the solver in orbit.js clamps to the same
+ *  number, or the globe slides out from under the finger. */
+export function setManualView(s, lat, lon, p = DEFAULTS) {
+  s.curLat = Math.max(-p.manualLatClamp, Math.min(p.manualLatClamp, lat));
+  s.curLon = ((lon + 180) % 360 + 360) % 360 - 180;
+}
+
 /**
  * Send the camera to look at a blocked country.
  *
@@ -167,9 +253,20 @@ export function isVisiting(s) {
  * camera into a metronome. Everything else -- return, hold, walk -- is
  * interruptible, because a burst outranks all of them.
  */
-export function startVisit(s, lat, lon) {
+export function startVisit(s, lat, lon, p = DEFAULTS) {
   if (isVisiting(s)) return false;
-  s.visitLat = lat;
+  // A held view is not taken. Off by default; see detourInterruptManual.
+  if (isManual(s) && !p.detourInterruptManual) return false;
+  if (isManual(s)) {
+    s.manual = false;
+    s.held = false;
+    s.heldT = 0;
+  }
+  // Clamped here, not downstream: curLat is guarded only at the manual limit
+  // now, so an unclamped visit target is the one autonomous path that could
+  // walk the display onto a pole. A block above 62 -- Svalbard, northern
+  // Greenland -- is looked at from the edge of the walk's range instead.
+  s.visitLat = Math.max(-p.latClamp, Math.min(p.latClamp, lat));
   s.visitLon = lon;
   s.phase = 'visit';
   s.phaseT = 0;
@@ -187,6 +284,37 @@ export function startVisit(s, lat, lon) {
 export function step(s, dt, traffic, p = DEFAULTS) {
   s.elapsed += dt;
   s.phaseT += dt;
+
+  // Manual: input owns curLat/curLon and nothing here may move them. Only the
+  // idle countdown runs.
+  if (s.manual) {
+    if (s.held) {
+      // The only early return in this file with no clock behind it, until
+      // maxHeldSeconds. See DEFAULTS for why a pointer that never lifts is a
+      // reachable state and not a hypothetical.
+      s.heldT += dt;
+      if (p.maxHeldSeconds > 0 && s.heldT >= p.maxHeldSeconds) {
+        s.held = false;
+        s.heldT = 0;
+        s.idleT = 0;    // fall into the ordinary idle countdown from here
+      }
+      return s;
+    }
+    s.heldT = 0;
+    s.idleT += dt;
+    if (p.resumeSeconds > 0 && s.idleT >= p.resumeSeconds) {
+      s.manual = false;
+      // Start the return from where the user left it, or the first eased frame
+      // jumps toward whatever the target was before the drag.
+      s.targetLat = s.curLat;
+      s.targetLon = s.curLon;
+      s.cycleT = 0;
+      s.phase = 'return';
+      s.phaseT = 0;
+      newHeading(s, p);
+    }
+    return s;
+  }
 
   // A detour runs off the cycle clock entirely. If the cycle kept ticking, a
   // burst arriving late in one would be cut short by the rollover and the
@@ -219,7 +347,11 @@ export function step(s, dt, traffic, p = DEFAULTS) {
     s.curLon += deltaLon(s.curLon, s.targetLon) * kv;
     s.curLon = ((s.curLon + 180) % 360 + 360) % 360 - 180;
     s.curLat += (s.targetLat - s.curLat) * kv;
-    s.curLat = Math.max(-p.latClamp, Math.min(p.latClamp, s.curLat));
+    // manualLatClamp, not latClamp: a hand-back from a polar view must EASE into
+  // the walk's range, and clamping curLat to 62 here would teleport it there on
+  // the first autonomous frame. The targets are all inside latClamp already, so
+  // the easing is what enforces the walk's range; this is only a runaway guard.
+  s.curLat = Math.max(-p.manualLatClamp, Math.min(p.manualLatClamp, s.curLat));
     return s;
   }
 
@@ -264,12 +396,21 @@ export function step(s, dt, traffic, p = DEFAULTS) {
     if (traffic) {
       s.targetLon = blendLon(s.targetLon, traffic.lon, Math.min(1, 1.6 * dt));
       s.targetLat += (traffic.lat - s.targetLat) * Math.min(1, p.latPull * dt);
+      // Traffic at 89N is a real case (a Svalbard peer, a satellite uplink) and
+      // the autonomous display still must not look down the pole. The walk
+      // enforces this by bouncing its target; the return leg has to clamp its
+      // own, because curLat is now only guarded at the wider manual limit.
+      s.targetLat = Math.max(-p.latClamp, Math.min(p.latClamp, s.targetLat));
     }
     const k0 = Math.min(1, p.ease * dt);
     s.curLon += deltaLon(s.curLon, s.targetLon) * k0;
     s.curLon = ((s.curLon + 180) % 360 + 360) % 360 - 180;
     s.curLat += (s.targetLat - s.curLat) * k0;
-    s.curLat = Math.max(-p.latClamp, Math.min(p.latClamp, s.curLat));
+    // manualLatClamp, not latClamp: a hand-back from a polar view must EASE into
+  // the walk's range, and clamping curLat to 62 here would teleport it there on
+  // the first autonomous frame. The targets are all inside latClamp already, so
+  // the easing is what enforces the walk's range; this is only a runaway guard.
+  s.curLat = Math.max(-p.manualLatClamp, Math.min(p.manualLatClamp, s.curLat));
     return s;
   }
 
@@ -311,7 +452,11 @@ export function step(s, dt, traffic, p = DEFAULTS) {
   s.curLon = ((s.curLon + 180) % 360 + 360) % 360 - 180;
   const wantLat = s.targetLat;
   s.curLat += (wantLat - s.curLat) * k;
-  s.curLat = Math.max(-p.latClamp, Math.min(p.latClamp, s.curLat));
+  // manualLatClamp, not latClamp: a hand-back from a polar view must EASE into
+  // the walk's range, and clamping curLat to 62 here would teleport it there on
+  // the first autonomous frame. The targets are all inside latClamp already, so
+  // the easing is what enforces the walk's range; this is only a runaway guard.
+  s.curLat = Math.max(-p.manualLatClamp, Math.min(p.manualLatClamp, s.curLat));
 
   return s;
 }
