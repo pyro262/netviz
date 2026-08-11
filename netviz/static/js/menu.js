@@ -192,8 +192,12 @@ export function createMenu({ rig, settings, root }) {
 
   function renderItem(item, point) {
     const row = el('div', `menu-item menu-${item.kind}${item.enabled ? '' : ' disabled'}`);
-    row.dataset = row.dataset || {};
-    row.dataset.id = item.id;
+    // NOT `row.dataset.id = ...`: `dataset` is a getter with no setter on a
+    // real HTMLElement, so assigning to it (or replacing it) throws in
+    // strict mode. setAttribute works identically on a real element and on
+    // any fake that bothers to implement it, which is the whole reason to
+    // prefer it over the DOM's convenience accessors here.
+    row.setAttribute('data-id', item.id);
     row.append(el('span', 'menu-label', item.label));
 
     if (item.kind === 'toggle') {

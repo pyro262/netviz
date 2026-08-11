@@ -134,9 +134,9 @@ test('diagonal distance over the limit is rejected', () => {
 function fakeDom() {
   function mk(tag) {
     const listeners = {};
+    const attrs = {};
     const node = {
       tagName: tag, className: '', style: {}, textContent: '',
-      dataset: {},
       children: [],
       parentNode: null,
       classList: {
@@ -144,6 +144,10 @@ function fakeDom() {
         add(c) { this._s.add(c); },
         remove(c) { this._s.delete(c); },
         contains(c) { return this._s.has(c); },
+      },
+      setAttribute(name, value) { attrs[name] = String(value); },
+      getAttribute(name) {
+        return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null;
       },
       appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
       append(...cs) { for (const c of cs) this.appendChild(c); },
@@ -165,6 +169,18 @@ function fakeDom() {
       // Test-only: fire a fake event at this node.
       dispatch(type, evt) { (listeners[type] || []).slice().forEach((fn) => fn(evt)); },
     };
+    // `dataset` is a getter with no setter on a real HTMLElement -- writing
+    // to it, or replacing it, throws in strict mode. A fake that instead
+    // handed back a plain writable `{}` let a real bug through Task 2's
+    // suite: `row.dataset = row.dataset || {}; row.dataset.id = item.id`
+    // passed here and would have thrown on an actual page, leaving the menu
+    // built but never appended while isOpen() still reported true. This
+    // getter-only definition reproduces the real failure so the same class
+    // of bug fails loudly in `node --test` instead of silently on the wall.
+    Object.defineProperty(node, 'dataset', {
+      get() { return {}; },
+      enumerable: true,
+    });
     return node;
   }
 
@@ -190,10 +206,11 @@ function fakeDom() {
   return { root, document, window };
 }
 
-/** Depth-first search for the row this test built, by the item id menu.js
- *  stamps into dataset.id. */
+/** Depth-first search for the row this test built, by the `data-id`
+ *  attribute menu.js stamps with setAttribute (not dataset -- see the fake's
+ *  getter-only `dataset` above for why). */
 function findByDataId(node, id) {
-  if (node.dataset && node.dataset.id === id) return node;
+  if (node.getAttribute && node.getAttribute('data-id') === id) return node;
   for (const c of node.children || []) {
     const found = findByDataId(c, id);
     if (found) return found;
