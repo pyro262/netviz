@@ -2,7 +2,7 @@
 // "does it still favour the traffic" are both measurable over ten minutes.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { step, initialState, startVisit, deltaLon, blendLon, DEFAULTS, BEARINGS } from
+import { step, initialState, startVisit, deltaLon, blendLon, DEFAULTS, BEARINGS, walkRateAt } from
   '../../netviz/static/js/campath.js';
 
 /** Deterministic rng, so a heading sequence can be asserted rather than hoped for. */
@@ -16,6 +16,82 @@ function seeded(seed) {
   };
 }
 const P = { ...DEFAULTS, rng: seeded(7) };
+
+// The ramp is sized by the DISTANCE it must cover, not by a rate somebody
+// typed: integrating it over the phase has to come out at spanDegrees, or the
+// "never more than 60 degrees from home" promise is decoration.
+const integrate = (duration, p, steps = 20000) => {
+  let total = 0;
+  const dt = duration / steps;
+  for (let i = 0; i < steps; i += 1) total += walkRateAt((i + 0.5) * dt, duration, p) * dt;
+  return total;
+};
+
+test('a full walk covers spanDegrees, whatever the phase length', () => {
+  const p = { ...DEFAULTS };
+  // 75s is the ordinary case (120s cycle minus a return and a 25s hold); 120s
+  // is the no-traffic case, where the cycle skips straight to the walk.
+  for (const duration of [75, 120]) {
+    const covered = integrate(duration, p);
+    assert.ok(Math.abs(covered - p.spanDegrees) < 0.5,
+              `${duration}s walk covered ${covered.toFixed(2)}, want ${p.spanDegrees}`);
+  }
+});
+
+test('the walk starts slow and finishes fast', () => {
+  // Integrating the FIRST HALF of a 75s phase -- not a 37.5s phase, which
+  // would be a different, faster ramp. The rate at t depends on the phase's
+  // own length, so the halves have to be measured inside one phase.
+  const p = { ...DEFAULTS };
+  const partial = (from, to) => {
+    let total = 0;
+    const dt = 75 / 20000;
+    for (let i = from; i < to; i += 1) total += walkRateAt((i + 0.5) * dt, 75, p) * dt;
+    return total;
+  };
+  const firstHalf = partial(0, 10000);
+  const secondHalf = partial(10000, 20000);
+  const whole = firstHalf + secondHalf;
+  // At rampFloor 0.15 the split is about 31.5/68.5 (linear ramp from floor to
+  // peak: integral = T*(a+b)/2 where a=floor*peak and b=peak, so first half
+  // integrates to T/8*(3*floor + 1)*peak).
+  assert.ok(firstHalf / whole > 0.30 && firstHalf / whole < 0.33,
+            `first half covered ${(100 * firstHalf / whole).toFixed(1)}%, want ~31.5%`);
+  assert.ok(secondHalf > 2 * firstHalf, 'the second half must cover much more ground');
+  assert.ok(walkRateAt(74, 75, p) > 4 * walkRateAt(1, 75, p),
+            'the end of the walk must be several times faster than the start');
+});
+
+test('rampFloor 1 is a flat rate -- the way back to the old behaviour', () => {
+  const p = { ...DEFAULTS, rampFloor: 1 };
+  assert.ok(Math.abs(walkRateAt(1, 75, p) - walkRateAt(74, 75, p)) < 1e-9);
+  assert.ok(Math.abs(integrate(75, p) - p.spanDegrees) < 0.5);
+});
+
+test('the derived peak never exceeds degreesPerSecond', () => {
+  // A short walk phase -- a long return, or a detour that reset the cycle --
+  // would otherwise derive a peak high enough to whip the globe round.
+  const p = { ...DEFAULTS };
+  const rates = [];
+  for (let t = 0; t <= 10; t += 0.1) rates.push(walkRateAt(t, 10, p));
+  assert.ok(Math.max(...rates) <= p.walkRate + 1e-9,
+            `peak ${Math.max(...rates)} exceeds the ceiling ${p.walkRate}`);
+});
+
+test('a parked walk does not move at all', () => {
+  assert.equal(walkRateAt(30, 75, { ...DEFAULTS, walkEnabled: false }), 0);
+});
+
+test('a zero or missing duration cannot produce a NaN rate', () => {
+  // phaseT can be read on the frame the phase is entered, before any dt has
+  // been added. A NaN here becomes a NaN camera position one frame later and
+  // the display goes black with a silent console -- the same failure mode the
+  // zoom-range guard exists to prevent.
+  for (const d of [0, undefined, null]) {
+    const r = walkRateAt(0, d, DEFAULTS);
+    assert.ok(Number.isFinite(r), `duration ${d} produced ${r}`);
+  }
+});
 
 const HOME = { lat: 30.3, lon: -97.7 };      // the home site: where every arc roots
 
