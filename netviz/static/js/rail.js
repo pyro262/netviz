@@ -115,6 +115,21 @@ export function sparkPoints(series) {
 }
 
 
+/**
+ * The collector's build, for the bottom of the rail.
+ *
+ * Empty whenever the answer is not known: an older collector serves no version
+ * at all, and the renderer's own idea of it would be a claim about the far end
+ * of a connection this page cannot see. Same rule as the update watermark --
+ * false in every uncertain case, because an indicator that guesses is one
+ * everybody learns to ignore.
+ */
+export function versionLabel(snapshot) {
+  const v = snapshot && snapshot.version;
+  if (typeof v !== 'string' || v === '') return '';
+  return v.startsWith('v') ? v : `v${v}`;
+}
+
 export function panels(snapshot) {
   const s = snapshot || {};
   const blocks = s.blocks || {};
@@ -223,7 +238,7 @@ function sparkSvg(points) {
   return svg;
 }
 
-function paint(root, data, clock) {
+function paint(root, data, clock, version) {
   root.replaceChildren();
 
   const head = el('header', 'rail-head');
@@ -266,6 +281,12 @@ function paint(root, data, clock) {
     }
     root.append(box);
   }
+
+  // Bottom right, dim: which build this wall is running. `margin-top: auto`
+  // in the CSS floats it to the bottom of the flex column, so it stays there
+  // whether the rail is showing five block rows or none. Omitted entirely
+  // rather than drawn empty when the version is unknown -- see versionLabel.
+  if (version) root.append(el('div', 'rail-foot', version));
 }
 
 /**
@@ -289,7 +310,14 @@ export function start() {
 
   let snapshot = null;
 
-  const draw = () => paint(root, panels(snapshot), formatClock(new Date()));
+  // Sticky across a failed poll. The version only changes when the collector
+  // is redeployed, and a redeploy reloads the page anyway, so blanking it
+  // because one request timed out would be throwing away a fact we hold.
+  let version = '';
+  const draw = () => {
+    version = versionLabel(snapshot) || version;
+    paint(root, panels(snapshot), formatClock(new Date()), version);
+  };
 
   const poll = async () => {
     try {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  railEnabled, formatCount, formatLag, formatPercent, formatAge, formatClock, panels, sparkPoints,
+  railEnabled, formatCount, formatLag, formatPercent, formatAge, formatClock, panels, sparkPoints, versionLabel,
 } from '../../netviz/static/js/rail.js';
 
 test('rail is off by default', () => {
@@ -290,4 +290,21 @@ test('the rail can be taken back down again', async () => {
     globalThis.clearInterval = realClearInterval;
     globalThis.fetch = realFetch;
   }
+});
+
+test('versionLabel prints the collector build, prefixed once', () => {
+  assert.equal(versionLabel({ version: '0.3.0' }), 'v0.3.0');
+  // A collector that already prefixed it must not become vv0.3.0.
+  assert.equal(versionLabel({ version: 'v0.3.0' }), 'v0.3.0');
+});
+
+test('versionLabel shows nothing rather than guessing', () => {
+  // An older collector serves no version at all. Printing a fabricated one --
+  // or the renderer's own idea of it -- would be a claim about the far end of
+  // a connection this page cannot see. Same rule as the update watermark:
+  // false in every uncertain case.
+  assert.equal(versionLabel(null), '');
+  assert.equal(versionLabel({}), '');
+  assert.equal(versionLabel({ version: '' }), '');
+  assert.equal(versionLabel({ version: 42 }), '');
 });

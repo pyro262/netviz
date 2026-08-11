@@ -1,3 +1,4 @@
+import re
 import pytest
 
 from netviz.events import Event
@@ -237,3 +238,20 @@ def test_sparkline_is_the_last_hour_not_the_last_day():
     assert row["cc"] == "RU"
     assert row["n"] == 5
     assert sum(row["spark"]) == 0
+
+def test_snapshot_names_the_build_it_came_from():
+    """The rail prints the collector's version, so the snapshot has to carry it.
+
+    A kiosk shows whatever build the collector serves, and the wall is the one
+    place somebody stands when they want to know which that is -- reading it off
+    the container is a different room. It comes from netviz.__version__, the
+    single source pyproject.toml also reads, so the rail cannot disagree with
+    the package.
+    """
+    from netviz import __version__
+
+    st = Stats()
+    snap = st.snapshot(now=1000.0)
+    assert snap["version"] == __version__
+    # Not a hand-typed copy: it has to be the real one, in the real shape.
+    assert re.match(r"^\d+\.\d+\.\d+", snap["version"]), snap["version"]

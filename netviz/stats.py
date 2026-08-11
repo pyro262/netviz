@@ -16,6 +16,7 @@ wall is a live display.
 import time
 from typing import Any, Iterator, Optional
 
+from . import __version__
 from .events import Event
 
 
@@ -177,6 +178,10 @@ class Stats:
         return {
             "now": now,
             "uptime": now - self.started,
+            # The build the kiosk is actually running, for the rail to print.
+            # From netviz.__version__, which pyproject.toml also reads, so the
+            # wall can never disagree with the package about which build it is.
+            "version": __version__,
             "blocks": {
                 "window_seconds": BLOCK_WINDOW,
                 "total": placed + self.blocks_unplaced,

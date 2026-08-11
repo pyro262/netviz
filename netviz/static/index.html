@@ -76,6 +76,15 @@
       .rail-clock-local { font-size: 1.35vw; color: #fdca26; }
       .rail-clock-utc { font-size: 0.85vw; opacity: 0.7; }
 
+      /* The collector's build, bottom right. margin-top:auto pushes it to the
+         foot of the flex column whatever the panels above it are doing, and it
+         is deliberately the dimmest thing on the rail: useful when you go
+         looking for it, invisible when you are not. */
+      .rail-foot {
+        margin-top: auto; text-align: right;
+        font-size: 0.8vw; opacity: 0.45; letter-spacing: 0.1em;
+      }
+
       .rail-panel { border-top: 1px solid #7201a855; padding-top: 0.9vh; }
       .rail-panel-title {
         margin: 0 0 0.5vh; font-size: 0.9vw; font-weight: 600;
