@@ -8,7 +8,7 @@
 // Order is uniform -> rebuild -> at most one relayout. A resize rebuilds the
 // composer's render targets, so toggling three things that each want one must
 // still cost one.
-import { validate, planApply, paths } from './settings.js';
+import { validate, planApply, paths, defaultOf } from './settings.js';
 import { CONFIG } from './config.js';
 // burst.js is three-free and its thresholds live in one exported object that
 // createBurstDetector() closes over by default, so the detour thresholds are
@@ -33,9 +33,36 @@ function writeConfig(path, value) {
  * and its handler cannot drift apart silently -- createApplier refuses to
  * build when they do, and a test asserts both directions.
  *
- * A handler receives (value, ctx) and mutates the live display. It does NOT
- * write CONFIG; the executor does that for every accepted key.
+ * A handler receives (value, ctx, patch) and mutates the live display. It does
+ * NOT write CONFIG; the executor does that for every accepted key.
+ *
+ * `patch` is the WHOLE accepted patch, and exists for the handful of settings
+ * that are only meaningful as a set -- a zoom range is a pair, and validating
+ * one end against whatever the other end happens to be at that instant makes
+ * the answer depend on which key the executor reached first. Such a handler
+ * composes the final value from `patch` plus, for members not in this patch,
+ * the current one from `defaultOf` (which reads live CONFIG). Every handler
+ * that does this is idempotent by construction, because each member key
+ * computes the SAME final value -- so running it once per member is harmless
+ * and the accept/reject decision never depends on ordering.
  */
+
+/** The value `path` will hold once this patch has been applied: what the patch
+ *  sets, or what CONFIG currently holds when the patch says nothing about it.
+ *  `defaultOf` reads config.js live, and the executor writes CONFIG only after
+ *  a handler has run, so during a patch this is genuinely the current value. */
+function finalValue(patch, path) {
+  return Object.prototype.hasOwnProperty.call(patch, path)
+    ? patch[path] : defaultOf(path);
+}
+
+/** The zoom range, composed whole from both ends however many of them this
+ *  patch carries. Both member handlers call this and get the same answer, so
+ *  the pair is validated against what it will actually become. */
+function zoomPair(patch) {
+  return [finalValue(patch, 'input.zoomRange.0'),
+          finalValue(patch, 'input.zoomRange.1')];
+}
 
 /** Writing CONFIG is the whole of the work. classify.js reads cfg() per event
  *  rather than capturing it at import -- a couple of property lookups at this
@@ -118,8 +145,12 @@ export const HANDLERS = {
   'input.hideCursorSeconds': (v, ctx) => ctx.input.setParam('input.hideCursorSeconds', v),
   // Owned by camera.js and campath.js, not by input.js: the zoom clamp, the
   // framing it returns to and the idle countdown all live with the rig.
-  'input.zoomRange.0': (v, ctx) => ctx.rig.setParam('input.zoomRange.0', v),
-  'input.zoomRange.1': (v, ctx) => ctx.rig.setParam('input.zoomRange.1', v),
+  // A pair, never one end at a time. Both of these compose the same final pair
+  // from the whole patch, so a two-sided shift is accepted or refused on what
+  // it will become and not on key order -- and a refusal leaves both ends as
+  // they were, because the rig validates before it assigns either.
+  'input.zoomRange.0': (v, ctx, patch) => ctx.rig.setParam('input.zoomRange', zoomPair(patch)),
+  'input.zoomRange.1': (v, ctx, patch) => ctx.rig.setParam('input.zoomRange', zoomPair(patch)),
   'input.zoomReturnEase': (v, ctx) => ctx.rig.setParam('input.zoomReturnEase', v),
   'input.rollReturnEase': (v, ctx) => ctx.rig.setParam('input.rollReturnEase', v),
   'input.resumeSeconds': (v, ctx) => ctx.rig.setParam('input.resumeSeconds', v),
@@ -176,7 +207,7 @@ export function createApplier(ctx, opts = {}) {
       const setConfig = ctx.setConfig || writeConfig;
       const run = (path) => {
         try {
-          HANDLERS[path](accepted[path], ctx);
+          HANDLERS[path](accepted[path], ctx, accepted);
           setConfig(path, accepted[path]);
           applied.push(path);
         } catch (err) {

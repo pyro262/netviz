@@ -262,16 +262,25 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
         if (!isManual(state)) { distance = homeD; place(); }
         return;
       }
-      // One end of the zoom range at a time. Validated as a PAIR against the
-      // end that is not moving, and validated BEFORE anything is assigned:
-      // clampDistance propagates a bad bound as NaN rather than refusing it, so
-      // an unchecked write here reaches camera.position and blanks the wall
-      // with nothing in the console. The throw becomes a reported rejection.
-      if (path === 'input.zoomRange.0' || path === 'input.zoomRange.1') {
-        const [lo, hi] = validateZoomRange(
-          path.endsWith('.0') ? value : minD,
-          path.endsWith('.1') ? value : maxD,
-        );
+      // The zoom range moves as a PAIR, never one end at a time.
+      //
+      // The schema declares two bounded numbers so each end gets its own limits,
+      // but the accept/reject decision belongs to the final pair alone. Taking
+      // one end at a time and checking it against whatever the other end
+      // currently is makes a two-sided shift order-dependent: moving [3.3, 5.0]
+      // up to [8.0, 12.0] validates 8.0 against a stale 5.0 and is refused,
+      // or not, depending on which key the executor happened to reach first.
+      // A control that rejects valid input intermittently is worse than the NaN
+      // this guard replaced. apply.js therefore composes the final pair and
+      // hands it here whole; see the zoomRange handlers there.
+      //
+      // Validated BEFORE anything is assigned: clampDistance propagates a bad
+      // bound as NaN rather than refusing it, so an unchecked write reaches
+      // camera.position and blanks the wall with nothing in the console. A
+      // rejected pair must leave BOTH ends as they were. The throw becomes a
+      // reported rejection.
+      if (path === 'input.zoomRange') {
+        const [lo, hi] = validateZoomRange(value[0], value[1]);
         minD = lo;
         maxD = hi;
         homeD = clampDistance(homeD, minD, maxD);

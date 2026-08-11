@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createApplier, HANDLERS, ARC_REBUILD_KEYS } from '../../netviz/static/js/apply.js';
 import { paths, entry } from '../../netviz/static/js/settings.js';
 import { validateZoomRange } from '../../netviz/static/js/orbit.js';
+import { CONFIG } from '../../netviz/static/js/config.js';
 
 /** Records what the executor did, in order.
  *
@@ -86,32 +87,101 @@ test('a uniform arc key does not clear the pool', () => {
   assert.equal(log.filter((l) => l === 'arcs.rebuild').length, 0);
 });
 
+/**
+ * A ctx whose rig holds a REAL zoom range and validates exactly as camera.js
+ * does: whole pair, checked before either end is assigned.
+ *
+ * The stateless fake cannot express these cases at all -- the whole question is
+ * what the range is part-way through a patch -- and `bounds` is seeded into
+ * CONFIG as well, because the handlers read the end this patch does not carry
+ * back out of config.js.
+ */
+function fakeRangeCtx(log, bounds) {
+  const ctx = fakeCtx(log);
+  ctx.range = [...bounds];
+  ctx.rig.setParam = (p, v) => {
+    if (p === 'input.zoomRange') {
+      const [lo, hi] = validateZoomRange(v[0], v[1]);   // throws before assigning
+      ctx.range = [lo, hi];
+      return;
+    }
+    log.push(`rig ${p}=${v}`);
+  };
+  CONFIG.input.zoomRange = [...bounds];
+  // Not the recording stub: these tests need cfg() to see the writes, since
+  // that is where a handler reads the end its own key does not carry.
+  ctx.setConfig = null;
+  return ctx;
+}
+
+test('a two-sided zoom range shift is accepted on its FINAL pair', () => {
+  // [3.3, 5.0] -> [8.0, 12.0]. Validating one end at a time checks 8.0 against
+  // a stale 5.0 and refuses a perfectly good range. The panel emits exactly
+  // this patch when somebody drags both ends of a range control.
+  const ctx = fakeRangeCtx([], [3.3, 5.0]);
+  const out = createApplier(ctx).apply({
+    'input.zoomRange.0': 8.0, 'input.zoomRange.1': 12.0,
+  });
+  assert.deepEqual(out.rejected, []);
+  assert.deepEqual(out.applied.sort(), ['input.zoomRange.0', 'input.zoomRange.1']);
+  assert.deepEqual(ctx.range, [8.0, 12.0]);
+  assert.deepEqual(CONFIG.input.zoomRange, [8.0, 12.0]);
+});
+
+test('the same two-sided shift in the opposite key order is identical', () => {
+  // planApply walks Object.entries order, so the caller's insertion order is
+  // the executor's order. The decision must not be able to see it.
+  const a = fakeRangeCtx([], [3.3, 5.0]);
+  const outA = createApplier(a).apply({
+    'input.zoomRange.0': 8.0, 'input.zoomRange.1': 12.0,
+  });
+  const b = fakeRangeCtx([], [3.3, 5.0]);
+  const outB = createApplier(b).apply({
+    'input.zoomRange.1': 12.0, 'input.zoomRange.0': 8.0,
+  });
+  assert.deepEqual(a.range, b.range);
+  assert.deepEqual(outA.applied.sort(), outB.applied.sort());
+  assert.deepEqual(outA.rejected, outB.rejected);
+  assert.deepEqual(b.range, [8.0, 12.0]);
+});
+
+test('a two-key patch whose FINAL pair is invalid is rejected, both ends untouched', () => {
+  for (const patch of [{ 'input.zoomRange.0': 9.0, 'input.zoomRange.1': 4.0 },
+                       { 'input.zoomRange.1': 4.0, 'input.zoomRange.0': 9.0 },
+                       { 'input.zoomRange.0': 6.0, 'input.zoomRange.1': 6.0 }]) {
+    const ctx = fakeRangeCtx([], [3.3, 9.0]);
+    const out = createApplier(ctx).apply(patch);
+    assert.deepEqual(out.applied, [], `applied something: ${JSON.stringify(patch)}`);
+    assert.deepEqual(out.rejected.map((r) => r.path).sort(),
+                     ['input.zoomRange.0', 'input.zoomRange.1']);
+    for (const r of out.rejected) assert.match(r.why, /not below/);
+    // A refusal must not leave the range half-moved.
+    assert.deepEqual(ctx.range, [3.3, 9.0]);
+    assert.deepEqual(CONFIG.input.zoomRange, [3.3, 9.0]);
+  }
+});
+
 test('a zoom range that would NaN the camera is rejected, not applied', () => {
   // clampDistance propagates a bad bound rather than refusing it: the camera
   // position goes NaN and the display goes black with nothing in the console.
   // The rig's guard throws, and the executor turns that into a rejection.
-  const log = [];
-  const ctx = fakeCtx(log);
-  ctx.rig.setParam = (p, v) => {
-    if (p.startsWith('input.zoomRange')) validateZoomRange(
-      p.endsWith('.0') ? v : 3.3, p.endsWith('.1') ? v : 9.0);
-    log.push(`rig ${p}=${v}`);
-  };
+  const ctx = fakeRangeCtx([], [3.3, 9.0]);
   const applier = createApplier(ctx);
 
   // Below the limb-clip floor: coerce clamps it back up before the rig ever
   // sees it, so this one is APPLIED at the floor rather than rejected.
   const low = applier.apply({ 'input.zoomRange.0': 1.0 });
   assert.deepEqual(low.applied, ['input.zoomRange.0']);
-  assert.ok(log.includes('rig input.zoomRange.0=3.3'), `not clamped: ${log}`);
+  assert.deepEqual(ctx.range, [3.3, 9.0]);
 
-  // Reversed: in bounds at each end, invalid as a pair. Only the guard catches
-  // this, and it must reach the caller as a rejection.
+  // One end alone, in bounds, invalid against the end that is NOT moving. Still
+  // refused -- this pair really is invalid, unlike the two-key case above.
   const bad = applier.apply({ 'input.zoomRange.0': 9.0 });
   assert.deepEqual(bad.applied, []);
   assert.equal(bad.rejected.length, 1);
   assert.equal(bad.rejected[0].path, 'input.zoomRange.0');
   assert.match(bad.rejected[0].why, /not below/);
+  assert.deepEqual(ctx.range, [3.3, 9.0]);
 });
 
 test('creating an applier with an orphaned path throws, loudly', () => {
