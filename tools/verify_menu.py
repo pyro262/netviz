@@ -3,7 +3,7 @@
 
 Gestures are the half of Task 3 that cannot be judged by reading. This
 script drives a real Chromium (or a real deployment, with --url) through
-14 cases: the menu's three openers, its refusal to open on a plain mouse
+15 cases: the menu's three openers, its refusal to open on a plain mouse
 double-click, its interaction with the camera rig and the settings layer,
 four cases added after a whole-branch review found real bugs a spy
 assertion had let through -- "Look here" silently doing nothing (case 10),
@@ -13,7 +13,10 @@ rail toggle misreporting under the documented `?rail=1` kiosk setup
 (case 14) added after a SCOPED RE-REVIEW of the case 10 fix found it had
 introduced a regression: a block burst could now steal a view someone was
 holding, because the fix's hand-back lived in the one method both the
-menu and the automatic burst detector called.
+menu and the automatic burst detector called. Case 15 covers a defect a
+screenshot found and no unit test could: `#stage` is `position: fixed`,
+which creates a stacking context, so a menu mounted inside it was painted
+UNDER the `#rail` sibling and read as transparent.
 
 Every case that claims the menu is OPEN asserts the menu ELEMENT is
 actually in the document with a non-zero bounding rect -- not just that
@@ -120,8 +123,8 @@ def dispatch_contextmenu(page, x, y):
 def dispatch_contextmenu_on_menu(page):
     """A contextmenu Event dispatched on the `.menu` element ITSELF, not the
     canvas -- proves the listener also covers a right-click on the menu
-    (and, by the same fix, the rail / degraded banner / update mark, all
-    children of #stage rather than of the canvas). Returns None if no menu
+    (and, by the same fix, the rail / degraded banner / update mark, none
+    of them children of the canvas). Returns None if no menu
     is present, else whether preventDefault() was called."""
     return page.evaluate("""() => {
       const el = document.querySelector('.menu');
