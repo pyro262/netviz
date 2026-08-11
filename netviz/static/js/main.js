@@ -16,6 +16,7 @@ import { isDns, classNameFor, foreignEnd } from './classify.js';
 import { createBurstDetector } from './burst.js';
 import { railEnabled, start as startRail } from './rail.js';
 import { mountUpdateMark } from './update.js';
+import { createApplier } from './apply.js';
 
 const GLOBE_RADIUS = 1.0;
 
@@ -239,7 +240,24 @@ async function boot() {
   // the stage box afterwards is what makes the globe fit the space it actually
   // has. Off by default -- see js/rail.js for why it is per-URL and not a build
   // setting.
-  if (railEnabled(window.location.search)) startRail();
+  //
+  // The rail is mounted through the same path a settings change takes, so the
+  // boot case and the toggle case cannot diverge. `?rail=1` is still how a
+  // display asks for it until profiles land; see docs/specs for step 2.
+  let railHandle = null;
+  const rail = {
+    mounted: () => railHandle !== null,
+    mount() {
+      if (railHandle) return;
+      railHandle = startRail({ onLayout: resize });
+    },
+    unmount() {
+      if (!railHandle) return;
+      railHandle.stop();
+      railHandle = null;
+    },
+  };
+  if (railEnabled(window.location.search, cfg('rail.enabled', false))) rail.mount();
 
   window.addEventListener('resize', resize);
   resize();
@@ -280,11 +298,20 @@ async function boot() {
     composer.render();
   });
 
+  // No setConfig here: the page wants the real one, which writes CONFIG so
+  // anything reading cfg() later agrees with what is on screen. Passing a stub
+  // would silently make every applied setting forget itself.
+  const settings = createApplier({
+    arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
+    resize, rail,
+  });
+
   // Diagnostics only -- no interaction, nothing reads this on the wall. It
   // exists so tools/shoot.py can assert the scene has live arcs rather than
   // leaving "looks about right" as the only check.
   window.__netviz = {
     arcs, globe, ripples, aurora, renderer, camera, scene, rig, stars, input,
+    settings,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
     project(lat, lon) {
