@@ -81,6 +81,7 @@ export function createRipples(radius, capacity = 48) {
   }
 
   let cursor = 0;
+  let last = null;                  // diagnostics only; see lastColour()
   const cooldown = createCooldown(COOLDOWN_SECONDS);
 
   function take() {
@@ -132,6 +133,10 @@ export function createRipples(radius, capacity = 48) {
     slot.spec = spec;
     slot.active = true;
     slot.mesh.visible = true;
+    slot.lat = lat;                 // diagnostics only; see lastRipple()
+    slot.lon = lon;
+    slot.cls = className;
+    last = slot;
   }
 
   function update(dt) {
@@ -156,5 +161,15 @@ export function createRipples(radius, capacity = 48) {
   return {
     group, spawn, update, liveCount,
     setCooldown(v) { cooldown.setSeconds(v); },
+    /** Diagnostics only -- tools/verify_walk.py reads the colour the most
+     *  recent ring was actually drawn in, and WHERE, because the live feed
+     *  spawns rings of its own throughout and a colour alone cannot say
+     *  which arc drew it. Nothing on the wall reads this. */
+    lastRipple() {
+      return last
+        ? { colour: last.mat.uniforms.color.value.getHex(),
+            lat: last.lat, lon: last.lon, cls: last.cls }
+        : null;
+    },
   };
 }
