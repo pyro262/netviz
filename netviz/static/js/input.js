@@ -88,6 +88,15 @@ export function startInput({ canvas, rig, menu }) {
    *  window) so the openers have to double as the close. */
   function toggleMenu(x, y, ndcPos) {
     if (menu.isOpen()) { menu.close(); return; }
+    // A fling from an earlier drag can still be coasting -- decay() alone
+    // takes ~114s to reach its floor, and nothing else clears it for the
+    // `s` opener, which involves no pointer event at all to do it as a
+    // side effect (onDown zeros it on every new touch/click, which is why
+    // this went unnoticed on the mouse and double-tap openers). Without
+    // this, "the camera does not fly home while the menu is open" is kept
+    // for the autonomous walk but broken for residual momentum: the menu
+    // opens over a globe that keeps spinning underneath it.
+    spinRate = 0;
     rig.poke();
     menu.open(x, y, ndcPos);
   }
