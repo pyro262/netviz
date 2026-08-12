@@ -35,6 +35,21 @@ test('an IPv4 address and its v6-mapped form are different numbers', () => {
   assert.notEqual(parseAddress('1.2.3.4').family, parseAddress('::ffff:1.2.3.4').family);
 });
 
+test('parseAddress reads uncompressed IPv6 with embedded v4 tail', () => {
+  // A fully-expanded address with a v4 tail and no compression is legal:
+  // 1:2:3:4:5:6 (6 hex groups) + 1.2.3.4 (v4 tail = 2 groups) = 8 groups total.
+  const uncompressed = parseAddress('1:2:3:4:5:6:1.2.3.4');
+  const explicit = parseAddress('1:2:3:4:5:6:0102:0304');
+  assert.equal(uncompressed.n, explicit.n);
+  assert.equal(uncompressed.family, 6);
+});
+
+test('parseAddress refuses too many groups with embedded v4 tail', () => {
+  // 7 hex groups + v4 tail = 9 groups, which exceeds 8
+  const result = parseAddress('1:2:3:4:5:6:7:1.2.3.4');
+  assert.equal(result, null);
+});
+
 test('parseRule reads a CIDR rule and keeps the colour', () => {
   const { rule, reason } = parseRule({ match: '10.20.50.0/24', colour: '#22d3ee' });
   assert.equal(reason, undefined);

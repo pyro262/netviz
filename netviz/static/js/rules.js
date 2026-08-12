@@ -61,6 +61,8 @@ function parseV6(str) {
     groups = [...left, ...Array(Math.max(0, fill)).fill(0), ...right, ...Array(tailBits.length).fill(0)];
   } else {
     groups = left;
+    // If there's an embedded v4 tail without compression, add placeholders for it
+    if (tailBits.length) groups = [...groups, ...Array(tailBits.length).fill(0)];
   }
   if (tailBits.length) groups = [...groups.slice(0, groups.length - 2), ...tailBits];
   if (groups.length !== 8 || groups.some((g) => Number.isNaN(g))) return null;
