@@ -18,6 +18,8 @@ import { railEnabled, start as startRail } from './rail.js';
 import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
+import { coerce } from './settings.js';
+import { loadPatch, withPersistence } from './rulestore.js';
 
 const GLOBE_RADIUS = 1.0;
 
@@ -129,6 +131,28 @@ async function boot() {
   // somebody's LAN, so it lives in .env rather than in tracked config.js --
   // and createArcs() freezes the class table when it is called.
   await loadServerConfig();
+
+  // What this display was told to remember, applied over config.js and over
+  // whatever the collector just served. A stored EMPTY rule list wins too: it
+  // means "this display has no rules", not "fall back to the environment".
+  //
+  // Applied through the same executor a runtime change uses, so a stored path
+  // the schema no longer declares is reported and skipped rather than
+  // reviving a setting that no longer exists. `settings` does not exist yet at
+  // this point in boot -- createArcs() below is what needs CONFIG.arcs.rules
+  // set correctly, and it runs long before createApplier() is called near the
+  // end of boot() -- so the one key createArcs() reads is written into CONFIG
+  // directly here, validated through the same coerce() the executor would use.
+  // Everything else in the stored patch (rail.enabled, layers.*, ...) is
+  // applied through the executor once it exists, further down.
+  const stored = loadPatch(window.localStorage);
+  if (stored.error) console.warn(`netviz: ${stored.error}`);
+  if (Object.prototype.hasOwnProperty.call(stored.patch, 'arcs.rules')) {
+    const c = coerce('arcs.rules', stored.patch['arcs.rules']);
+    if (c.ok) CONFIG.arcs.rules = c.value;
+    else console.warn(`netviz: stored arcs.rules skipped -- ${c.why}`);
+  }
+
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
@@ -387,7 +411,19 @@ async function boot() {
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
     scene, input: null, polling, resize, rail,
   };
-  const settings = createApplier(ctx);
+  let settings = createApplier(ctx);
+  settings = withPersistence(settings, window.localStorage);
+  // The rest of the stored patch (arcs.rules was already applied directly to
+  // CONFIG above, before createArcs() -- see the comment there). Re-running it
+  // through the executor here is harmless (setRules is idempotent) and is what
+  // reports a rejection for any OTHER stored key the schema no longer knows.
+  if (Object.keys(stored.patch).length) {
+    const out = settings.apply(stored.patch);
+    for (const r of out.rejected) {
+      console.warn(`netviz: stored setting ${r.path} skipped -- ${r.why}`);
+    }
+  }
+  ctx.settings = settings;
   // The menu mounts on `body`, NOT on `#stage`. `#stage` is `position:
   // fixed`, which creates a stacking context, so a menu inside it ranks its
   // z-index only among stage's own children -- and `#rail` is a later
