@@ -3,89 +3,85 @@
 import test, { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  classNameFor, isDns, isHighlighted, highlightSlot, foreignEnd,
-  isResolverAddress,
+  classNameFor, isDns, foreignEnd, isResolverAddress,
 } from '../../netviz/static/js/classify.js';
 import { CONFIG, mergeServerConfig } from '../../netviz/static/js/config.js';
 
-// The highlight slots ship with empty prefixes -- they mean nothing until
-// someone names their own networks, and the prefixes come from the collector's
-// /config.json rather than from this tracked file. Set them for the tests that
-// are about them.
-function withHighlights(prefixes, fn) {
-  const saved = CONFIG.highlight.networks.map((n) => ({ ...n }));
-  CONFIG.highlight.networks = saved.map((n, i) => ({
-    ...n, prefix: prefixes[i] === undefined ? '' : prefixes[i],
-  }));
-  try { fn(); } finally { CONFIG.highlight.networks = saved; }
-}
-
-function withHighlight(prefix, fn) {
-  return withHighlights([prefix], fn);
+/** Run fn with a rule list installed, then put the old one back. */
+function withRules(rules, fn) {
+  const saved = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = rules;
+  try { fn(); } finally { CONFIG.arcs.rules = saved; }
 }
 
 test('a plain flow is a flow', () => {
   assert.equal(classNameFor({ k: 'flow', s: '192.168.0.20', d: '8.8.8.8' }), 'flow');
 });
 
-test('a flow from the highlighted network is highlighted', () => {
-  withHighlight('10.10.10.', () => {
-    assert.equal(classNameFor({ k: 'flow', s: '10.10.10.7', d: '8.8.8.8' }), 'highlight1');
+test('an event on a rule takes that rule class, 1-based', () => {
+  withRules([{ match: '10.20.50.0/24', colour: '#22d3ee' }], () => {
+    assert.equal(classNameFor({ k: 'flow', s: '10.20.50.7', d: '8.8.8.8' }), 'rule1');
+    assert.equal(classNameFor({ k: 'flow', s: '8.8.8.8', d: '10.20.50.7' }), 'rule1');
+    assert.equal(classNameFor({ k: 'flow', s: '10.20.51.7', d: '8.8.8.8' }), 'flow');
   });
 });
 
-test('a flow TO the highlighted network is highlighted too', () => {
-  withHighlight('10.10.10.', () => {
-    assert.equal(classNameFor({ k: 'flow', s: '203.0.113.9', d: '10.10.10.12' }), 'highlight1');
+test('a block is never coloured by a rule', () => {
+  // The wall exists to show blocks and the alarm layer is one visual language.
+  // This is the same guarantee DNS already has.
+  withRules([{ match: '10.20.50.0/24', colour: '#22d3ee' }], () => {
+    assert.equal(classNameFor({ k: 'block', s: '10.20.50.7', d: '1.2.3.4' }), 'block');
+    assert.equal(classNameFor({ k: 'block', s: '1.2.3.4', d: '10.20.50.7' }), 'block');
   });
 });
 
-test('a block stays a block even on the highlighted network', () => {
-  // The wall exists to show blocks. Recolouring one because of which network it
-  // touched would hide the alarm inside the ambient layer.
-  withHighlight('10.10.10.', () => {
-    assert.equal(classNameFor({ k: 'block', s: '10.10.10.7', d: '1.2.3.4' }), 'block');
+test('with no rules configured everything is a flow', () => {
+  withRules([], () => {
+    assert.equal(classNameFor({ k: 'flow', s: '10.20.50.7', d: '8.8.8.8' }), 'flow');
   });
 });
 
-test('with no prefixes configured everything is a flow', () => {
-  // Asserts the behaviour, not the shipped default -- this file must pass in a
-  // deployment that has legitimately configured its networks.
-  withHighlights(['', '', ''], () => {
-    assert.equal(classNameFor({ k: 'flow', s: '10.10.10.7', d: '8.8.8.8' }), 'flow');
-    assert.equal(isHighlighted('10.10.10.7'), false);
+test('each rule gets its own class name, in list order', () => {
+  withRules([
+    { match: '10.10.10.0/24', colour: '#a855f7' },
+    { match: '10.10.20.0/24', colour: '#22d3ee' },
+    { match: '10.10.30.0/24', colour: '#4ade80' },
+  ], () => {
+    assert.equal(classNameFor({ k: 'flow', s: '10.10.10.7', d: '8.8.8.8' }), 'rule1');
+    assert.equal(classNameFor({ k: 'flow', s: '10.10.20.7', d: '8.8.8.8' }), 'rule2');
+    assert.equal(classNameFor({ k: 'flow', s: '10.10.30.7', d: '8.8.8.8' }), 'rule3');
   });
 });
 
-test('each network gets its own class name', () => {
-  withHighlights(['10.10.10.', '10.10.20.', '10.10.30.'], () => {
-    assert.equal(classNameFor({ k: 'flow', s: '10.10.10.7', d: '8.8.8.8' }), 'highlight1');
-    assert.equal(classNameFor({ k: 'flow', s: '10.10.20.7', d: '8.8.8.8' }), 'highlight2');
-    assert.equal(classNameFor({ k: 'flow', s: '10.10.30.7', d: '8.8.8.8' }), 'highlight3');
+test('a refused rule does not renumber the ones after it', () => {
+  // A rule that cannot be parsed is dropped from the compiled list, so the
+  // rules after it move up -- which is why compileRules reports the refusal by
+  // its index in the ORIGINAL list and the display warns rather than silently
+  // recolouring.
+  withRules([
+    { match: 'nonsense', colour: '#a855f7' },
+    { match: '10.10.20.0/24', colour: '#22d3ee' },
+  ], () => {
+    assert.equal(classNameFor({ k: 'flow', s: '10.10.20.7', d: '8.8.8.8' }), 'rule1');
   });
 });
 
-test('an empty slot does not renumber the ones after it', () => {
-  // Slot 2 must stay slot 2, and keep its colour, whether or not slot 1 is in
-  // use -- otherwise turning one network off silently recolours another.
-  withHighlights(['', '10.10.20.', ''], () => {
-    assert.equal(highlightSlot('10.10.20.7'), 2);
-    assert.equal(classNameFor({ k: 'flow', s: '10.10.20.7', d: '8.8.8.8' }), 'highlight2');
+test('rules are recompiled when the list is replaced', () => {
+  // The compiled list is cached -- it must be keyed on the array's identity,
+  // or a settings change would apply only after a reload, which is exactly
+  // the dead control the settings work exists to prevent.
+  withRules([{ match: 'DE', colour: '#fff' }], () => {
+    const ev = { k: 'flow', s: '1.1.1.1', d: '2.2.2.2', sc: 'DE', dc: 'US' };
+    assert.equal(classNameFor(ev), 'rule1');
+    CONFIG.arcs.rules = [{ match: 'FR', colour: '#fff' }];
+    assert.equal(classNameFor(ev), 'flow');
   });
 });
 
-test('overlapping prefixes take the lower slot, not iteration order', () => {
-  withHighlights(['10.10.', '10.10.20.'], () => {
-    assert.equal(highlightSlot('10.10.20.7'), 1);
-  });
-});
-
-test('the collector\'s slots migrate into colour rules', () => {
+test("the collector's slots migrate into colour rules", () => {
   // The three NETVIZ_HIGHLIGHT* slots are converted for one release. An empty
   // slot contributes nothing rather than a rule matching everything.
-  const saved = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [];
-  try {
+  withRules([], () => {
     mergeServerConfig({ highlight: { networks: [
       { prefix: '172.20.5.', label: 'lab', color: '#ff0000' },
       { prefix: '' },
@@ -94,36 +90,27 @@ test('the collector\'s slots migrate into colour rules', () => {
     assert.equal(CONFIG.arcs.rules[0].match, '172.20.5.0/24');
     assert.equal(CONFIG.arcs.rules[0].colour, '#ff0000');
     assert.equal(CONFIG.arcs.rules[0].name, 'lab');
-  } finally {
-    CONFIG.arcs.rules = saved;
-  }
+    assert.equal(classNameFor({ k: 'flow', s: '172.20.5.9', d: '8.8.8.8' }), 'rule1');
+  });
 });
 
 test('a display with its own rules is not overwritten by the environment', () => {
   // A configured list is the display's own decision: the migration fills an
   // empty list and never appends to a populated one.
-  const saved = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: '10.0.0.0/8', colour: '#123456' }];
-  try {
+  withRules([{ match: '10.0.0.0/8', colour: '#123456' }], () => {
     mergeServerConfig({ highlight: { networks: [{ prefix: '172.20.5.' }] } });
     assert.equal(CONFIG.arcs.rules.length, 1);
     assert.equal(CONFIG.arcs.rules[0].match, '10.0.0.0/8');
-  } finally {
-    CONFIG.arcs.rules = saved;
-  }
+  });
 });
 
 test('a malformed server config leaves the local one alone', () => {
-  const saved = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [];
-  try {
+  withRules([], () => {
     mergeServerConfig(null);
     mergeServerConfig({});
     mergeServerConfig({ highlight: { networks: 'nope' } });
     assert.equal(CONFIG.arcs.rules.length, 0);
-  } finally {
-    CONFIG.arcs.rules = saved;
-  }
+  });
 });
 
 test('an unknown kind falls back to flow', () => {
@@ -133,28 +120,6 @@ test('an unknown kind falls back to flow', () => {
 test('missing addresses do not throw', () => {
   assert.equal(classNameFor({ k: 'flow' }), 'flow');
   assert.equal(classNameFor({}), 'flow');
-});
-
-test('the prefix match is anchored -- 110.10.10.x is not a match', () => {
-  withHighlight('10.10.10.', () => {
-    assert.equal(isHighlighted('110.10.10.4'), false);
-    assert.equal(isHighlighted('10.10.10.4'), true);
-    assert.equal(isHighlighted('10.10.100.4'), false);
-  });
-});
-
-test('other private ranges are not highlighted', () => {
-  withHighlight('10.10.10.', () => {
-    assert.equal(isHighlighted('192.168.0.50'), false);
-    assert.equal(isHighlighted('10.10.11.4'), false);
-  });
-});
-
-test('an empty prefix matches nothing', () => {
-  withHighlight('', () => {
-    assert.equal(isHighlighted('10.10.10.4'), false);
-    assert.equal(isHighlighted('anything'), false);
-  });
 });
 
 test('DNS is identified from either end of the flow', () => {

@@ -3,7 +3,8 @@
 // allocate per event.
 import * as THREE from 'three';
 import { plasmaAt } from './palette.js';
-import { classNameFor, foreignEnd, highlightNetworks } from './classify.js';
+import { classNameFor, foreignEnd } from './classify.js';
+import { compileRules } from './rules.js';
 import { densityGain } from './density.js';
 import { latLonToVec3 } from './globe.js';
 import { cfg } from './config.js';
@@ -44,17 +45,26 @@ function classSpec(name, fallback) {
   return { ...c, hex: c.color, color: specColor(c) };
 }
 
+/** The geometry every colour rule shares, read fresh on each call so a
+ *  settings change to `arcs.highlight` reaches the next rebuild. `gain` and
+ *  `bloomScale` are the fallbacks a rule that omits them takes -- the shipped
+ *  0.70 / 0.41 live in config.js, not here. */
+function sharedShape() {
+  return { life: 4.0, tube: 0.0032, speed: 0.9, lift: 0.28, maxRise: 0.24,
+           bloomScale: 0.41, gain: 0.70, ...cfg('arcs.highlight', {}) };
+}
+
 /**
  * Build the class -> spec table.
  *
- * Called from createArcs() rather than evaluated at import, because the
- * highlighted networks' colours arrive from the collector's /config.json and a
- * table frozen at module load would be built before that fetch resolves. See
+ * Called from createArcs() rather than evaluated at import, because the colour
+ * rules can arrive from the collector's /config.json and a table frozen at
+ * module load would be built before that fetch resolves. See
  * loadServerConfig() in config.js.
  *
- * The three highlight slots share one shape (`arcs.highlight`) and differ only
- * in colour and gain, which come from `highlight.networks`. A single slot can
- * still be overridden on its own with an `arcs.highlight2` key.
+ * Every rule shares one shape (`arcs.highlight`) and differs only in colour,
+ * gain and bloomScale. A single rule's class can still be overridden on its
+ * own with an `arcs.rule2` key.
  */
 function buildClasses() {
   const table = {
@@ -63,14 +73,18 @@ function buildClasses() {
     block: classSpec('block', { life: 18.0, tube: 0.0052, colorAt: 0.86, gain: 0.74,
                                 speed: 0.55, lift: 0.45, maxRise: 0.21, bloomScale: 0.5 }),
   };
-  const shared = { life: 4.0, tube: 0.0032, speed: 0.9, lift: 0.28,
-                   maxRise: 0.24, bloomScale: 0.41, ...cfg('arcs.highlight', {}) };
-  highlightNetworks().forEach((net, i) => {
-    const name = `highlight${i + 1}`;
+  // One class per rule, all sharing the `arcs.highlight` geometry. Colour,
+  // gain and bloomScale come from the rule; a rule that omits gain or
+  // bloomScale gets the shape's own, which is where the shipped 0.70 / 0.41
+  // live -- no default is invented here.
+  const shared = sharedShape();
+  compileRules(cfg('arcs.rules', [])).rules.forEach((rule, i) => {
+    const name = `rule${i + 1}`;
     table[name] = classSpec(name, {
       ...shared,
-      color: net.color || '#a855f7',
-      gain: net.gain === undefined ? 0.7 : net.gain,
+      color: rule.colour,
+      gain: rule.gain === undefined ? shared.gain : rule.gain,
+      bloomScale: rule.bloomScale === undefined ? shared.bloomScale : rule.bloomScale,
     });
   });
   return table;
