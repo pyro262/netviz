@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  SCHEMA, paths, entry, defaultOf, coerce, validate, planApply,
+  SCHEMA, paths, entry, defaultOf, coerce, validate, planApply, settingLabel,
 } from '../../netviz/static/js/settings.js';
 import { cfg } from '../../netviz/static/js/config.js';
 
@@ -181,4 +181,22 @@ test('rail.maxRules is bounded and rounds', () => {
   assert.equal(coerce('rail.maxRules', 99).value, 20);
   assert.equal(coerce('rail.maxRules', 4.6).value, 5);
   assert.equal(coerce('rail.maxRules', 'five').ok, false);
+});
+
+test('settingLabel turns a path into something a person can recognise', () => {
+  // It appears in the reset dialog's list of what would be forgotten, so the
+  // bar is "recognise the setting you changed", not elegance.
+  assert.equal(settingLabel('rail.enabled'), 'the stats rail');
+  assert.equal(settingLabel('layers.cityLights'), 'the city lights layer');
+  assert.equal(settingLabel('layers.stars'), 'the stars layer');
+  assert.equal(settingLabel('camera.walk.holdSeconds'), 'camera walk hold seconds');
+});
+
+test('settingLabel never returns an empty string for a real path', () => {
+  // A blank entry in "this will forget: , , and" is worse than the raw path.
+  for (const p of paths()) {
+    const label = settingLabel(p);
+    assert.ok(typeof label === 'string' && label.trim().length > 0,
+              `no label for ${p}`);
+  }
 });

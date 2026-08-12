@@ -542,6 +542,38 @@ export function entry(path) {
 /** The shipped value, from config.js. Never a copy kept here. */
 export function defaultOf(path) { return cfg(path, undefined); }
 
+/** Names for the handful of paths whose plain-English name is not derivable
+ *  from the path itself. Everything else is humanised below, so this list only
+ *  has to carry the exceptions rather than all 89 settings -- a second full
+ *  copy of the catalogue would drift, same reason the schema keeps no
+ *  defaults. */
+const LABELS = {
+  'rail.enabled': 'the stats rail',
+  'arcs.rules': 'your color rules',
+  'input.enabled': 'touch and mouse control',
+  'input.lock': 'the display lock',
+  'appearance.background': 'the background color',
+  'traffic.flowsPerSecond': 'how many flows are drawn per second',
+};
+
+/**
+ * A path in words, for a message somebody reads before deciding something.
+ *
+ * `layers.cityLights` -> "the city lights layer", `camera.walk.holdSeconds` ->
+ * "camera walk hold seconds". Not pretty for every one of the 89, and it does
+ * not need to be: it appears in a list of what a reset would forget, where the
+ * job is recognising the setting you changed, not admiring the prose.
+ */
+export function settingLabel(path) {
+  if (Object.prototype.hasOwnProperty.call(LABELS, path)) return LABELS[path];
+  const parts = String(path).split('.');
+  const words = parts
+    .map((p) => p.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase())
+    .join(' ');
+  if (parts[0] === 'layers') return `the ${words.replace(/^layers /, '')} layer`;
+  return words;
+}
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 /**

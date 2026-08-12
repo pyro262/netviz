@@ -236,6 +236,47 @@
       /* The header carries the same flex bases as the row below it, so the
          labels sit over the fields they name. Any change to one is a change to
          both. */
+      /* ------------------------------------------------ the confirm dialog --
+         Mounted on document.body like the menu and the rules panel, and for
+         the same reason: #stage is position:fixed and creates a stacking
+         context, so anything inside it is painted under #rail. z-index above
+         both, because this one is a question that must not be obscured by
+         the thing it is asking about. */
+      .confirm {
+        position: fixed; inset: 0; z-index: 20;
+        display: flex; align-items: center; justify-content: center;
+        background: #05040ab8;
+      }
+      .confirm-box {
+        max-width: 560px; margin: 2vh; padding: 18px 20px;
+        background: #12102a; border: 1px solid #7201a8;
+        border-radius: 5px; color: #e8e4f5;
+        font: 13px/1.55 ui-monospace, monospace;
+        box-shadow: 0 18px 60px #000000a0;
+      }
+      .confirm-title { font-size: 16px; margin-bottom: 8px; color: #fdca26; }
+      .confirm-lead { margin-bottom: 12px; opacity: .8; }
+      .confirm-group { margin-bottom: 10px; }
+      .confirm-group-head { font-size: 11px; letter-spacing: .1em; opacity: .6; }
+      .confirm-list { margin: 4px 0 0; padding-left: 18px; }
+      .confirm-list li { padding: 1px 0; }
+      /* Amber for what changes, green for what is safe -- the same amber the
+         alarm layer uses, so "this one is the consequence" needs no legend. */
+      .confirm-will { color: #fb9f3a; }
+      .confirm-wont { color: #4ade80; }
+      .confirm-note { margin-top: 10px; opacity: .65; font-size: 12px; }
+      .confirm-foot { display: flex; gap: 8px; justify-content: flex-end;
+                      margin-top: 16px; }
+      .confirm-foot button {
+        background: #0b0916; color: inherit; border: 1px solid #2a2540;
+        border-radius: 3px; padding: 5px 10px; font: inherit; cursor: pointer;
+      }
+      /* Cancel is the emphasised button, not confirm: it is focused, it is what
+         Escape does, and it is the answer a stray click should land on. */
+      .confirm-foot .confirm-no { border-color: #7201a8; }
+      .confirm-foot .confirm-yes { opacity: .85; }
+      .confirm-foot button:focus { outline: 1px solid #fdca26; outline-offset: 1px; }
+
       /* What MATCH accepts, spelled out. Dim and small: it is reference
          material somebody reads once, and it must not compete with the rows
          they came to edit. The example column is fixed-width so the four

@@ -363,9 +363,55 @@ def reset_case(page, cx, cy) -> bool:
     if not row_present:
         return report("6: reset keeps the rules and resets the rest", False,
                       "no 'Reset to netviz defaults' row in the menu")
+    # The menu row only ASKS now. Clicking it must not reset anything on its
+    # own -- that is the whole point of the dialog, and a click that reloaded
+    # here would be the accidental-click bug it exists to prevent. Asserted
+    # before the dialog is answered: the storage is still there and the page
+    # has not navigated.
+    page.evaluate("""() => document.querySelector('.menu [data-id="reset"]')
+                       .dispatchEvent(new MouseEvent('click', {bubbles: true}))""")
+    page.wait_for_timeout(400)
+    asked = page.evaluate("""() => {
+      const el = document.querySelector('.confirm');
+      if (!el) return {present: false};
+      const r = el.getBoundingClientRect();
+      const text = el.textContent || '';
+      return {
+        present: true, inDocument: document.contains(el), w: r.width, h: r.height,
+        hasYes: !!el.querySelector('.confirm-yes'),
+        hasNo: !!el.querySelector('.confirm-no'),
+        saysWill: text.includes('WILL'), saysWont: text.includes('NOT'),
+        namesTheLayer: text.toLowerCase().includes('stars'),
+        promisesRules: text.toLowerCase().includes('color rule'),
+        stillStored: window.localStorage.getItem('netviz.settings.v1') !== null,
+      };
+    }""")
+    dialog_ok = (asked.get("present") and asked.get("inDocument")
+                 and asked.get("w", 0) > 0 and asked.get("hasYes") and asked.get("hasNo")
+                 and asked.get("saysWill") and asked.get("saysWont")
+                 and asked.get("namesTheLayer") and asked.get("promisesRules")
+                 and asked.get("stillStored"))
+    if not dialog_ok:
+        return report("6: reset keeps the rules and resets the rest", False,
+                      f"the confirm dialog did not gate the reset: {asked}")
+    # Cancel first, and prove it really is a no-op, before answering yes. A
+    # dialog whose No still resets is worse than no dialog at all.
+    page.evaluate("() => document.querySelector('.confirm-no').click()")
+    page.wait_for_timeout(300)
+    after_cancel = page.evaluate("""() => ({
+      gone: !document.querySelector('.confirm'),
+      stillStored: window.localStorage.getItem('netviz.settings.v1') !== null,
+    })""")
+    if not (after_cancel["gone"] and after_cancel["stillStored"]):
+        return report("6: reset keeps the rules and resets the rest", False,
+                      f"cancel did not leave everything alone: {after_cancel}")
+    dispatch_contextmenu(page, cx, cy)
+    page.wait_for_timeout(200)
+    page.evaluate("""() => document.querySelector('.menu [data-id="reset"]')
+                       .dispatchEvent(new MouseEvent('click', {bubbles: true}))""")
+    page.wait_for_timeout(400)
     with page.expect_navigation(wait_until="load", timeout=20_000):
-        page.evaluate("""() => document.querySelector('.menu [data-id="reset"]')
-                           .dispatchEvent(new MouseEvent('click', {bubbles: true}))""")
+        page.evaluate("() => document.querySelector('.confirm-yes').click()")
     page.wait_for_function("window.__netvizReady === true", timeout=20_000)
     page.wait_for_timeout(1000)
     result = page.evaluate("""async () => {

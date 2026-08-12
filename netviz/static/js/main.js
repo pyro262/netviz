@@ -20,7 +20,8 @@ import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
 import { createRulesPanel } from './rules_panel.js';
-import { coerce } from './settings.js';
+import { createConfirm } from './confirm.js';
+import { coerce, settingLabel } from './settings.js';
 import { loadPatch, withPersistence, clearPatch } from './rulestore.js';
 
 const GLOBE_RADIUS = 1.0;
@@ -459,10 +460,47 @@ async function boot() {
   // NETVIZ_HIGHLIGHT* migration run at boot, so there is no path that restores
   // them mid-session, and half-restored settings would be worse than a
   // one-second reload on a wall.
+  //
+  // It asks first, and the question is built from what is ACTUALLY STORED
+  // rather than from a fixed sentence: the dialog names the settings this
+  // display would lose, so "what does this do" is answered for this screen
+  // instead of in general. With nothing stored but rules, there is nothing to
+  // reset and the dialog says exactly that with one button -- a yes/no over an
+  // action that would change nothing teaches that Yes does nothing.
+  const confirmer = createConfirm({ root: document.body });
   const onReset = storage ? () => {
-    const out = clearPatch(storage, ['arcs.rules']);
-    if (!out.ok) { console.warn(`netviz: ${out.error}`); return; }
-    window.location.reload();
+    const held = loadPatch(storage).patch || {};
+    const losing = Object.keys(held).filter((p) => p !== 'arcs.rules');
+    const ruleCount = Array.isArray(held['arcs.rules']) ? held['arcs.rules'].length : 0;
+    confirmer.ask({
+      title: 'Reset this display to netviz defaults?',
+      lead: 'This affects only this screen, in this web browser. Nothing is '
+          + 'sent to the collector and no other display changes.',
+      will: losing.length ? [
+        `Forget ${losing.length} setting${losing.length === 1 ? '' : 's'} you `
+          + `changed on this screen: ${losing.map(settingLabel).join(', ')}.`,
+        'Put those back to the values netviz ships with.',
+        'Reload the page, which takes a second or two.',
+      ] : [],
+      wont: [
+        ruleCount
+          ? `Touch your ${ruleCount} color rule${ruleCount === 1 ? '' : 's'} -- they stay exactly as they are.`
+          : 'Touch your color rules -- they are kept.',
+        'Change anything on the collector, or on any other display.',
+        'Delete any traffic, history or statistics.',
+      ],
+      note: losing.length
+        ? 'To change the color rules instead, use "Color rules..." in this menu.'
+        : 'Nothing to reset: this display is already running netviz defaults '
+          + '(your color rules are not affected either way).',
+      confirmLabel: 'Yes, reset this display',
+      cancelLabel: 'No, leave it alone',
+      onConfirm: () => {
+        const out = clearPatch(storage, ['arcs.rules']);
+        if (!out.ok) { console.warn(`netviz: ${out.error}`); return; }
+        window.location.reload();
+      },
+    });
   } : null;
   const menu = createMenu({ rig, settings, rulesPanel, onReset, root: document.body });
   input = startInput({ canvas: renderer.domElement, rig, menu, rulesPanel });
