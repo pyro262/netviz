@@ -103,6 +103,10 @@ test('coerce accepts a color in the form the renderer uses', () => {
                    { ok: true, value: '#0b0916' });
   assert.deepEqual(coerce('appearance.background', '#000'),
                    { ok: true, value: '#000' });
+  // Uppercase letters are preserved, not normalized to lowercase. The shipped
+  // ground in uppercase is under the cap at luminance 0.0032.
+  assert.deepEqual(coerce('appearance.background', '#0B0916'),
+                   { ok: true, value: '#0B0916' });
 });
 
 test('validate splits a mixed patch and never throws', () => {
