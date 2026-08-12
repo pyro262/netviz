@@ -10,6 +10,7 @@
 // between the panel, the menu, an imported file and any future write API.
 import { parseRule } from './rules.js';
 import { cfg } from './config.js';
+import { serialiseRules, parseImport, exportFilename, clearPatch } from './rulestore.js';
 
 /** One row per rule: what the boxes show, and why a row is refused.
  *
@@ -127,6 +128,14 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     list.replaceChildren();
     for (const row of rows) list.append(renderRow(row));
     list.append(renderAdd());
+  }
+
+  /** One line under the buttons. Import is the only action here whose result
+   *  is invisible on the globe -- a refused file changes nothing, which is
+   *  indistinguishable from a file that changed nothing. */
+  function showNote(text) {
+    const note = node && node.querySelector('.rules-note');
+    if (note) note.textContent = text;
   }
 
   /** Non-structural change: one row's own field. Re-validates and re-applies
@@ -260,10 +269,69 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
                    'The first enabled rule that matches an arc colours it.'));
     node.append(el('div', 'rules-list'));
     const foot = el('div', 'rules-foot');
+
+    const exportBtn = el('button', 'rules-export', 'Export');
+    exportBtn.addEventListener('click', () => {
+      // The display's rules live in one browser; this is the only copy that
+      // leaves it. A Blob URL rather than a data: URI so a long list is not
+      // capped by a URL length nobody documents.
+      const blob = new Blob([serialiseRules(readyRules(panelRows(draft)))],
+                            { type: 'application/json' });
+      const a = el('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = exportFilename(new Date());
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    foot.append(exportBtn);
+
+    const importInput = el('input', 'rules-import-input');
+    importInput.type = 'file';
+    importInput.accept = 'application/json,.json';
+    importInput.style.display = 'none';
+    importInput.addEventListener('change', async () => {
+      const file = importInput.files && importInput.files[0];
+      if (!file) return;
+      const out = parseImport(await file.text());
+      importInput.value = '';                 // so the same file re-imports
+      if (out.error) { showNote(`import refused -- ${out.error}`); return; }
+      // REPLACE, not merge: a merge cannot express a deleted rule, so an
+      // imported backup would resurrect exactly what it was taken to undo.
+      draft = out.rules.map((r) => ({ ...r }));
+      redraw();
+      showNote(`imported ${out.rules.length} rule(s)`);
+    });
+    const importBtn = el('button', 'rules-import', 'Import');
+    importBtn.addEventListener('click', () => importInput.click());
+    foot.append(importBtn, importInput);
+
+    const resetBtn = el('button', 'rules-reset', 'Reset to collector');
+    resetBtn.addEventListener('click', () => {
+      // Forget everything, then reload: the collector's config and the
+      // NETVIZ_HIGHLIGHT* migration are applied at boot, so there is no way to
+      // restore them mid-session without re-running that path.
+      //
+      // The PROPERTY access can itself throw (a managed kiosk policy makes
+      // window.localStorage a getter that raises SecurityError) -- same guard
+      // main.js already applies before it ever calls withPersistence.
+      let storage = null;
+      try {
+        storage = window.localStorage;
+      } catch (e) {
+        showNote(`settings storage unavailable -- ${e.message}`);
+        return;
+      }
+      const out = clearPatch(storage);
+      if (!out.ok) { showNote(out.error); return; }
+      window.location.reload();
+    });
+    foot.append(resetBtn);
+
     const closeBtn = el('button', 'rules-close', 'Close');
     closeBtn.addEventListener('click', close);
     foot.append(closeBtn);
     node.append(foot);
+    node.append(el('div', 'rules-note'));
     mount.appendChild(node);
     redraw();
     document.addEventListener('keydown', onKeyDown, true);

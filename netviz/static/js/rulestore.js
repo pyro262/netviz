@@ -9,6 +9,8 @@
 // decision here is made under `node --test` rather than in a browser. Same
 // discipline as campath.js, orbit.js and rules.js.
 
+import { compileRules } from './rules.js';
+
 export const KEY = 'netviz.settings.v1';
 
 /** The stored patch, or an empty one plus a reason.
@@ -87,4 +89,42 @@ export function withPersistence(settings, storage) {
       return out;
     },
   };
+}
+
+/** The list as a file. Two-space JSON with a trailing newline: this is the
+ *  same shape config.js takes, so an export can equally be pasted into a
+ *  tracked config rather than only re-imported. */
+export function serialiseRules(list) {
+  return `${JSON.stringify(Array.isArray(list) ? list : [], null, 2)}\n`;
+}
+
+/** `netviz-rules-YYYY-MM-DD.json`, in UTC so two displays in different
+ *  timezones cannot produce two filenames for the same backup. */
+export function exportFilename(date) {
+  const d = date instanceof Date ? date : new Date();
+  const iso = d.toISOString().slice(0, 10);
+  return `netviz-rules-${iso}.json`;
+}
+
+/**
+ * A file back into a rule list, or a reason it was refused.
+ *
+ * ALL-or-nothing, and every bad row is named rather than only the first: an
+ * import is one deliberate act, so the person doing it can fix the file once
+ * instead of discovering its faults one reload at a time. A live edit is the
+ * opposite call -- see readyRules() in rules_panel.js.
+ */
+export function parseImport(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    return { error: `not JSON: ${e.message}` };
+  }
+  if (!Array.isArray(parsed)) return { error: 'not a list of rules' };
+  const { refused } = compileRules(parsed);
+  if (refused.length) {
+    return { error: refused.map((r) => `rule ${r.index + 1}: ${r.reason}`).join('; ') };
+  }
+  return { rules: parsed, error: null };
 }

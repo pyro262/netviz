@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { KEY, loadPatch, savePatch, clearPatch, withPersistence }
+import { KEY, loadPatch, savePatch, clearPatch, withPersistence,
+  serialiseRules, parseImport, exportFilename }
   from '../../netviz/static/js/rulestore.js';
 
 /** The three methods of Storage this module uses, and nothing else. A real
@@ -120,4 +121,43 @@ test('withPersistence tolerates null storage: the executor still runs and return
   const base = { apply: (p) => ({ applied: Object.keys(p), rejected: [] }) };
   const out = withPersistence(base, null).apply({ 'rail.enabled': true });
   assert.deepEqual(out, { applied: ['rail.enabled'], rejected: [] });
+});
+
+test('an exported list imports back identically', () => {
+  const list = [{ match: '10.20.50.0/24', colour: '#22d3ee', name: 'storj',
+                  end: 'either', enabled: true }];
+  const out = parseImport(serialiseRules(list));
+  assert.equal(out.error, null);
+  assert.deepEqual(out.rules, list);
+});
+
+test('an import is ALL-or-nothing, unlike a live edit', () => {
+  // A live edit is a keystroke; an import is one deliberate act, and half of
+  // one is confusing. Every bad row is named, not just the first.
+  const out = parseImport(JSON.stringify([
+    { match: '10.20.50.0/24', colour: '#22d3ee' },
+    { match: 'nonsense', colour: '#fff' },
+    { match: 'DE', colour: 'blue' },
+  ]));
+  assert.equal(out.rules, undefined);
+  assert.match(out.error, /rule 2/);
+  assert.match(out.error, /rule 3/);
+});
+
+test('an import refuses what is not a list of rules', () => {
+  assert.ok(parseImport('{"match":"DE"}').error);
+  assert.ok(parseImport('not json').error);
+  assert.ok(parseImport('').error);
+});
+
+test('an empty exported list is a legitimate import', () => {
+  // "This display has no rules" is a real thing to back up and restore.
+  const out = parseImport(serialiseRules([]));
+  assert.equal(out.error, null);
+  assert.deepEqual(out.rules, []);
+});
+
+test('the export filename carries the date', () => {
+  assert.equal(exportFilename(new Date(Date.UTC(2026, 7, 11))),
+               'netviz-rules-2026-08-11.json');
 });
