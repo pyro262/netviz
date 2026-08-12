@@ -18,6 +18,7 @@ import { railEnabled, start as startRail } from './rail.js';
 import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
+import { createRulesPanel } from './rules_panel.js';
 import { coerce } from './settings.js';
 import { loadPatch, withPersistence } from './rulestore.js';
 
@@ -444,7 +445,8 @@ async function boot() {
   // sibling of `#stage`, so the rail's numbers painted straight over the
   // menu's opaque background and it read as transparent. Raising the menu's
   // z-index cannot fix that (measured: 9999 changed nothing).
-  const menu = createMenu({ rig, settings, root: document.body });
+  const rulesPanel = createRulesPanel({ settings, root: document.body });
+  const menu = createMenu({ rig, settings, rulesPanel, root: document.body });
   input = startInput({ canvas: renderer.domElement, rig, menu });
   ctx.input = input;
 

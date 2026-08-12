@@ -206,6 +206,30 @@
       }
       .menu-check { width: 1.2em; text-align: center; color: #7cf0c2; }
       .menu-note { font-size: 11px; opacity: 0.7; max-width: 9em; text-align: right; }
+
+      /* --------------------------------------------------------- rules panel --
+         Opened from the menu's "Colour rules…" item. Mounted on document.body,
+         never on #stage -- see js/rules_panel.js for why that is load-bearing
+         (the same stacking-context trap the menu itself hit). */
+      .rules-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+                     z-index: 6; background: #12101fee; color: #d8d4ea;
+                     border: 1px solid #2a2540; border-radius: 6px; padding: 14px 16px;
+                     font: 13px/1.5 ui-monospace, monospace; min-width: 560px;
+                     max-height: 70vh; overflow-y: auto; touch-action: auto; }
+      .rules-title { font-size: 15px; margin-bottom: 2px; }
+      .rules-hint { opacity: .55; margin-bottom: 10px; }
+      .rules-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px;
+                   flex-wrap: wrap; }
+      .rules-row.bad .rules-match { border-color: #e0a020; }
+      .rules-match { flex: 2 1 200px; }
+      .rules-name { flex: 1 1 120px; }
+      .rules-panel input, .rules-panel select, .rules-panel button {
+        background: #0b0916; color: inherit; border: 1px solid #2a2540;
+        border-radius: 3px; padding: 3px 6px; font: inherit; }
+      .rules-colour { width: 44px; padding: 1px; }
+      .rules-reason { flex: 1 0 100%; color: #e0a020; opacity: .9; padding-left: 2px; }
+      .rules-add { margin-top: 8px; }
+      .rules-foot { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
     </style>
     <script type="importmap">
       {

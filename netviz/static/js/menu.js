@@ -100,6 +100,15 @@ export function menuModel(state) {
         },
       ],
     },
+    // Absent, not disabled, when the display is locked: the lock says
+    // configuring is not on offer, and a greyed row advertises a control
+    // nobody in the room can use.
+    ...(state.rulesPanel ? [{
+      id: 'rules',
+      label: 'Colour rules…',
+      kind: 'action',
+      enabled: true,
+    }] : []),
     {
       id: 'settings',
       label: 'Settings',
@@ -147,7 +156,7 @@ function clampPosition(node, x, y) {
 }
 
 /**
- * createMenu({ rig, settings, root }) -> { open(x, y, ndc), close(), isOpen() }
+ * createMenu({ rig, settings, rulesPanel, root }) -> { open(x, y, ndc), close(), isOpen() }
  *
  * `rig` supplies `pointAt(ndc)` (what the pointer was over, for "Look here")
  * and `lookHere(lat, lon)` (the action itself) -- NOT `visit()`, which is the
@@ -157,7 +166,10 @@ function clampPosition(node, x, y) {
  * every click that changes something goes through `settings.apply({path:
  * value})`, because the layer ids in menuModel's submenu ARE schema paths and
  * there is no second way to write one; the menu never touches CONFIG or a
- * live object directly. `root` is the DOM node the menu mounts under --
+ * live object directly. `rulesPanel` is the colour-rules editor
+ * (`createRulesPanel`) -- the menu only opens it, it never touches
+ * settings.apply for anything the panel owns. `root` is the DOM node the menu
+ * mounts under --
  * `document.body` on the real page, and deliberately NOT `#stage`: `#stage`
  * is `position: fixed`, which creates a stacking context, so a menu inside it
  * ranks its z-index only among stage's own children and the `#rail` sibling
@@ -167,7 +179,7 @@ function clampPosition(node, x, y) {
  * toggle flipped a minute ago -- by this menu or by anything else that calls
  * settings.apply -- shows correctly the next time somebody opens it.
  */
-export function createMenu({ rig, settings, root }) {
+export function createMenu({ rig, settings, rulesPanel, root }) {
   let node = null;
 
   function isOpen() { return node !== null; }
@@ -226,6 +238,7 @@ export function createMenu({ rig, settings, root }) {
       if (item.enabled) {
         row.addEventListener('click', act(() => {
           if (item.id === 'lookHere' && point) rig.lookHere(point.lat, point.lon);
+          if (item.id === 'rules' && rulesPanel) rulesPanel.open();
         }));
       }
       return row;
@@ -268,6 +281,9 @@ export function createMenu({ rig, settings, root }) {
       // No settings panel exists yet -- see menuModel's own note on the item
       // this produces. Task 3 does not change that; a later task does.
       settingsPanel: false,
+      // The lock is already checked at the top of open(), so a menu that
+      // drew at all may offer this.
+      rulesPanel: true,
     };
 
     node = el('div', 'menu');

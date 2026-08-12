@@ -57,6 +57,19 @@ test('Settings is present but disabled until the panel exists', () => {
   assert.equal(byId(menuModel({ ...STATE, settingsPanel: true }), 'settings').enabled, true);
 });
 
+test('the menu offers the rules editor', () => {
+  const ids = menuModel({ ...STATE, rulesPanel: true }).map((i) => i.id);
+  assert.ok(ids.includes('rules'));
+});
+
+test('the rules editor is absent, not disabled, when input is locked', () => {
+  // On a public display the rules are configuration, and the lock exists to
+  // say configuring is not on offer. A greyed-out row advertises a control
+  // nobody can use.
+  const ids = menuModel({ ...STATE, rulesPanel: false }).map((i) => i.id);
+  assert.equal(ids.includes('rules'), false);
+});
+
 test('nothing in the menu claims a change is saved', () => {
   // Nothing persists until step 2. A menu that says "saved" would be lying,
   // and the lie would only surface on the next reload.
@@ -303,6 +316,7 @@ test('open draws exactly the rows menuModel describes, not just SOMETHING', () =
       layers: { stars: true, aurora: true, bordersWatched: true, cityLights: true, ripples: true },
       canLookHere: false,
       settingsPanel: false,
+      rulesPanel: true,
     };
     const expected = [];
     for (const item of menuModel(expectedState)) {
