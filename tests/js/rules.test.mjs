@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAddress, parseRule } from '../../netviz/static/js/rules.js';
+import { parseAddress, parseRule, compileRules, matchRule, firstMatch, addrContext }
+  from '../../netviz/static/js/rules.js';
 
 test('parseAddress reads IPv4 as a 32-bit number', () => {
   assert.equal(parseAddress('10.20.50.0').n, 0x0a143200n);
@@ -129,4 +130,129 @@ test('gain and bloomScale are bounded, and out-of-range is refused', () => {
 
 test('a three-digit hex colour is accepted and normalised', () => {
   assert.equal(parseRule({ match: 'DE', colour: '#0f8' }).rule.colour, '#00ff88');
+});
+
+const flow = (s, d, extra = {}) => ({ k: 'flow', s, d, ...extra });
+const one = (raw) => parseRule(raw).rule;
+const hit = (raw, ev) => matchRule(one(raw), ev, addrContext(ev));
+
+test('a CIDR matches inside its range and nothing outside it', () => {
+  const r = { match: '10.20.50.0/24', colour: '#fff' };
+  assert.equal(hit(r, flow('10.20.50.1', '8.8.8.8')), true);
+  assert.equal(hit(r, flow('8.8.8.8', '10.20.50.255')), true);
+  assert.equal(hit(r, flow('10.20.51.0', '8.8.8.8')), false);
+  assert.equal(hit(r, flow('10.20.49.255', '8.8.8.8')), false);
+});
+
+test('the /24 that the string matcher got wrong', () => {
+  // '10.0.5.' as a prefix claims nothing outside 10.0.5.x only because of a
+  // trailing dot somebody has to remember. The arithmetic does not need it.
+  const r = { match: '10.0.5.0/24', colour: '#fff' };
+  assert.equal(hit(r, flow('10.0.50.1', '8.8.8.8')), false);
+  assert.equal(hit(r, flow('110.0.5.1', '8.8.8.8')), false);
+  assert.equal(hit(r, flow('10.0.5.1', '8.8.8.8')), true);
+});
+
+test('/32 and /0, and a v4 rule never claims v6', () => {
+  assert.equal(hit({ match: '1.2.3.4/32', colour: '#fff' }, flow('1.2.3.4', '8.8.8.8')), true);
+  assert.equal(hit({ match: '1.2.3.4/32', colour: '#fff' }, flow('1.2.3.5', '8.8.8.8')), false);
+  assert.equal(hit({ match: '0.0.0.0/0', colour: '#fff' }, flow('203.0.113.1', '8.8.8.8')), true);
+  assert.equal(hit({ match: '0.0.0.0/0', colour: '#fff' }, flow('2001:db8::1', '::1')), false);
+});
+
+test('IPv6 prefixes match on the compressed and the full form alike', () => {
+  const r = { match: '2001:db8::/32', colour: '#fff' };
+  assert.equal(hit(r, flow('2001:db8:1234::9', '::1')), true);
+  assert.equal(hit(r, flow('2001:0db8:0000:0000:0000:0000:0000:0001', '::1')), true);
+  assert.equal(hit(r, flow('2001:db9::1', '::1')), false);
+});
+
+test('a range is inclusive at both ends', () => {
+  const r = { match: '203.0.113.10-203.0.113.40', colour: '#fff' };
+  assert.equal(hit(r, flow('203.0.113.10', '8.8.8.8')), true);
+  assert.equal(hit(r, flow('203.0.113.40', '8.8.8.8')), true);
+  assert.equal(hit(r, flow('203.0.113.9', '8.8.8.8')), false);
+  assert.equal(hit(r, flow('203.0.113.41', '8.8.8.8')), false);
+});
+
+test('end: src and dst test one end only', () => {
+  const src = { match: '10.20.50.0/24', colour: '#fff', end: 'src' };
+  const dst = { match: '10.20.50.0/24', colour: '#fff', end: 'dst' };
+  assert.equal(hit(src, flow('10.20.50.1', '8.8.8.8')), true);
+  assert.equal(hit(src, flow('8.8.8.8', '10.20.50.1')), false);
+  assert.equal(hit(dst, flow('8.8.8.8', '10.20.50.1')), true);
+  assert.equal(hit(dst, flow('10.20.50.1', '8.8.8.8')), false);
+});
+
+test('a country rule reads sc/dc and honours the end selector', () => {
+  const r = { match: 'DE', colour: '#fff' };
+  assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sc: 'DE', dc: 'US' })), true);
+  assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sc: 'US', dc: 'DE' })), true);
+  assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sc: 'US', dc: 'FR' })), false);
+  const dst = { match: 'DE', colour: '#fff', end: 'dst' };
+  assert.equal(hit(dst, flow('1.1.1.1', '2.2.2.2', { sc: 'DE', dc: 'US' })), false);
+});
+
+test('a port rule matches nothing when the event carries no ports', () => {
+  // The collector OMITS sp/dp when unknown, because 0 is a real port. A rule
+  // that matched an absent port would claim every flow from an exporter that
+  // does not export ports.
+  const r = { match: 'tcp/443', colour: '#fff' };
+  assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sp: 51000, dp: 443, pr: 6 })), true);
+  assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sp: 443, dp: 51000, pr: 6 })), true);
+  assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sp: 51000, dp: 443, pr: 17 })), false);
+  assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2')), false);
+  const any = { match: '443', colour: '#fff' };
+  assert.equal(hit(any, flow('1.1.1.1', '2.2.2.2', { sp: 51000, dp: 443, pr: 17 })), true);
+});
+
+test('compileRules keeps the good rules and reports the bad by index', () => {
+  const c = compileRules([
+    { match: '10.20.50.0/24', colour: '#22d3ee' },
+    { match: 'nonsense', colour: '#fff' },
+    { match: 'DE', colour: '#4ade80' },
+  ]);
+  assert.equal(c.rules.length, 2);
+  assert.equal(c.refused.length, 1);
+  assert.equal(c.refused[0].index, 1);
+  assert.match(c.refused[0].reason, /unrecognised/);
+});
+
+test('first enabled match wins, in list order', () => {
+  const c = compileRules([
+    { match: '10.0.0.0/8', colour: '#111111' },
+    { match: '10.20.50.0/24', colour: '#222222' },
+  ]);
+  const ev = flow('10.20.50.1', '8.8.8.8');
+  assert.equal(firstMatch(c, ev), 0);              // the broader rule is first, so it wins
+  assert.equal(c.rules[firstMatch(c, ev)].colour, '#111111');
+});
+
+test('a disabled rule is skipped without shifting the rules after it', () => {
+  // Position is precedence, so a disabled rule must keep its slot: turning a
+  // rule off may not silently renumber -- and therefore recolour -- the rest.
+  const c = compileRules([
+    { match: '10.0.0.0/8', colour: '#111111', enabled: false },
+    { match: '10.20.50.0/24', colour: '#222222' },
+  ]);
+  assert.equal(c.rules.length, 2);
+  assert.equal(firstMatch(c, flow('10.20.50.1', '8.8.8.8')), 1);
+  assert.equal(firstMatch(c, flow('10.1.1.1', '8.8.8.8')), -1);
+});
+
+test('no match at all is -1, and an empty list matches nothing', () => {
+  assert.equal(firstMatch(compileRules([]), flow('1.1.1.1', '2.2.2.2')), -1);
+  const c = compileRules([{ match: 'DE', colour: '#fff' }]);
+  assert.equal(firstMatch(c, flow('1.1.1.1', '2.2.2.2', { sc: 'US', dc: 'US' })), -1);
+});
+
+test('addrContext parses each address once, not once per rule', () => {
+  // The whole reason compile and match are separate. If this ever regresses
+  // to parsing inside matchRule, a 200-rule list parses 400 addresses per
+  // event at ~57 events/sec.
+  const ev = flow('10.20.50.1', '8.8.8.8');
+  const ctx = addrContext(ev);
+  assert.equal(ctx.s.n, parseAddress('10.20.50.1').n);
+  assert.equal(ctx.d.family, 4);
+  assert.equal(addrContext({ k: 'flow' }).s, null);
 });

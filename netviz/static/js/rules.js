@@ -177,3 +177,74 @@ export function parseRule(raw) {
     },
   };
 }
+
+/** Both addresses parsed ONCE for this event, to be handed to every rule.
+ *  Parsing inside matchRule would re-parse the same two strings once per rule
+ *  per event -- the reason compilation and matching are separate at all. */
+export function addrContext(ev) {
+  return { s: parseAddress(ev && ev.s), d: parseAddress(ev && ev.d) };
+}
+
+function matchesAddr(m, a) {
+  if (!a || a.family !== m.family) return false;
+  if (m.kind === 'cidr') return (a.n & m.mask) === m.base;
+  return a.n >= m.lo && a.n <= m.hi;
+}
+
+function matchesCountry(m, cc) {
+  return typeof cc === 'string' && cc.toUpperCase() === m.code;
+}
+
+function matchesPort(m, port, proto) {
+  // Absent means unknown, never 0: the collector omits the field entirely
+  // when it does not know, because 0 is a real port.
+  if (port === undefined || port === null) return false;
+  if (m.proto !== null && proto !== m.proto) return false;
+  return port === m.port;
+}
+
+/** Does this rule claim this event? `ctx` comes from addrContext(ev). */
+export function matchRule(rule, ev, ctx) {
+  const m = rule.match;
+  const wantSrc = rule.end === 'src' || rule.end === 'either';
+  const wantDst = rule.end === 'dst' || rule.end === 'either';
+  if (m.kind === 'cidr' || m.kind === 'range') {
+    return (wantSrc && matchesAddr(m, ctx.s)) || (wantDst && matchesAddr(m, ctx.d));
+  }
+  if (m.kind === 'country') {
+    return (wantSrc && matchesCountry(m, ev.sc)) || (wantDst && matchesCountry(m, ev.dc));
+  }
+  return (wantSrc && matchesPort(m, ev.sp, ev.pr))
+      || (wantDst && matchesPort(m, ev.dp, ev.pr));
+}
+
+/**
+ * Parse a whole list once. Call this when the list changes -- never per event.
+ *
+ * Refused rules are reported by their index in the ORIGINAL list, so a message
+ * about "rule 7" names the row somebody actually wrote. Accepted rules keep
+ * their positions too, disabled ones included: position is precedence, so
+ * turning a rule off must not renumber the rules after it.
+ */
+export function compileRules(list) {
+  const rules = [];
+  const refused = [];
+  const raw = Array.isArray(list) ? list : [];
+  raw.forEach((entry, index) => {
+    const { rule, reason } = parseRule(entry);
+    if (rule) rules.push(rule);
+    else refused.push({ index, reason });
+  });
+  return { rules, refused };
+}
+
+/** Index of the first ENABLED rule claiming this event, or -1. */
+export function firstMatch(compiled, ev) {
+  if (!compiled || !compiled.rules.length || !ev) return -1;
+  const ctx = addrContext(ev);
+  for (let i = 0; i < compiled.rules.length; i += 1) {
+    const rule = compiled.rules[i];
+    if (rule.enabled && matchRule(rule, ev, ctx)) return i;
+  }
+  return -1;
+}
