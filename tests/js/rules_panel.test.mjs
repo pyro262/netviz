@@ -240,3 +240,41 @@ test('adding a row is a structural change and does rebuild the list', () => {
     CONFIG.arcs.rules = savedRules;
   }
 });
+
+test('the enabled toggle survives more than one click', () => {
+  // A non-structural edit patches the DOM in place rather than re-rendering
+  // the row, so a handler built from a snapshot captured at render time (as
+  // opposed to reading live state at click time) goes stale after exactly
+  // one click: every click after the first recomputes against the same
+  // frozen value and is a no-op. A single click cannot tell that apart from
+  // correct behaviour -- only a second click can, which is why this test
+  // fires the button twice and checks the value is back where it started.
+  const dom = fakeDom();
+  const savedRules = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: 'DE', colour: '#22d3ee', enabled: true }];
+  try {
+    withFakeGlobals(dom, () => {
+      const applied = [];
+      const panel = createRulesPanel({
+        settings: { apply: (patch) => { applied.push(patch); return { rejected: [] }; } },
+        root: dom.root,
+      });
+      panel.open();
+      const toggle = dom.root.querySelector('.rules-toggle');
+      assert.ok(toggle, 'no .rules-toggle rendered');
+      assert.ok(toggle.className.includes(' on'), 'row did not start enabled');
+
+      toggle.dispatch('click', {});
+      let last = applied[applied.length - 1]['arcs.rules'];
+      assert.equal(last[0].enabled, false, 'first click did not disable the rule');
+      assert.equal(toggle.className.includes(' on'), false, 'button did not reflect disabled');
+
+      toggle.dispatch('click', {});
+      last = applied[applied.length - 1]['arcs.rules'];
+      assert.equal(last[0].enabled, true, 'second click did not re-enable the rule -- toggle is stuck');
+      assert.ok(toggle.className.includes(' on'), 'button did not reflect re-enabled');
+    });
+  } finally {
+    CONFIG.arcs.rules = savedRules;
+  }
+});

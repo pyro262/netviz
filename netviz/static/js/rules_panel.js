@@ -197,7 +197,14 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     wrap.append(name);
 
     const on = el('button', `rules-toggle${row.enabled ? ' on' : ''}`, row.enabled ? '✓' : '');
-    on.addEventListener('click', () => editField(row.index, 'enabled', !row.enabled));
+    // NOT `!row.enabled`: `row` is a snapshot from whenever this closure was
+    // built, and a non-structural edit patches the DOM in place without
+    // re-rendering the row -- so a captured `row.enabled` goes stale after
+    // the first click and every click after that flips the same frozen
+    // value, a no-op. `draft` is the live state every editField() call reads
+    // and writes, so reading it here at click time is what every other
+    // handler already does implicitly by reading its own input's `.value`.
+    on.addEventListener('click', () => editField(row.index, 'enabled', !draft[row.index].enabled));
     wrap.append(on);
 
     const del = el('button', 'rules-delete', '✕');
