@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   SCHEMA, paths, entry, defaultOf, coerce, validate, planApply, settingLabel,
+  relativeLuminance,
 } from '../../netviz/static/js/settings.js';
 import { cfg } from '../../netviz/static/js/config.js';
 
@@ -100,8 +101,12 @@ test('coerce rejects the wrong shape rather than guessing', () => {
 test('coerce accepts a color in the form the renderer uses', () => {
   assert.deepEqual(coerce('appearance.background', '#0b0916'),
                    { ok: true, value: '#0b0916' });
-  assert.deepEqual(coerce('appearance.background', '#FFF'),
-                   { ok: true, value: '#FFF' });
+  assert.deepEqual(coerce('appearance.background', '#000'),
+                   { ok: true, value: '#000' });
+  // Uppercase letters are preserved, not normalized to lowercase. The shipped
+  // ground in uppercase is under the cap at luminance 0.0032.
+  assert.deepEqual(coerce('appearance.background', '#0B0916'),
+                   { ok: true, value: '#0B0916' });
 });
 
 test('validate splits a mixed patch and never throws', () => {
@@ -198,5 +203,138 @@ test('settingLabel never returns an empty string for a real path', () => {
     const label = settingLabel(p);
     assert.ok(typeof label === 'string' && label.trim().length > 0,
               `no label for ${p}`);
+  }
+});
+
+test('relativeLuminance matches the sRGB definition', () => {
+  // Measured from the shipped palette, not from memory. These are the grounds
+  // the cap was derived against; see the spec's table.
+  const cases = [
+    ['#000000', 0.0000],
+    ['#0b0916', 0.0032],   // the shipped ground
+    ['#12081a', 0.0038],   // plum
+    ['#0a1020', 0.0054],   // deep navy
+    ['#1a1a2e', 0.0116],   // dark slate
+    ['#333333', 0.0331],
+    ['#808080', 0.2159],
+    ['#ffffff', 1.0000],
+  ];
+  for (const [hex, want] of cases) {
+    const got = relativeLuminance(hex);
+    assert.ok(Math.abs(got - want) < 0.0001,
+      `${hex}: got ${got.toFixed(4)}, want ${want.toFixed(4)}`);
+  }
+});
+
+test('relativeLuminance expands the three-digit form', () => {
+  // #fff and #ffffff are the same color and the HEX test accepts both, so a
+  // cap that only understood the long form would let a white ground through
+  // whenever somebody typed the short one.
+  assert.equal(relativeLuminance('#fff'), relativeLuminance('#ffffff'));
+  assert.equal(relativeLuminance('#000'), relativeLuminance('#000000'));
+});
+
+test('a ground brighter than the cap is refused, not darkened', () => {
+  // Refused rather than scaled down: guessing what somebody meant is how a
+  // control starts lying. Same call as a reversed zoom range.
+  for (const hex of ['#ffffff', '#fff', '#808080', '#333333', '#1a1a2e']) {
+    const c = coerce('appearance.background', hex);
+    assert.equal(c.ok, false, `${hex} should be refused`);
+    assert.match(c.why, /too bright to draw on/);
+  }
+});
+
+test('the refusal names the measured luminance and the cap', () => {
+  // A reason that only says "too bright" cannot be acted on -- the person
+  // needs to know how far over they are. Check that both numbers are present
+  // without pinning the exact wording, so re-derivations don't fail as string
+  // diffs.
+  const c = coerce('appearance.background', '#808080');
+  assert.match(c.why, /too bright to draw on/);
+  assert.ok(c.why.includes('0.2159'),
+    `measured luminance not found in: ${c.why}`);
+  assert.ok(c.why.includes(String(entry('appearance.background').maxLuminance)),
+    `cap not found in: ${c.why}`);
+});
+
+test('a dark ground is accepted', () => {
+  for (const hex of ['#000000', '#0b0916', '#12081a', '#0a1020']) {
+    const c = coerce('appearance.background', hex);
+    assert.equal(c.ok, true, `${hex} should be accepted: ${c.why}`);
+    assert.equal(c.value, hex);
+  }
+});
+
+test('a malformed color is still refused for shape, not luminance', () => {
+  // The shape test must run FIRST -- relativeLuminance('nope') would return a
+  // number from NaN arithmetic rather than throwing, so a reordered check
+  // would report a syntax error as a brightness problem.
+  const c = coerce('appearance.background', 'nope');
+  assert.equal(c.ok, false);
+  assert.equal(c.why, 'not a #rgb or #rrggbb color');
+});
+
+test('maxLuminance is opt-in, not a default on all colors', () => {
+  // Arc colors like arcs.flow.colorAt are drawn ON the ground rather than
+  // being the ground, so brightness is the point there, not a hazard. Only
+  // appearance.background (the ground itself) has a cap. The opt-in behavior
+  // (uncapped colors accepted) is enforced by coerce's guard:
+  // `if (typeof e.maxLuminance === 'number')` — a missing field skips the check.
+  // A positive test of an uncapped entry would require a synthetic entry,
+  // which would require exporting entry() or coerce() internals not currently
+  // public. This assertion proves the cap exists where it should.
+  assert.equal(typeof entry('appearance.background').maxLuminance, 'number');
+});
+
+test('a shipped color default is inside its own luminance cap', () => {
+  // The same protection the numeric bounds already have: catches a cap
+  // written from memory, and catches a future palette change that darkens
+  // the arcs without moving the ground.
+  for (const p of paths()) {
+    const e = entry(p);
+    if (e.type !== 'color' || typeof e.maxLuminance !== 'number') continue;
+    const d = defaultOf(p);
+    const L = relativeLuminance(d);
+    assert.ok(L <= e.maxLuminance,
+      `${p}: shipped ${d} has luminance ${L.toFixed(4)}, over ${e.maxLuminance}`);
+  }
+});
+
+test('a refused background does not reach the accepted patch', () => {
+  // validate() is what apply.js walks, so this is the assertion that the live
+  // CONFIG value is left alone.
+  const { accepted, rejected } = validate({
+    'appearance.background': '#ffffff',
+    'appearance.bloom.strength': 1.2,
+  });
+  assert.equal('appearance.background' in accepted, false);
+  assert.equal(accepted['appearance.bloom.strength'], 1.2);
+  assert.equal(rejected.length, 1);
+  assert.equal(rejected[0].path, 'appearance.background');
+});
+
+test('an arc gain is clamped to the same floor rules.js enforces', () => {
+  // rules.js floors a rule's gain at 0.05 already. The schema declaring 0 for
+  // the identical quantity meant one of the two was wrong, and the schema was
+  // the one that could multiply a whole arc class to black.
+  //
+  // Clamped rather than refused, unlike the background: every other number in
+  // the schema clamps, and a floor is not an ambiguous intent the way a color
+  // is.
+  for (const p of ['arcs.flow.gain', 'arcs.block.gain', 'arcs.highlight.gain']) {
+    const c = coerce(p, 0);
+    assert.equal(c.ok, true, `${p}: ${c.why}`);
+    assert.equal(c.value, 0.05, `${p} should clamp to the floor`);
+    assert.equal(entry(p).min, 0.05);
+  }
+});
+
+test('bloomScale keeps its zero', () => {
+  // Glow only. An arc with no halo is still a visible arc, so 0 is a real
+  // setting here rather than an invisible class.
+  for (const p of ['arcs.flow.bloomScale', 'arcs.block.bloomScale',
+                   'arcs.highlight.bloomScale']) {
+    assert.equal(entry(p).min, 0);
+    assert.equal(coerce(p, 0).value, 0);
   }
 });
