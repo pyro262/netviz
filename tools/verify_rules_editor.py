@@ -399,7 +399,7 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
           const secs = [...document.querySelectorAll('.rail-panel')];
           const sec = secs.find((s) => {
             const h = s.querySelector('.rail-panel-title');
-            return h && h.firstChild && h.firstChild.textContent.trim() === 'COLOUR RULES';
+            return h && h.firstChild && h.firstChild.textContent.trim() === 'COLOR RULES';
           });
           if (!sec) return {found: false};
           const rows = [...sec.querySelectorAll('.rail-row')].map((r) => ({

@@ -145,7 +145,7 @@ export function rulePanel(rules, counter, nowMs, maxRules) {
   if (scored.length > cap) {
     rows.push({ label: `+${scored.length - cap} more`, value: '', muted: true });
   }
-  return { title: 'COLOUR RULES', note: 'SINCE LOAD', rows };
+  return { title: 'COLOR RULES', note: 'SINCE LOAD', rows };
 }
 
 export function panels(snapshot, extra) {

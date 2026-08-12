@@ -287,7 +287,7 @@ test('open draws the menu when input.lock is not set', () => {
   });
 });
 
-test('a menu built with no rulesPanel draws no Colour rules row', () => {
+test('a menu built with no rulesPanel draws no Color rules row', () => {
   // createMenu({ rulesPanel }) is optional -- some callers (this test suite
   // included, until this fix) build a menu without one. `open()` used to
   // hardcode `rulesPanel: true` into the state it hands menuModel, so that
@@ -319,7 +319,7 @@ test('open draws exactly the rows menuModel describes, not just SOMETHING', () =
   // against menuModel's own output for the equivalent state.
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
-    // A rulesPanel IS supplied here -- createMenu draws the "Colour rules"
+    // A rulesPanel IS supplied here -- createMenu draws the "Color rules"
     // row only when it has one (state.rulesPanel is `!!rulesPanel`, not a
     // hardcoded true), or a menu built without a panel would draw a row
     // whose click handler is guarded out and does nothing.

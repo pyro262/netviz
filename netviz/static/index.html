@@ -224,8 +224,26 @@
       .rules-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px;
                    flex-wrap: wrap; }
       .rules-row.bad .rules-match { border-color: #e0a020; }
-      .rules-match { flex: 2 1 200px; }
-      .rules-name { flex: 1 1 120px; }
+      /* min-width: 0 is what puts a row on ONE line. A flex item's automatic
+         minimum is its min-content width, and an <input>'s min-content comes
+         from its `size` attribute -- about 177px -- so the two text fields
+         refused to shrink below ~354px between them and pushed the on/off and
+         delete buttons onto a second line, under a wrap the reason line needs
+         to exist. */
+      .rules-match { flex: 2 1 200px; min-width: 0; }
+      .rules-name { flex: 1 1 120px; min-width: 0; }
+      .rules-end { width: 88px; flex: 0 0 88px; }
+      /* The header carries the same flex bases as the row below it, so the
+         labels sit over the fields they name. Any change to one is a change to
+         both. */
+      .rules-head { display: flex; gap: 6px; align-items: center;
+                    margin-bottom: 4px; font-size: 11px; letter-spacing: .08em;
+                    text-transform: uppercase; opacity: .5; }
+      .rules-head .h-match { flex: 2 1 200px; min-width: 0; }
+      .rules-head .h-end { flex: 0 0 88px; }
+      .rules-head .h-colour { flex: 0 0 44px; }
+      .rules-head .h-name { flex: 1 1 120px; min-width: 0; }
+      .rules-head .h-flags { flex: 0 0 50px; }
       .rules-panel input, .rules-panel select, .rules-panel button {
         background: #0b0916; color: inherit; border: 1px solid #2a2540;
         border-radius: 3px; padding: 3px 6px; font: inherit; }

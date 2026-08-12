@@ -87,7 +87,30 @@ function el(tag, cls, text) {
   return node;
 }
 
+// The stored value is the vocabulary `rules.js` validates and an exported file
+// carries; only the label is spelled out. Abbreviating in the UI saved a few
+// pixels and cost a reading -- "dst" is jargon on a wall somebody else walks up
+// to. Never send the label back into a rule.
 const ENDS = ['either', 'src', 'dst'];
+const END_LABEL = { either: 'either', src: 'source', dst: 'dest' };
+
+// The help each control carries, as a `title` and in the header above it. Kept
+// here rather than inline so the header and the field cannot drift apart, and
+// so the wording is one edit rather than five.
+const MATCH_HELP =
+  'What the rule looks for, one of: a subnet (10.20.50.0/24 or 2001:db8::/32), '
+  + 'an inclusive address range (203.0.113.10-203.0.113.40), a two-letter '
+  + 'country code (DE), or a port with the protocol optional (tcp/443, '
+  + 'udp/51820, 443).';
+const END_HELP =
+  'Which end of the arc has to match: the source, the destination, or either '
+  + 'end. Country and port rules read the same end.';
+const COLOUR_HELP =
+  'The color arcs matching this rule are drawn in. It reaches arcs already on '
+  + 'screen, not just the next one.';
+const NAME_HELP =
+  'Optional. What to call this rule in the stats rail -- "storj nodes" says '
+  + 'more than the subnet does. Not used for matching.';
 
 export function createRulesPanel({ settings, root, onClose } = {}) {
   const mount = root || document.body;
@@ -198,28 +221,32 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     const match = el('input', 'rules-match');
     match.value = row.match;
     match.placeholder = '10.20.50.0/24, DE, tcp/443';
+    match.title = MATCH_HELP;
     match.addEventListener('input', () => editField(row.index, 'match', match.value));
     wrap.append(match);
 
     const end = el('select', 'rules-end');
     for (const v of ENDS) {
-      const opt = el('option', null, v);
+      const opt = el('option', null, END_LABEL[v]);
       opt.value = v;
       if (v === row.end) opt.selected = true;
       end.append(opt);
     }
+    end.title = END_HELP;
     end.addEventListener('change', () => editField(row.index, 'end', end.value));
     wrap.append(end);
 
     const colour = el('input', 'rules-colour');
     colour.type = 'color';
     colour.value = /^#[0-9a-f]{6}$/i.test(row.colour) ? row.colour : '#a855f7';
+    colour.title = COLOUR_HELP;
     colour.addEventListener('input', () => editField(row.index, 'colour', colour.value));
     wrap.append(colour);
 
     const name = el('input', 'rules-name');
     name.value = row.name;
-    name.placeholder = 'name (optional)';
+    name.placeholder = 'label for the rail (optional)';
+    name.title = NAME_HELP;
     name.addEventListener('input', () => editField(row.index, 'name', name.value));
     wrap.append(name);
 
@@ -282,12 +309,38 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     draft = (cfgRules() || []).map((r) => ({ ...r }));
     dirty = false;
     node = el('div', 'rules-panel');
-    node.append(el('div', 'rules-title', 'Colour rules'));
+    node.append(el('div', 'rules-title', 'Color rules'));
     // Says what the engine does, and nothing it does not: rows are NOT
     // draggable in this build, so promising drag-to-reorder here would be a
     // control that does not exist. Order is changed by deleting and re-adding.
     node.append(el('div', 'rules-hint',
-                   'The first enabled rule that matches an arc colours it.'));
+                   'Checked top to bottom -- the first enabled rule that '
+                   + 'matches an arc colors it. Blocks are never recolored.'));
+
+    // A header row, not placeholder text alone: a placeholder vanishes the
+    // moment somebody types, which is exactly when they are least sure which
+    // box they are in. Deliberately NOT class `rules-row` -- that selector
+    // means "an editable rule" to the panel's own code and to the verify
+    // tools, and a header answering to it would be counted as a rule.
+    const head = el('div', 'rules-head');
+    for (const [cls, text, tip] of [
+      ['h-match', 'Match', MATCH_HELP],
+      ['h-end', 'Applies to', END_HELP],
+      ['h-colour', 'Color', COLOUR_HELP],
+      ['h-name', 'Label', NAME_HELP],
+      // 'On' alone: the two buttons under this header are 50px between them
+      // and 'On / Del' wraps to two lines inside that, which drags the whole
+      // header row taller than the fields it labels. The tooltip carries the
+      // rest.
+      ['h-flags', 'On', 'Turn the rule off without deleting it, or '
+                              + 'remove it. A rule turned off keeps its place '
+                              + 'in the order.'],
+    ]) {
+      const cell = el('span', cls, text);
+      cell.title = tip;
+      head.append(cell);
+    }
+    node.append(head);
     node.append(el('div', 'rules-list'));
     const foot = el('div', 'rules-foot');
 
@@ -327,7 +380,17 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     importBtn.addEventListener('click', () => importInput.click());
     foot.append(importBtn, importInput);
 
-    const resetBtn = el('button', 'rules-reset', 'Reset to collector');
+    // "Reset to collector" named the mechanism and left the effect to be
+    // guessed. What a person needs to know before clicking is that it throws
+    // THEIR list away, and that what comes back is whatever the collector
+    // serves -- so the label says the destructive half and the tooltip says
+    // where the replacement comes from.
+    const resetBtn = el('button', 'rules-reset', 'Discard my rules');
+    resetBtn.title =
+      'Delete the rules saved on this display and reload, so it goes back to '
+      + 'the rules the collector serves (set by NETVIZ_HIGHLIGHT* in its '
+      + 'environment). Affects this display only, not the collector and not '
+      + 'any other screen. Export first if you want them back.';
     resetBtn.addEventListener('click', () => {
       // Forget everything, then reload: the collector's config and the
       // NETVIZ_HIGHLIGHT* migration are applied at boot, so there is no way to

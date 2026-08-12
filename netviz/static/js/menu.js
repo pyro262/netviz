@@ -105,7 +105,7 @@ export function menuModel(state) {
     // nobody in the room can use.
     ...(state.rulesPanel ? [{
       id: 'rules',
-      label: 'Colour rules…',
+      label: 'Color rules…',
       kind: 'action',
       enabled: true,
     }] : []),
