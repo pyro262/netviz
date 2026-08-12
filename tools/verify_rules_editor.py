@@ -248,9 +248,18 @@ def bad_row_case(page) -> bool:
       // A FRESH arc, spawned after the bad row, must still take the rule's
       // colour -- proving the bad row did not knock the good one out of the
       // compiled list, not just that the DOM still shows a swatch.
-      const before2 = arcs.group.children.map((m) => m.geometry.uuid);
-      arcs.spawn(ev);
-      const live = arcs.group.children.filter((m, i) => m.geometry.uuid !== before2[i]);
+      // `arcs.spawn` rate-caps ordinary flows against a real 1-second window
+      // the background synthetic feed is also drawing from, so a single call
+      // can be silently dropped -- retry across that window, as case 2 does,
+      // rather than reading one drop as a rule that stopped matching.
+      let live = [];
+      const spawnDeadline = performance.now() + 2000;
+      while (!live.length && performance.now() < spawnDeadline) {
+        const before2 = arcs.group.children.map((m) => m.geometry.uuid);
+        arcs.spawn(ev);
+        live = arcs.group.children.filter((m, i) => m.geometry.uuid !== before2[i]);
+        if (!live.length) await new Promise((r) => setTimeout(r, 60));
+      }
       const stillLive = live.filter(
         (m) => m.material.uniforms.color.value.getHex() === ruleHex).length;
 
