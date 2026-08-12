@@ -376,3 +376,32 @@ test('overrideClassFor is null with no rules and with nothing suppressed', () =>
     CONFIG.arcs.rules = prev;
   }
 });
+
+test('overrideClassFor still requires containment -- an aimed rule that does not claim the event refuses it', () => {
+  // The rule is aimed at the right axis (port 53) and specific enough, but its
+  // `end: 'src'` means it only ever looks at the source port -- and this event
+  // only carries a destination port. Axis + specificity is not enough on its
+  // own; the rule has to actually match the event via matchRule.
+  const prev = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: 'udp/53', end: 'src', color: '#22d3ee' }];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 53, pr: 17 };
+    assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
+  } finally {
+    CONFIG.arcs.rules = prev;
+  }
+});
+
+test('overrideClassFor still requires containment -- a /32 rule for one resolver does not claim a different resolver', () => {
+  // The suppression is real (9.9.9.10 is also a shipped resolver-list entry)
+  // and the rule's single address is as specific as a /32 can be, but it names
+  // a DIFFERENT address than the one on the event.
+  const prev = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: '9.9.9.9/32', color: '#22d3ee' }];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '9.9.9.10' };
+    assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
+  } finally {
+    CONFIG.arcs.rules = prev;
+  }
+});
