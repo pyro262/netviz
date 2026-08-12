@@ -53,11 +53,32 @@ export function savePatch(storage, patch) {
   return { ok: true, error: null };
 }
 
-/** Forget everything this display was told, so the collector's own config and
- *  the NETVIZ_HIGHLIGHT* migration take over again on the next load. */
-export function clearPatch(storage) {
+/** Forget what this display was told, so config.js and the collector's own
+ *  /config.json decide again on the next load.
+ *
+ *  `keep` is the list of setting paths to carry across, and it is what makes
+ *  "reset to netviz defaults" a statement about the DISPLAY rather than about
+ *  the operator's work: `arcs.rules` is a list somebody sat and typed, so a
+ *  control that resets the wall's appearance has no business deleting it.
+ *  Everything persists into one blob under one key, so keeping a path means
+ *  writing the blob back with only that path in it -- removing the key would
+ *  take the rules with it, which is exactly the failure this argument exists
+ *  to prevent.
+ *
+ *  With nothing left to keep the key is removed outright rather than left as
+ *  `{}`: an empty patch and no patch mean the same thing to every reader, and
+ *  a stored `{}` reads as "this display was configured" when it was not. */
+export function clearPatch(storage, keep = []) {
+  const kept = {};
+  if (keep.length) {
+    const { patch } = loadPatch(storage);
+    for (const path of keep) {
+      if (Object.prototype.hasOwnProperty.call(patch, path)) kept[path] = patch[path];
+    }
+  }
   try {
-    storage.removeItem(KEY);
+    if (Object.keys(kept).length) storage.setItem(KEY, JSON.stringify(kept));
+    else storage.removeItem(KEY);
   } catch (e) {
     return { ok: false, error: `could not clear settings: ${e.message}` };
   }

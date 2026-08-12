@@ -10,7 +10,7 @@
 // between the panel, the menu, an imported file and any future write API.
 import { parseRule } from './rules.js';
 import { cfg } from './config.js';
-import { serialiseRules, parseImport, exportFilename, clearPatch } from './rulestore.js';
+import { serialiseRules, parseImport, exportFilename } from './rulestore.js';
 
 /** One row per rule: what the boxes show, and why a row is refused.
  *
@@ -379,38 +379,6 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     const importBtn = el('button', 'rules-import', 'Import');
     importBtn.addEventListener('click', () => importInput.click());
     foot.append(importBtn, importInput);
-
-    // "Reset to collector" named the mechanism and left the effect to be
-    // guessed. What a person needs to know before clicking is that it throws
-    // THEIR list away, and that what comes back is whatever the collector
-    // serves -- so the label says the destructive half and the tooltip says
-    // where the replacement comes from.
-    const resetBtn = el('button', 'rules-reset', 'Discard my rules');
-    resetBtn.title =
-      'Delete the rules saved on this display and reload, so it goes back to '
-      + 'the rules the collector serves (set by NETVIZ_HIGHLIGHT* in its '
-      + 'environment). Affects this display only, not the collector and not '
-      + 'any other screen. Export first if you want them back.';
-    resetBtn.addEventListener('click', () => {
-      // Forget everything, then reload: the collector's config and the
-      // NETVIZ_HIGHLIGHT* migration are applied at boot, so there is no way to
-      // restore them mid-session without re-running that path.
-      //
-      // The PROPERTY access can itself throw (a managed kiosk policy makes
-      // window.localStorage a getter that raises SecurityError) -- same guard
-      // main.js already applies before it ever calls withPersistence.
-      let storage = null;
-      try {
-        storage = window.localStorage;
-      } catch (e) {
-        showNote(`settings storage unavailable -- ${e.message}`);
-        return;
-      }
-      const out = clearPatch(storage);
-      if (!out.ok) { showNote(out.error); return; }
-      window.location.reload();
-    });
-    foot.append(resetBtn);
 
     const closeBtn = el('button', 'rules-close', 'Close');
     closeBtn.addEventListener('click', close);

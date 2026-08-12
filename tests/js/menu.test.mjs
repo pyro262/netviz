@@ -312,6 +312,42 @@ test('a menu built with no rulesPanel draws no Color rules row', () => {
   });
 });
 
+test('the reset row is drawn only when there is a handler behind it', () => {
+  assert.equal(byId(menuModel({ ...STATE, canReset: false }), 'reset'), null);
+  const row = byId(menuModel({ ...STATE, canReset: true }), 'reset');
+  assert.ok(row, 'no reset row with a handler present');
+  assert.equal(row.label, 'Reset to netviz defaults');
+  assert.equal(row.enabled, true);
+});
+
+test('clicking reset calls the handler and closes the menu', () => {
+  // The handler is main.js's, and what it does -- keep arcs.rules, drop the
+  // rest, reload -- is proved by rulestore's own tests and by
+  // verify_rules_editor case 6. What belongs here is only that the row is
+  // wired to it at all, which is the failure mode a menu row has.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    let calls = 0;
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      onReset: () => { calls += 1; },
+      root: dom.root,
+    });
+    menu.open(10, 10, { x: 0, y: 0 });
+    function find(node) {
+      if (node.getAttribute && node.getAttribute('data-id') === 'reset') return node;
+      for (const c of node.children || []) { const r = find(c); if (r) return r; }
+      return null;
+    }
+    const row = find(dom.root);
+    assert.ok(row, 'no reset row drawn');
+    row.dispatch('click', { target: row });
+    assert.equal(calls, 1);
+    assert.equal(menu.isOpen(), false, 'the menu stayed open over its own action');
+  });
+});
+
 test('open draws exactly the rows menuModel describes, not just SOMETHING', () => {
   // children.length > 0 alone would pass against a menu that appended one
   // empty div and nothing else -- this walks the actual tree and checks the

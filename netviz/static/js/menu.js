@@ -32,7 +32,7 @@ export function isDoubleTap(prev, now, opts) {
  * menuModel(state) → Array<Item>
  *
  * Builds the menu structure given the display's current state.
- * state is {railOn, layers: {...}, canLookHere, settingsPanel}.
+ * state is {railOn, layers: {...}, canLookHere, settingsPanel, rulesPanel, canReset}.
  *
  * Returns an array of top-level menu items in this order:
  * - lookHere: action, enabled only when pointer was on globe
@@ -116,6 +116,22 @@ export function menuModel(state) {
       enabled: state.settingsPanel,
       note: state.settingsPanel ? undefined : 'Settings panel coming in a future build',
     },
+    // A display-wide control, so it lives beside the other display-wide ones
+    // rather than in the rules editor -- which is where it started, under a
+    // label ("Reset to collector", then "Discard my rules") that read as
+    // though the rules were the thing being thrown away. They are not: the
+    // rules are the operator's own work and this keeps them. What it resets
+    // is everything the menu itself sets -- the rail, the layers, anything a
+    // future settings panel writes -- back to what netviz ships.
+    //
+    // Absent, not disabled, when the display is locked, same as the rules
+    // editor and for the same reason.
+    ...(state.canReset ? [{
+      id: 'reset',
+      label: 'Reset to netviz defaults',
+      kind: 'action',
+      enabled: true,
+    }] : []),
   ];
 }
 
@@ -156,7 +172,7 @@ function clampPosition(node, x, y) {
 }
 
 /**
- * createMenu({ rig, settings, rulesPanel, root }) -> { open(x, y, ndc), close(), isOpen() }
+ * createMenu({ rig, settings, rulesPanel, onReset, root }) -> { open(x, y, ndc), close(), isOpen() }
  *
  * `rig` supplies `pointAt(ndc)` (what the pointer was over, for "Look here")
  * and `lookHere(lat, lon)` (the action itself) -- NOT `visit()`, which is the
@@ -179,7 +195,7 @@ function clampPosition(node, x, y) {
  * toggle flipped a minute ago -- by this menu or by anything else that calls
  * settings.apply -- shows correctly the next time somebody opens it.
  */
-export function createMenu({ rig, settings, rulesPanel, root }) {
+export function createMenu({ rig, settings, rulesPanel, onReset, root }) {
   let node = null;
 
   function isOpen() { return node !== null; }
@@ -239,6 +255,7 @@ export function createMenu({ rig, settings, rulesPanel, root }) {
         row.addEventListener('click', act(() => {
           if (item.id === 'lookHere' && point) rig.lookHere(point.lat, point.lon);
           if (item.id === 'rules' && rulesPanel) rulesPanel.open();
+          if (item.id === 'reset' && onReset) onReset();
         }));
       }
       return row;
@@ -286,6 +303,9 @@ export function createMenu({ rig, settings, rulesPanel, root }) {
       // built with a panel to open; a menu constructed without one (as some
       // tests still do) must not draw a row whose handler is guarded out.
       rulesPanel: !!rulesPanel,
+      // Same rule as rulesPanel: a menu built without a reset handler must not
+      // draw a row whose click does nothing.
+      canReset: !!onReset,
     };
 
     node = el('div', 'menu');

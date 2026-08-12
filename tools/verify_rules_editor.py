@@ -331,49 +331,62 @@ def export_import_roundtrip_case(page) -> bool:
         f"error={result['out'].get('error')} matches={result['matches']}")
 
 
-def reset_case(page) -> bool:
-    """6: reset returns the collector's rules.
+def reset_case(page, cx, cy) -> bool:
+    """6: 'Reset to netviz defaults' resets the display and KEEPS the rules.
 
-    Clicks 'Reset to collector', waits for the reload it triggers, and
-    checks CONFIG.arcs.rules is back to whatever /config.json implies.
+    The control moved out of the rules panel and into the menu, and its
+    meaning changed with it: it used to delete the stored patch outright,
+    which took the operator's rule list with it. It now carries `arcs.rules`
+    across and drops everything else, so the wall's appearance goes back to
+    stock while a list somebody typed survives.
 
-    NOT necessarily empty: the synthetic collector fills the three
-    NETVIZ_HIGHLIGHT* slots with demo prefixes precisely so synthetic mode
-    still exercises the migration (`netviz/synthetic.py`'s
-    DEMO_HIGHLIGHT_PREFIXES), and `mergeServerConfig` migrates those into
-    `arcs.rules` whenever CONFIG.arcs.rules is empty at load -- which it is,
-    once the stored patch (holding our test rule) is gone. So this recomputes
-    the expected list the same way the page just did, via the exported
-    `rulesFromNetworks`, rather than assuming empty. What matters is that our
-    custom rule is gone and the stored patch is cleared."""
-    has_rows = page.evaluate("() => document.querySelectorAll('.rules-row').length > 0")
-    if not has_rows:
-        return report("6: reset returns the collector's rules", False,
-                       "rules panel is not open with rows -- nothing to reset")
+    Both halves are asserted, because either alone is passed by a bug: a
+    reset that keeps everything would keep the rules too, and a reset that
+    keeps nothing would still put the layer back. So this dirties a
+    non-rule setting first (`layers.stars: false`), then checks it is back
+    to true afterwards while the test rule is still there -- and that the
+    stored patch now holds `arcs.rules` and nothing else.
+    """
+    # Close the panel: the menu is what carries the control now, and an open
+    # panel would swallow the right-click that opens it.
+    page.evaluate("() => { const p = document.querySelector('.rules-panel'); if (p) p.remove(); }")
+    page.evaluate("() => window.__netviz.settings.apply({'layers.stars': false})")
+    page.wait_for_timeout(200)
+    before = page.evaluate("""() => ({
+      stored: window.localStorage.getItem('netviz.settings.v1'),
+      stars: window.__netviz.cfgRead ? null : undefined,
+    })""")
+    dispatch_contextmenu(page, cx, cy)
+    page.wait_for_timeout(200)
+    row_present = page.evaluate(
+        """() => !!document.querySelector('.menu [data-id="reset"]')""")
+    if not row_present:
+        return report("6: reset keeps the rules and resets the rest", False,
+                      "no 'Reset to netviz defaults' row in the menu")
     with page.expect_navigation(wait_until="load", timeout=20_000):
-        page.evaluate("() => document.querySelector('.rules-reset').click()")
+        page.evaluate("""() => document.querySelector('.menu [data-id="reset"]')
+                           .dispatchEvent(new MouseEvent('click', {bubbles: true}))""")
     page.wait_for_function("window.__netvizReady === true", timeout=20_000)
     page.wait_for_timeout(1000)
     result = page.evaluate("""async () => {
       const m = await import('./js/config.js');
-      const stored = window.localStorage.getItem('netviz.settings.v1');
-      const r = await fetch('/config.json', {cache: 'no-store'});
-      const served = r.ok ? await r.json() : null;
-      const networks = served && served.highlight && served.highlight.networks;
-      const expected = Array.isArray(networks) ? m.rulesFromNetworks(networks).rules : [];
+      const raw = window.localStorage.getItem('netviz.settings.v1');
+      const stored = raw ? JSON.parse(raw) : null;
       const rules = m.CONFIG.arcs.rules || [];
       return {
-        rules, stored, expected,
-        matchesExpected: JSON.stringify(rules) === JSON.stringify(expected),
-        hasOurRule: rules.some((r2) => r2.match === '203.0.113.0/24'),
+        storedKeys: stored ? Object.keys(stored) : [],
+        keptOurRule: rules.some((r) => r.match === '203.0.113.0/24'),
+        starsBack: m.cfg('layers.stars', true) === true,
+        rules,
       };
     }""")
-    ok = (result["matchesExpected"] and not result["hasOurRule"] and result["stored"] is None)
+    ok = (result["keptOurRule"] and result["starsBack"]
+          and result["storedKeys"] == ["arcs.rules"])
     return report(
-        "6: reset returns the collector's rules", ok,
-        f"matches /config.json's migrated rules: {result['matchesExpected']}, "
-        f"our test rule gone: {not result['hasOurRule']}, storage={result['stored']}, "
-        f"rules={result['rules']}")
+        "6: reset keeps the rules and resets the rest", ok,
+        f"kept our rule: {result['keptOurRule']}, layers.stars back to default: "
+        f"{result['starsBack']}, stored keys now {result['storedKeys']} "
+        f"(want ['arcs.rules']), before={before['stored'] is not None}")
 
 
 def rail_lists_rule_case(page, cx, cy) -> bool:
@@ -599,7 +612,7 @@ def run(page, cx, cy) -> bool:
     open_menu_and_click(page, "rules", cx, cy)
     page.wait_for_timeout(300)
     ok &= export_import_roundtrip_case(page)
-    ok &= reset_case(page)
+    ok &= reset_case(page, cx, cy)
     # reset_case's reload dropped the panel too, and cleared the rule --
     # case 7 installs its own rules independently, so it does not need it open.
     ok &= rail_lists_rule_case(page, cx, cy)

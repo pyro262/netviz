@@ -61,6 +61,37 @@ test('clear removes the key', () => {
   assert.equal(s.getItem(KEY), null);
 });
 
+test('clear keeps the paths it is told to keep', () => {
+  // "Reset to netviz defaults" resets the DISPLAY, not the operator's work.
+  // The saved patch is one blob holding every persisted setting, so keeping
+  // the rules means writing them back -- deleting the key would take them
+  // with it, which is the behaviour this argument exists to prevent.
+  const s = fakeStorage({
+    [KEY]: JSON.stringify({
+      'rail.enabled': true,
+      'layers.stars': false,
+      'arcs.rules': [{ match: 'DE', color: '#ff8800' }],
+    }),
+  });
+  assert.equal(clearPatch(s, ['arcs.rules']).ok, true);
+  assert.deepEqual(loadPatch(s).patch, { 'arcs.rules': [{ match: 'DE', color: '#ff8800' }] });
+});
+
+test('clear with nothing left to keep removes the key outright', () => {
+  // Not an empty object: an empty patch and no patch mean the same thing to
+  // every reader, and leaving `{}` behind is a row in someone's storage
+  // inspector that says the display was configured when it was not.
+  const s = fakeStorage({ [KEY]: '{"rail.enabled":true}' });
+  assert.equal(clearPatch(s, ['arcs.rules']).ok, true);
+  assert.equal(s.getItem(KEY), null);
+});
+
+test('clear keeping a path that was never set does not invent it', () => {
+  const s = fakeStorage({ [KEY]: '{"rail.enabled":true,"layers.stars":false}' });
+  clearPatch(s, ['arcs.rules']);
+  assert.equal(s.getItem(KEY), null);
+});
+
 test('withPersistence stores accepted keys and returns the result untouched', () => {
   const s = fakeStorage();
   const calls = [];

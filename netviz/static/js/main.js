@@ -21,7 +21,7 @@ import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
 import { createRulesPanel } from './rules_panel.js';
 import { coerce } from './settings.js';
-import { loadPatch, withPersistence } from './rulestore.js';
+import { loadPatch, withPersistence, clearPatch } from './rulestore.js';
 
 const GLOBE_RADIUS = 1.0;
 
@@ -448,7 +448,23 @@ async function boot() {
   // menu's opaque background and it read as transparent. Raising the menu's
   // z-index cannot fix that (measured: 9999 changed nothing).
   const rulesPanel = createRulesPanel({ settings, root: document.body });
-  const menu = createMenu({ rig, settings, rulesPanel, root: document.body });
+  // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
+  // rules, then reload so config.js and /config.json decide again from the
+  // top. The rules are kept because they are the operator's own work -- this
+  // control is about the display's appearance, and a person resetting the
+  // layers back to stock is not asking to lose a list they typed. Deleting
+  // them is still one click away, per row, in the panel that owns them.
+  //
+  // A reload rather than an in-place re-apply: /config.json and the
+  // NETVIZ_HIGHLIGHT* migration run at boot, so there is no path that restores
+  // them mid-session, and half-restored settings would be worse than a
+  // one-second reload on a wall.
+  const onReset = storage ? () => {
+    const out = clearPatch(storage, ['arcs.rules']);
+    if (!out.ok) { console.warn(`netviz: ${out.error}`); return; }
+    window.location.reload();
+  } : null;
+  const menu = createMenu({ rig, settings, rulesPanel, onReset, root: document.body });
   input = startInput({ canvas: renderer.domElement, rig, menu, rulesPanel });
   ctx.input = input;
   // The rest of the stored patch (arcs.rules and rail.enabled were already
