@@ -17,13 +17,21 @@ import { cfg } from './config.js';
  *  re-rendering a half-typed CIDR as anything else fights the person typing
  *  it. A row that does parse shows the normalised values the engine will
  *  actually use, so `#0f8` becomes `#00ff88` and an omitted end shows as
- *  `either` rather than as a blank that reads as unset. */
+ *  `either` rather than as a blank that reads as unset.
+ *
+ *  `gain`/`bloomScale` ride through UNTOUCHED from the raw entry when present,
+ *  and are left off the row entirely when absent -- never set to an explicit
+ *  `undefined`, which would still be an own key and would round-trip into
+ *  storage as "this rule now has a gain of nothing". Neither field has a
+ *  control in this build's UI, so the only way either could change here is by
+ *  accident; carrying them through is what keeps a rule imported with them
+ *  (Task 4) from losing them the moment someone opens this panel. */
 export function panelRows(list) {
   const raw = Array.isArray(list) ? list : [];
   return raw.map((entry, index) => {
     const { rule, reason } = parseRule(entry);
     const src = entry || {};
-    return {
+    const row = {
       index,
       match: typeof src.match === 'string' ? src.match : '',
       end: rule ? rule.end : (src.end || 'either'),
@@ -32,6 +40,9 @@ export function panelRows(list) {
       enabled: src.enabled !== false,
       reason: reason || null,
     };
+    if (typeof src.gain === 'number') row.gain = src.gain;
+    if (typeof src.bloomScale === 'number') row.bloomScale = src.bloomScale;
+    return row;
   });
 }
 
@@ -41,12 +52,22 @@ export function panelRows(list) {
  *  schema's `rules` coerce is deliberately all-or-nothing: a patch arriving
  *  through the API is one deliberate act, while a row someone is mid-typing in
  *  is not, and refusing the whole list on every keystroke would make the
- *  editor unusable. */
+ *  editor unusable.
+ *
+ *  `gain`/`bloomScale` are put back only when the row actually carries them --
+ *  same rule as `panelRows`, so a rule that never had them does not acquire
+ *  them, and a rule that did keeps them across every apply this panel makes,
+ *  including the one that fires merely from opening it. */
 export function readyRules(rows) {
   return (rows || [])
     .filter((r) => !r.reason)
-    .map((r) => ({ match: r.match, end: r.end, colour: r.colour,
-                   name: r.name, enabled: r.enabled }));
+    .map((r) => {
+      const out = { match: r.match, end: r.end, colour: r.colour,
+                    name: r.name, enabled: r.enabled };
+      if (typeof r.gain === 'number') out.gain = r.gain;
+      if (typeof r.bloomScale === 'number') out.bloomScale = r.bloomScale;
+      return out;
+    });
 }
 
 // ---------------------------------------------------------------- the DOM --
@@ -74,27 +95,73 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
   // of CONFIG on every keystroke: CONFIG holds only the rows that PARSE, so a
   // half-typed matcher would vanish from under the cursor between keystrokes.
   let draft = [];
+  // Row DOM references, keyed by row index -- what lets a keystroke update
+  // ONE row's validity in place instead of rebuilding every <input> on the
+  // panel. Rebuilt only on a structural redraw (open, add, delete), which is
+  // exactly when the indices this map is keyed by are changing anyway.
+  let rowRefs = new Map();
 
   function isOpen() { return node !== null; }
 
-  function push() {
+  /** Validate the whole draft and push it through settings.apply. Returns the
+   *  full row list (index-aligned with `draft`) so a caller can read back
+   *  just the row it cares about. Called on every edit, structural or not --
+   *  live validation on every keystroke is the design; only the DOM update
+   *  that follows is what differs. */
+  function applyDraft() {
     const rows = panelRows(draft);
     const out = settings.apply({ 'arcs.rules': readyRules(rows) });
     for (const r of out.rejected) console.warn(`netviz: ${r.path} -- ${r.why}`);
     return rows;
   }
 
+  /** Structural change: the row COUNT or ORDER is different, so every index
+   *  after the change point is stale and there is no single row to patch.
+   *  Rebuilds every input node -- fine here because the node whose focus
+   *  would be lost (the +/x button just clicked) is not a text field a
+   *  person is mid-keystroke in. */
   function redraw() {
-    const rows = push();
+    const rows = applyDraft();
+    rowRefs = new Map();
     const list = node.querySelector('.rules-list');
     list.replaceChildren();
     for (const row of rows) list.append(renderRow(row));
     list.append(renderAdd());
   }
 
-  function edit(index, key, value) {
+  /** Non-structural change: one row's own field. Re-validates and re-applies
+   *  the WHOLE draft (a row's validity cannot be judged in isolation from the
+   *  schema without duplicating parseRule's rules here), but touches only
+   *  that row's own DOM afterward -- never `list.replaceChildren()`, which
+   *  would destroy the very <input> the person is typing into along with
+   *  every other row's, and rebuild fresh nodes nobody has focused. */
+  function editField(index, key, value) {
     draft[index] = { ...draft[index], [key]: value };
-    redraw();
+    const rows = applyDraft();
+    updateRowDisplay(index, rows[index]);
+  }
+
+  /** Patch one row's validity class and reason line in place. Never touches
+   *  an input's `.value` -- the field just edited already shows what the
+   *  person typed (it IS the source of the value), and touching a sibling
+   *  field's value here would fight anything mid-edit in that field too. */
+  function updateRowDisplay(index, row) {
+    const refs = rowRefs.get(index);
+    if (!refs || !row) return;
+    refs.wrap.className = `rules-row${row.reason ? ' bad' : ''}`;
+    refs.toggle.className = `rules-toggle${row.enabled ? ' on' : ''}`;
+    refs.toggle.textContent = row.enabled ? '✓' : '';
+    if (row.reason) {
+      if (refs.reason) {
+        refs.reason.textContent = row.reason;
+      } else {
+        refs.reason = el('div', 'rules-reason', row.reason);
+        refs.wrap.append(refs.reason);
+      }
+    } else if (refs.reason) {
+      refs.reason.remove();
+      refs.reason = null;
+    }
   }
 
   function renderRow(row) {
@@ -104,7 +171,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     const match = el('input', 'rules-match');
     match.value = row.match;
     match.placeholder = '10.20.50.0/24, DE, tcp/443';
-    match.addEventListener('input', () => edit(row.index, 'match', match.value));
+    match.addEventListener('input', () => editField(row.index, 'match', match.value));
     wrap.append(match);
 
     const end = el('select', 'rules-end');
@@ -114,23 +181,23 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
       if (v === row.end) opt.selected = true;
       end.append(opt);
     }
-    end.addEventListener('change', () => edit(row.index, 'end', end.value));
+    end.addEventListener('change', () => editField(row.index, 'end', end.value));
     wrap.append(end);
 
     const colour = el('input', 'rules-colour');
     colour.type = 'color';
     colour.value = /^#[0-9a-f]{6}$/i.test(row.colour) ? row.colour : '#a855f7';
-    colour.addEventListener('input', () => edit(row.index, 'colour', colour.value));
+    colour.addEventListener('input', () => editField(row.index, 'colour', colour.value));
     wrap.append(colour);
 
     const name = el('input', 'rules-name');
     name.value = row.name;
     name.placeholder = 'name (optional)';
-    name.addEventListener('input', () => edit(row.index, 'name', name.value));
+    name.addEventListener('input', () => editField(row.index, 'name', name.value));
     wrap.append(name);
 
     const on = el('button', `rules-toggle${row.enabled ? ' on' : ''}`, row.enabled ? '✓' : '');
-    on.addEventListener('click', () => edit(row.index, 'enabled', !row.enabled));
+    on.addEventListener('click', () => editField(row.index, 'enabled', !row.enabled));
     wrap.append(on);
 
     const del = el('button', 'rules-delete', '✕');
@@ -140,7 +207,11 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     });
     wrap.append(del);
 
-    if (row.reason) wrap.append(el('div', 'rules-reason', row.reason));
+    let reasonNode = null;
+    if (row.reason) reasonNode = el('div', 'rules-reason', row.reason);
+    if (reasonNode) wrap.append(reasonNode);
+
+    rowRefs.set(row.index, { wrap, match, end, colour, name, toggle: on, reason: reasonNode });
     return wrap;
   }
 

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { panelRows, readyRules } from '../../netviz/static/js/rules_panel.js';
+import { panelRows, readyRules, createRulesPanel } from '../../netviz/static/js/rules_panel.js';
+import { CONFIG } from '../../netviz/static/js/config.js';
 
 test('one row per rule, in list order, with its own validity', () => {
   const rows = panelRows([
@@ -70,4 +71,172 @@ test('an empty list produces no rows and no error', () => {
   assert.deepEqual(panelRows([]), []);
   assert.deepEqual(readyRules([]), []);
   assert.deepEqual(panelRows(null), []);
+});
+
+test('gain and bloomScale survive panelRows -> readyRules unchanged', () => {
+  // Neither field has a control in this build's UI, so the only way either
+  // could change here is by accident -- opening the panel must not be a
+  // silent way to strip them from a rule an imported file (Task 4) supplied.
+  const list = [{ match: 'DE', colour: '#ff8800', gain: 0.5, bloomScale: 0.3 }];
+  const ready = readyRules(panelRows(list));
+  assert.equal(ready.length, 1);
+  assert.equal(ready[0].gain, 0.5);
+  assert.equal(ready[0].bloomScale, 0.3);
+});
+
+test('a rule without gain/bloomScale does not acquire them', () => {
+  const list = [{ match: 'DE', colour: '#ff8800' }];
+  const row = panelRows(list)[0];
+  assert.equal('gain' in row, false);
+  assert.equal('bloomScale' in row, false);
+  const ready = readyRules(panelRows(list))[0];
+  assert.equal('gain' in ready, false);
+  assert.equal('bloomScale' in ready, false);
+});
+
+// ---------------------------------------------------------------- the DOM --
+//
+// Minimal fake, same discipline as menu.test.mjs's: createElement,
+// classList, append/appendChild/replaceChildren, addEventListener/dispatch,
+// never innerHTML. Extended with querySelector (class-only, depth-first) and
+// a plain writable `value`/`textContent`, which rules_panel.js's DOM half
+// needs and menu.js's never did.
+
+function fakeDom() {
+  function mk(tag) {
+    const listeners = {};
+    const attrs = {};
+    const node = {
+      tagName: tag, className: '', style: {}, textContent: '', value: '',
+      children: [],
+      parentNode: null,
+      classList: {
+        _s: new Set(),
+        add(c) { this._s.add(c); },
+        remove(c) { this._s.delete(c); },
+        contains(c) { return this._s.has(c); },
+      },
+      setAttribute(name, v) { attrs[name] = String(v); },
+      getAttribute(name) {
+        return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null;
+      },
+      appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
+      append(...cs) { for (const c of cs) this.appendChild(c); },
+      remove() {
+        if (!this.parentNode) return;
+        const i = this.parentNode.children.indexOf(this);
+        if (i >= 0) this.parentNode.children.splice(i, 1);
+        this.parentNode = null;
+      },
+      replaceChildren() {
+        for (const c of this.children.slice()) c.parentNode = null;
+        this.children = [];
+      },
+      contains(other) {
+        let n = other;
+        while (n) { if (n === this) return true; n = n.parentNode; }
+        return false;
+      },
+      querySelector(sel) {
+        const cls = sel.replace(/^\./, '');
+        const walk = (n) => {
+          if (n.className && n.className.split(' ').includes(cls)) return n;
+          for (const c of n.children || []) {
+            const found = walk(c);
+            if (found) return found;
+          }
+          return null;
+        };
+        for (const c of this.children) {
+          const found = walk(c);
+          if (found) return found;
+        }
+        return null;
+      },
+      addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+      removeEventListener(type, fn) {
+        if (listeners[type]) listeners[type] = listeners[type].filter((f) => f !== fn);
+      },
+      dispatch(type, evt) { (listeners[type] || []).slice().forEach((fn) => fn(evt)); },
+    };
+    return node;
+  }
+
+  const root = mk('div');
+  const docListeners = {};
+  const document = {
+    createElement: (tag) => mk(tag),
+    addEventListener(type, fn) { (docListeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) {
+      if (docListeners[type]) docListeners[type] = docListeners[type].filter((f) => f !== fn);
+    },
+    dispatch(type, evt) { (docListeners[type] || []).slice().forEach((fn) => fn(evt)); },
+  };
+  return { root, document };
+}
+
+function withFakeGlobals(dom, fn) {
+  const realDoc = globalThis.document;
+  globalThis.document = dom.document;
+  try {
+    return fn();
+  } finally {
+    globalThis.document = realDoc;
+  }
+}
+
+test('typing in the match field does not rebuild the row -- the input node stays the same object', () => {
+  // This is the mechanism that keeps a browser's focus/caret: replacing a
+  // node with a fresh one always loses focus, whatever the fresh node's
+  // .value says, so proving the SAME node survives an edit is the load
+  // -bearing assertion here -- actual focus retention needs a real browser
+  // and is covered by Task 6's verify_rules_editor.py instead.
+  const dom = fakeDom();
+  const savedRules = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: '10.20.50.0/2', colour: '#22d3ee' }];
+  try {
+    withFakeGlobals(dom, () => {
+      const applied = [];
+      const panel = createRulesPanel({
+        settings: { apply: (patch) => { applied.push(patch); return { rejected: [] }; } },
+        root: dom.root,
+      });
+      panel.open();
+      const before = dom.root.querySelector('.rules-match');
+      assert.ok(before, 'no .rules-match rendered');
+      before.value = '10.20.50.0/24';
+      before.dispatch('input', {});
+      const after = dom.root.querySelector('.rules-match');
+      assert.equal(after, before, 'the match input was replaced by a new node');
+      // Live validation still fired on the keystroke.
+      assert.ok(applied.length >= 2, 'settings.apply was not called on the edit');
+      const last = applied[applied.length - 1]['arcs.rules'];
+      assert.equal(last[0].match, '10.20.50.0/24');
+    });
+  } finally {
+    CONFIG.arcs.rules = savedRules;
+  }
+});
+
+test('adding a row is a structural change and does rebuild the list', () => {
+  const dom = fakeDom();
+  const savedRules = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: 'DE', colour: '#22d3ee' }];
+  try {
+    withFakeGlobals(dom, () => {
+      const panel = createRulesPanel({
+        settings: { apply: () => ({ rejected: [] }) },
+        root: dom.root,
+      });
+      panel.open();
+      const before = dom.root.querySelector('.rules-match');
+      const addBtn = dom.root.querySelector('.rules-add');
+      assert.ok(addBtn, 'no .rules-add rendered');
+      addBtn.dispatch('click', {});
+      const after = dom.root.querySelector('.rules-match');
+      assert.notEqual(after, before, 'a structural change did not rebuild the row');
+    });
+  } finally {
+    CONFIG.arcs.rules = savedRules;
+  }
 });
