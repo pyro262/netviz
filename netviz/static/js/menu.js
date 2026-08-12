@@ -166,7 +166,7 @@ function clampPosition(node, x, y) {
  * every click that changes something goes through `settings.apply({path:
  * value})`, because the layer ids in menuModel's submenu ARE schema paths and
  * there is no second way to write one; the menu never touches CONFIG or a
- * live object directly. `rulesPanel` is the colour-rules editor
+ * live object directly. `rulesPanel` is the color-rules editor
  * (`createRulesPanel`) -- the menu only opens it, it never touches
  * settings.apply for anything the panel owns. `root` is the DOM node the menu
  * mounts under --

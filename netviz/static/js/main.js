@@ -128,8 +128,8 @@ async function boot() {
   const canvas = document.getElementById('scene');
   const stage = document.getElementById('stage');
 
-  // Before anything reads a class colour. The highlighted networks' prefixes
-  // and colours are the collector's to know -- an address prefix describes
+  // Before anything reads a class color. The highlighted networks' prefixes
+  // and colors are the collector's to know -- an address prefix describes
   // somebody's LAN, so it lives in .env rather than in tracked config.js --
   // and createArcs() freezes the class table when it is called.
   await loadServerConfig();
@@ -227,8 +227,8 @@ async function boot() {
 
   // The ripple and the country flash both fire on arrival, not on receipt --
   // an arc that is still travelling has not landed yet.
-  const arcs = createArcs(GLOBE_RADIUS, 220, (lat, lon, cls, country, colour, bloomScale) => {
-    ripples.spawn(lat, lon, cls, colour, bloomScale);
+  const arcs = createArcs(GLOBE_RADIUS, 220, (lat, lon, cls, country, color, bloomScale) => {
+    ripples.spawn(lat, lon, cls, color, bloomScale);
     if (cls === 'block') globe.flashCountry(country);
   });
   globe.group.add(arcs.group);      // arcs rotate with the globe

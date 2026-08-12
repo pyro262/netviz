@@ -111,7 +111,7 @@ export function versionLabel(snapshot) {
 }
 
 /**
- * The COLOUR RULES panel, or null when there is nothing to say.
+ * The COLOR RULES panel, or null when there is nothing to say.
  *
  * Ranked by the last hour rather than by list order, so the busiest rules hold
  * the visible slots and a rule that never fires cannot sit in front of one

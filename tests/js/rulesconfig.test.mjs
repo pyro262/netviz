@@ -37,7 +37,7 @@ test('a prefix that is not on an octet boundary is refused with a reason', () =>
   assert.match(refused[0].reason, /octet/i);
 });
 
-test('a slot with no colour takes the shipped colour for its position', () => {
+test('a slot with no color takes the shipped color for its position', () => {
   const { rules } = rulesFromNetworks([
     { prefix: '10.', label: '' },
     { prefix: '172.16.', label: '' },

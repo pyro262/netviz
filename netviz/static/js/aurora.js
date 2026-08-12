@@ -87,7 +87,7 @@ const FRAG = /* glsl */`
     float a = band * c * night * strength;
     if (a < 0.004) discard;
     // Green at the base, violet-red at the top of the band -- oxygen at 100 km
-    // and 200+ km respectively, which is the real colour split.
+    // and 200+ km respectively, which is the real color split.
     vec3 col = mix(lowColor, highColor, smoothstep(outer, inner, m));
     gl_FragColor = vec4(col, a * 0.55);
   }

@@ -1,4 +1,4 @@
-// How much traffic each colour rule is claiming.
+// How much traffic each color rule is claiming.
 //
 // Counted in the RENDERER, not the collector: the collector has never seen the
 // rule list -- it is per-display and lives in localStorage -- so there is
@@ -11,8 +11,8 @@
 // check an hour-old count survives for ever as long as traffic keeps landing
 // on the same slot index.
 
-/** Identity for counting: what a rule MATCHES, not how it looks. Colour and
- *  name are excluded on purpose, so recolouring a rule keeps its history --
+/** Identity for counting: what a rule MATCHES, not how it looks. Color and
+ *  name are excluded on purpose, so recoloring a rule keeps its history --
  *  the history is about the traffic, not about the swatch. */
 export function ruleKey(rule) {
   const r = rule || {};

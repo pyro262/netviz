@@ -62,7 +62,7 @@ def bake(text: str, limit: float) -> int:
         except (TypeError, ValueError):
             continue
         try:
-            ci = float(row["ci"])                     # B-V colour index
+            ci = float(row["ci"])                     # B-V color index
         except (TypeError, ValueError):
             ci = 0.0                                  # treat unknown as sun-like
         out += struct.pack("<ffff", ra_hours * 15.0, dec, mag, ci)

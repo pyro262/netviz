@@ -236,7 +236,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     end.addEventListener('change', () => editField(row.index, 'end', end.value));
     wrap.append(end);
 
-    const swatch = el('input', 'rules-colour');
+    const swatch = el('input', 'rules-color');
     swatch.type = 'color';
     swatch.value = /^#[0-9a-f]{6}$/i.test(row.color) ? row.color : '#a855f7';
     swatch.title = COLOR_HELP;
@@ -326,7 +326,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     for (const [cls, text, tip] of [
       ['h-match', 'Match', MATCH_HELP],
       ['h-end', 'Applies to', END_HELP],
-      ['h-colour', 'Color', COLOR_HELP],
+      ['h-color', 'Color', COLOR_HELP],
       ['h-name', 'Label', NAME_HELP],
       // 'On' alone: the two buttons under this header are 50px between them
       // and 'On / Del' wraps to two lines inside that, which drags the whole

@@ -3,20 +3,20 @@ compose file; nothing here is a secret except INFLUX_TOKEN."""
 import os
 from dataclasses import dataclass, field
 
-# Up to three networks can be drawn in their own colour -- a server VLAN, an
+# Up to three networks can be drawn in their own color -- a server VLAN, an
 # IoT segment, a guest network. Matched as an address prefix against either end
 # of a flow.
 #
 # These live in the environment rather than in the tracked config.js because a
 # LAN layout is site-specific: the prefixes say how somebody's network is laid
-# out, and a public repo should not carry them. Colour and label are here too
+# out, and a public repo should not carry them. Color and label are here too
 # so one file configures the whole class.
 #
-# Defaults are colours only. With no prefix set a slot is simply off, so an
+# Defaults are colors only. With no prefix set a slot is simply off, so an
 # install that highlights nothing needs no configuration at all.
 HIGHLIGHT_SLOTS = 3
 HIGHLIGHT_DEFAULT_COLORS = ("#a855f7", "#22d3ee", "#4ade80")
-# Per-colour brightness trim. Cyan and green are the highest-luminance hues on
+# Per-color brightness trim. Cyan and green are the highest-luminance hues on
 # a display and clear the bloom threshold sooner than a violet of the same
 # nominal value, so they are knocked back further. 0.51 for cyan is measured on
 # a real wall; the other two are reasoned from it and unmeasured.
@@ -28,7 +28,7 @@ def _highlight_networks() -> list[dict]:
 
     A slot with no prefix is kept, not dropped, so the renderer's slot N always
     means the same configured network whether or not slot N-1 is in use --
-    otherwise turning off one network would silently recolour another.
+    otherwise turning off one network would silently recolor another.
     """
     out = []
     for i in range(1, HIGHLIGHT_SLOTS + 1):

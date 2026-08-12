@@ -51,7 +51,7 @@ test('parseAddress refuses too many groups with embedded v4 tail', () => {
   assert.equal(result, null);
 });
 
-test('parseRule reads a CIDR rule and keeps the colour', () => {
+test('parseRule reads a CIDR rule and keeps the color', () => {
   const { rule, reason } = parseRule({ match: '10.20.50.0/24', color: '#22d3ee' });
   assert.equal(reason, undefined);
   assert.equal(rule.match.kind, 'cidr');
@@ -96,8 +96,8 @@ test('every malformed rule gives a reason rather than throwing', () => {
   const bad = [
     { match: '10.20.50.0/33', color: '#fff' },     // v4 has 32 bits
     { match: '2001:db8::/129', color: '#fff' },
-    { match: '10.20.50.0/24', color: 'blue' },     // not a hex colour
-    { match: '10.20.50.0/24' },                     // no colour at all
+    { match: '10.20.50.0/24', color: 'blue' },     // not a hex color
+    { match: '10.20.50.0/24' },                     // no color at all
     { match: 'nonsense', color: '#fff' },
     { match: '10.20.50.0-2001:db8::1', color: '#fff' },  // mixed families
     { match: 'tcp/70000', color: '#fff' },
@@ -128,7 +128,7 @@ test('gain and bloomScale are bounded, and out-of-range is refused', () => {
   assert.ok(parseRule({ match: 'DE', color: '#fff', bloomScale: 2.5 }).reason);
 });
 
-test('a three-digit hex colour is accepted and normalised', () => {
+test('a three-digit hex color is accepted and normalised', () => {
   assert.equal(parseRule({ match: 'DE', color: '#0f8' }).rule.color, '#00ff88');
 });
 
@@ -230,7 +230,7 @@ test('first enabled match wins, in list order', () => {
 
 test('a disabled rule is skipped without shifting the rules after it', () => {
   // Position is precedence, so a disabled rule must keep its slot: turning a
-  // rule off may not silently renumber -- and therefore recolour -- the rest.
+  // rule off may not silently renumber -- and therefore recolor -- the rest.
   const c = compileRules([
     { match: '10.0.0.0/8', color: '#111111', enabled: false },
     { match: '10.20.50.0/24', color: '#222222' },

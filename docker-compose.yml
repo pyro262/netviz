@@ -23,7 +23,7 @@ services:
       # precise, and the value ends up on screen.
       NETVIZ_HOME_LAT: ${NETVIZ_HOME_LAT:-30.3}
       NETVIZ_HOME_LON: ${NETVIZ_HOME_LON:--97.7}
-      # Up to three networks drawn in their own colour. Prefixes live in .env
+      # Up to three networks drawn in their own color. Prefixes live in .env
       # rather than in the tracked config.js: an address prefix describes how
       # your LAN is laid out. Unset means the slot is simply off.
       # Public resolvers to hide from the display, on top of the built-in

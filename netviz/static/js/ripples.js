@@ -81,7 +81,7 @@ export function createRipples(radius, capacity = 48) {
   }
 
   let cursor = 0;
-  let last = null;                  // diagnostics only; see lastColour()
+  let last = null;                  // diagnostics only; see lastColor()
   const cooldown = createCooldown(COOLDOWN_SECONDS);
 
   function take() {
@@ -99,17 +99,17 @@ export function createRipples(radius, capacity = 48) {
 
   /**
    * @param className one of RIPPLE's keys; anything else is treated as flow.
-   * @param colour    optional THREE.Color -- the landing arc's own colour.
+   * @param color    optional THREE.Color -- the landing arc's own color.
    *                  Copied, never retained: the caller passes a live uniform,
    *                  which the arc pool rewrites when it recycles the slot.
    * @param bloomScale optional number, same source.
    *
    * Size and life stay keyed by CLASS, not by the arc: a block ring is larger
    * and slower than a flow ring, which is how severity reads without a legend.
-   * Only the colour follows the arc. RIPPLE's own colours stay as the fallback
-   * -- a colourless call must draw something sane rather than black.
+   * Only the color follows the arc. RIPPLE's own colors stay as the fallback
+   * -- a colorless call must draw something sane rather than black.
    */
-  function spawn(lat, lon, className, colour = null, bloomScale = null) {
+  function spawn(lat, lon, className, color = null, bloomScale = null) {
     const spec = RIPPLE[className] || RIPPLE.flow;
     if (!cooldown.allow(lat, lon, className, performance.now() / 1000)) return;
     const slot = take();
@@ -124,7 +124,7 @@ export function createRipples(radius, capacity = 48) {
     const size = radius * spec.maxRadius * 2;
     slot.mesh.scale.set(size, size, 1);
 
-    slot.mat.uniforms.color.value.copy(colour || spec.color);
+    slot.mat.uniforms.color.value.copy(color || spec.color);
     slot.mat.uniforms.width.value = spec.width;
     slot.mat.uniforms.progress.value = 0;
     slot.mesh.userData.bloomScale = bloomScale === null || bloomScale === undefined
@@ -161,13 +161,13 @@ export function createRipples(radius, capacity = 48) {
   return {
     group, spawn, update, liveCount,
     setCooldown(v) { cooldown.setSeconds(v); },
-    /** Diagnostics only -- tools/verify_walk.py reads the colour the most
+    /** Diagnostics only -- tools/verify_walk.py reads the color the most
      *  recent ring was actually drawn in, and WHERE, because the live feed
-     *  spawns rings of its own throughout and a colour alone cannot say
+     *  spawns rings of its own throughout and a color alone cannot say
      *  which arc drew it. Nothing on the wall reads this. */
     lastRipple() {
       return last
-        ? { colour: last.mat.uniforms.color.value.getHex(),
+        ? { color: last.mat.uniforms.color.value.getHex(),
             lat: last.lat, lon: last.lon, cls: last.cls }
         : null;
     },

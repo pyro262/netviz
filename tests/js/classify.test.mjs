@@ -26,7 +26,7 @@ test('an event on a rule takes that rule class, 1-based', () => {
   });
 });
 
-test('a block is never coloured by a rule', () => {
+test('a block is never colored by a rule', () => {
   // The wall exists to show blocks and the alarm layer is one visual language.
   // This is the same guarantee DNS already has.
   withRules([{ match: '10.20.50.0/24', color: '#22d3ee' }], () => {
@@ -57,7 +57,7 @@ test('a refused rule does not renumber the ones after it', () => {
   // A rule that cannot be parsed is dropped from the compiled list, so the
   // rules after it move up -- which is why compileRules reports the refusal by
   // its index in the ORIGINAL list and the display warns rather than silently
-  // recolouring.
+  // recoloring.
   withRules([
     { match: 'nonsense', color: '#a855f7' },
     { match: '10.10.20.0/24', color: '#22d3ee' },
@@ -78,7 +78,7 @@ test('rules are recompiled when the list is replaced', () => {
   });
 });
 
-test("the collector's slots migrate into colour rules", () => {
+test("the collector's slots migrate into color rules", () => {
   // The three NETVIZ_HIGHLIGHT* slots are converted for one release. An empty
   // slot contributes nothing rather than a rule matching everything.
   withRules([], () => {

@@ -15,7 +15,7 @@ def _reload(monkeypatch, **env):
 
 
 class TestHighlightNetworks:
-    def test_three_slots_with_default_colours_and_no_prefixes(self, monkeypatch):
+    def test_three_slots_with_default_colors_and_no_prefixes(self, monkeypatch):
         mod = _reload(monkeypatch)
         nets = mod.Config().highlight_networks
 
@@ -42,7 +42,7 @@ class TestHighlightNetworks:
 
     def test_an_empty_slot_keeps_its_position(self, monkeypatch):
         """Slot 2 must stay slot 2 whether or not slot 1 is set, or turning one
-        network off would recolour another."""
+        network off would recolor another."""
         mod = _reload(monkeypatch, NETVIZ_HIGHLIGHT2_PREFIX="10.10.20.")
         nets = mod.Config().highlight_networks
 

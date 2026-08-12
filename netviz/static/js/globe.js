@@ -118,7 +118,7 @@ async function loadBorders(radius) {
   }
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  // Amber, the block-arc colour knocked well back. "Blocked" is now one visual
+  // Amber, the block-arc color knocked well back. "Blocked" is now one visual
   // language across the whole display: this outline, the arc that lands in it,
   // its impact ripple and the flash on arrival are all the same hue, so the
   // shape a block lands in is recognisable as the thing the arc is about.
@@ -253,8 +253,8 @@ async function loadCityPoints(radius) {
         // the first time and ran hot on the wall. Dimmed here rather than at
         // the composer so the arcs keep the bloom strength they were tuned at.
         float a = (1.0 - r * 2.0) * vNight * 0.7;
-        // The dusk lift goes on the colour, not the alpha: alpha above 1 is
-        // clamped and would do nothing, while a brighter colour carries
+        // The dusk lift goes on the color, not the alpha: alpha above 1 is
+        // clamped and would do nothing, while a brighter color carries
         // straight into the bloom pass, which is where dusk should show.
         gl_FragColor = vec4(vColor * (1.0 + 0.85 * vDusk), a);
       }

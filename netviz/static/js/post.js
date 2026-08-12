@@ -124,7 +124,7 @@ export function createComposer(renderer, scene, camera) {
   // Per-object bloom trim. A single UnrealBloomPass has one threshold for the
   // whole scene, so the only way to give one arc class less glow without
   // touching its drawn brightness is to dim it FOR THE BLOOM PASS ONLY: scale
-  // its colour uniform down before pass 1 and put it back before pass 2. Set
+  // its color uniform down before pass 1 and put it back before pass 2. Set
   // obj.userData.bloomScale: below 1 trims a halo, above 1 lifts one. The highlighted
   // cyan trims because cyan is the highest-luminance hue here and clears the
   // threshold sooner than the plasma stops; the violet flow arcs lift because
@@ -176,11 +176,11 @@ export function createComposer(renderer, scene, camera) {
   return {
     render() {
       // The bloom pass must see BLACK where there is nothing, not the scene's
-      // background colour. RenderPass paints scene.background into the bloom
+      // background color. RenderPass paints scene.background into the bloom
       // target, the combine pass then ADDS that target to the base, and empty
-      // sky comes out lifted by its own colour: measured (33,30,57) against a
+      // sky comes out lifted by its own color: measured (33,30,57) against a
       // #151327 background of (21,19,39). Blanking it for the bloom pass only
-      // is what keeps the sky the colour it is set to.
+      // is what keeps the sky the color it is set to.
       const bg = scene.background;
       scene.background = null;
       scene.traverse(darken);

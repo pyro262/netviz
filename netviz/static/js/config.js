@@ -81,7 +81,7 @@ export const CONFIG = {
   // tube      radius of the tube, in globe radii
   // colorAt   position on the plasma ramp, 0 (indigo) to 1 (pale yellow)
   // color     an explicit hex, used instead of colorAt when present
-  // gain      multiplies the colour down; the wall usually wants less than 1
+  // gain      multiplies the color down; the wall usually wants less than 1
   // speed     how fast the head travels
   // lift      apex height, scaled by how far the arc travels
   // maxRise   hard cap on the apex, in globe radii -- an uncapped long arc
@@ -99,7 +99,7 @@ export const CONFIG = {
     block: { life: 18.0, tube: 0.0052, colorAt: 0.86, gain: 0.74,
              speed: 0.55, lift: 0.45, maxRise: 0.21, bloomScale: 0.5 },
 
-    // Shape shared by every colour rule. Colour, gain and bloomScale come from
+    // Shape shared by every color rule. Color, gain and bloomScale come from
     // the rule; everything here is the geometry they all share.
     //
     // `gain` is here rather than on each rule so a rule that omits it has one
@@ -108,9 +108,9 @@ export const CONFIG = {
     highlight: { life: 4.0, tube: 0.0032, speed: 0.9, lift: 0.28,
                  maxRise: 0.24, bloomScale: 0.41, gain: 0.70 },
 
-    // Colour rules, in precedence order: the first ENABLED rule that claims an
-    // arc colours it. Empty by default -- every flow draws in the ordinary
-    // flow colour, exactly as an unconfigured display does today.
+    // Color rules, in precedence order: the first ENABLED rule that claims an
+    // arc colors it. Empty by default -- every flow draws in the ordinary
+    // flow color, exactly as an unconfigured display does today.
     //
     //   match       '10.20.50.0/24' | '2001:db8::/32'   a subnet
     //               '203.0.113.10-203.0.113.40'         an inclusive range
@@ -123,7 +123,7 @@ export const CONFIG = {
     //   bloomScale  optional; defaults to arcs.highlight.bloomScale
     //   enabled     optional; default true
     //
-    // Blocks are never coloured by a rule -- the alarm layer is one visual
+    // Blocks are never colored by a rule -- the alarm layer is one visual
     // language and the wall exists to show it.
     rules: [],
   },
@@ -213,7 +213,7 @@ export const CONFIG = {
     // the display waits before taking it back -- but half a minute of a still
     // globe reads as a frozen wall to anyone who did not do the dragging.
     resumeSeconds: 15,
-    // The same countdown for a claim made by opening the menu (or the colour
+    // The same countdown for a claim made by opening the menu (or the color
     // rules panel), which is not somebody looking at a place -- it is a
     // moment's business with the display, so the walk starts again shortly
     // after the menu closes. The camera is still frozen for the whole time it
@@ -273,7 +273,7 @@ export const CONFIG = {
     // bloom term. Raising strength cannot rescue a base pass that is already
     // blown out -- lower flowsPerSecond instead.
     bloom: { strength: 0.7, radius: 0.5, threshold: 0.08, knee: 0.6 },
-    // Multiplies every star's colour. Stars blend additively, so this is a
+    // Multiplies every star's color. Stars blend additively, so this is a
     // straight scale on how much light each one contributes -- 1.5 is 50%
     // brighter sky. Deliberately NOT applied to the per-magnitude alpha: that
     // curve saturates at 1, so scaling it there would flatten every star
@@ -299,7 +299,7 @@ export const CONFIG = {
 
   rail: {
     enabled: false,
-    // How many colour-rule rows the rail lists. Ranked by the last hour, not
+    // How many color-rule rows the rail lists. Ranked by the last hour, not
     // by list order, so a rule that never fires cannot hold a slot in front of
     // one that does.
     maxRules: 5,
@@ -316,12 +316,12 @@ export const CONFIG = {
   },
 };
 
-// The colours the three highlight slots have always shipped with. A migrated
-// slot with no colour of its own keeps the one it was drawing in.
-const SHIPPED_RULE_COLOURS = ['#a855f7', '#22d3ee', '#4ade80'];
+// The colors the three highlight slots have always shipped with. A migrated
+// slot with no color of its own keeps the one it was drawing in.
+const SHIPPED_RULE_COLORS = ['#a855f7', '#22d3ee', '#4ade80'];
 
 /**
- * The three NETVIZ_HIGHLIGHT* slots, as colour rules.
+ * The three NETVIZ_HIGHLIGHT* slots, as color rules.
  *
  * Supported for ONE release and then dropped -- the URL parameter `?rail=1`
  * got the same treatment (removed 2026-08-11 once the rail became a stored
@@ -347,7 +347,7 @@ export function rulesFromNetworks(networks) {
     const base = [...octets, ...Array(4 - octets.length).fill('0')].join('.');
     rules.push({
       match: `${base}/${bits}`,
-      color: net.color || SHIPPED_RULE_COLOURS[i % SHIPPED_RULE_COLOURS.length],
+      color: net.color || SHIPPED_RULE_COLORS[i % SHIPPED_RULE_COLORS.length],
       name: typeof net.label === 'string' ? net.label : '',
       gain: net.gain,
       end: 'either',
@@ -405,7 +405,7 @@ export function mergeServerConfig(served) {
 /**
  * Fetch and apply the collector's display config.
  *
- * Must be awaited before anything reads a class colour -- arcs.js builds its
+ * Must be awaited before anything reads a class color -- arcs.js builds its
  * class specs when createArcs() is called, and a merge after that point would
  * leave the arcs on the old palette until a reload. Failure is not fatal: an
  * older collector 404s here, and the built-in defaults are a working display.

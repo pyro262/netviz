@@ -90,7 +90,7 @@ function arcHandlers(cls, keys) {
 
 const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
                   'maxRise', 'bloomScale'];
-// The shape every colour rule shares. `gain` is here because a rule that omits
+// The shape every color rule shares. `gain` is here because a rule that omits
 // its own reads this one; the list must match settings.js's, which a test
 // asserts by requiring every schema path to have a handler.
 const HIGHLIGHT_KEYS = ['life', 'tube', 'gain', 'speed', 'lift', 'maxRise', 'bloomScale'];
@@ -122,7 +122,7 @@ export const HANDLERS = {
   ...arcHandlers('block', ARC_KEYS),
   ...arcHandlers('highlight', HIGHLIGHT_KEYS),
   // Every rule shares one geometry, so nothing is torn down: setRules pushes
-  // colour, gain and bloomScale into the arcs ALREADY IN THE AIR. Marking this
+  // color, gain and bloomScale into the arcs ALREADY IN THE AIR. Marking this
   // `rebuild` would clear the pool for no benefit and cost a pass.
   'arcs.rules': (v, ctx) => {
     ctx.arcs.setRules(v);

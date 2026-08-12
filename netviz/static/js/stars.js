@@ -1,5 +1,5 @@
 // The real sky and nothing else: HYG catalogue to magnitude 6.5, placed by
-// right ascension and declination, coloured by B-V index, turned by Greenwich
+// right ascension and declination, colored by B-V index, turned by Greenwich
 // sidereal time.
 //
 // The painted Milky Way band and its 7,000 synthetic haze stars were removed
@@ -85,7 +85,7 @@ async function loadCatalogue(radius) {
         // Soft core rather than a flat disc, so a bright star reads as a point
         // of light instead of a filled circle.
         float a = pow(max(0.0, 1.0 - r * 2.0), 1.6) * vAlpha;
-        // Additive blending, so scaling the colour scales the light this star
+        // Additive blending, so scaling the color scales the light this star
         // contributes. Above 1 is fine and is the point: the alpha curve is
         // already clamped at 1 for anything brighter than about mag 0.8.
         gl_FragColor = vec4(vColor * brightness, a);

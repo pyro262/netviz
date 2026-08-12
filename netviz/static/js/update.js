@@ -6,7 +6,7 @@
 // at it, and invisible to someone watching the globe. It sits in the corner
 // furthest from where arcs converge, at low opacity, in the map's own dim
 // violet rather than the alarm amber -- an available update is not an alarm,
-// and borrowing the alarm colour would devalue the colour that is.
+// and borrowing the alarm color would devalue the color that is.
 //
 // It fades in over 2s rather than appearing between frames. Something that
 // blinks into existence on a wall display reads as a glitch; something that

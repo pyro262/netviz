@@ -83,7 +83,7 @@ def test_interleaved_flow_and_block_are_reproducible():
 
 
 def test_some_synthetic_flows_land_on_a_highlighted_network():
-    """The renderer colours up to three networks separately, and synthetic mode
+    """The renderer colors up to three networks separately, and synthetic mode
     is what the renderer is developed against -- so it has to produce traffic
     on every one of them or those classes are never exercised."""
     from netviz.synthetic import DEMO_HIGHLIGHT_PREFIXES, LAN_PREFIX, SyntheticFeed

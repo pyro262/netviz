@@ -43,7 +43,7 @@ def build_stamp(root: Path, extra: str = "") -> str:
 
     `extra` folds in state that is served but is not a file on disk -- the
     display config, which comes from the environment. Without it, changing a
-    highlighted network's colour in .env and restarting leaves every open kiosk
+    highlighted network's color in .env and restarting leaves every open kiosk
     showing the old palette forever: the page reads /config.json once at boot,
     and nothing on disk changed, so no reload is ever triggered. A wall display
     has nobody standing at it to press F5.

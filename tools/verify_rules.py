@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Prove the colour rules against a real page.
+"""Prove the color rules against a real page.
 
 `rules.js` is three-free and its arithmetic is proved under `node --test`.
 What that cannot prove is the half that decides whether a control is real:
-that installing a rule recolours the arcs ALREADY IN THE AIR rather than
+that installing a rule recolors the arcs ALREADY IN THE AIR rather than
 only the ones spawned afterwards. Six settings controls shipped dead for
 exactly that reason -- the value was written to a spec every live arc had
 already copied out of. So this drives the page.
@@ -45,12 +45,12 @@ def report(name: str, ok: bool, detail: str = "") -> bool:
     return ok
 
 
-def live_recolour_case(page) -> bool:
-    """A rule installed while an arc is on screen recolours THAT arc.
+def live_recolor_case(page) -> bool:
+    """A rule installed while an arc is on screen recolors THAT arc.
 
     The arc is spawned first and the rule changed second, on purpose: a
     rule change that only reached arcs spawned later would pass a naive
-    "the class colour moved" check and still read as a dead control on the
+    "the class color moved" check and still read as a dead control on the
     wall, because a rule1 arc lives 4s and the next one may be seconds
     away.
     """
@@ -61,18 +61,18 @@ def live_recolour_case(page) -> bool:
       // with it and the arc being measured is the one spawned here.
       m.CONFIG.arcs.rules = [{match: '203.0.113.0/24', color: '#22d3ee'}];
       arcs.setRules(m.CONFIG.arcs.rules);
-      const before = arcs.classColour('rule1').getHex();
+      const before = arcs.classColor('rule1').getHex();
       const ev = {k: 'flow', s: '203.0.113.9', d: '198.51.100.7',
                   sll: [-40, 150], dll: [-45, 160], b: 1000};
       arcs.spawn(ev);
       const live = arcs.group.children.filter(
         (mesh) => mesh.visible && mesh.material.uniforms.color.value.getHex() === before);
-      if (!live.length) return {error: 'no arc took the rule colour on spawn'};
+      if (!live.length) return {error: 'no arc took the rule color on spawn'};
 
       const t0 = performance.now();
       m.CONFIG.arcs.rules = [{match: '203.0.113.0/24', color: '#ff00ff'}];
       const out = arcs.setRules(m.CONFIG.arcs.rules);
-      const after = arcs.classColour('rule1').getHex();
+      const after = arcs.classColor('rule1').getHex();
       // 100ms is the same bound the settings catalogue was verified against.
       await new Promise((r) => setTimeout(r, 100));
       const moved = live.filter(
@@ -81,16 +81,16 @@ def live_recolour_case(page) -> bool:
               applied: out.applied, ms: performance.now() - t0};
     }""")
     if result.get("error"):
-        return report("1: a rule recolours arcs already on screen", False, result["error"])
+        return report("1: a rule recolors arcs already on screen", False, result["error"])
     ok = (result["moved"] == result["live"] and result["before"] != result["after"])
     return report(
-        "1: a rule recolours arcs already on screen", ok,
+        "1: a rule recolors arcs already on screen", ok,
         f"{result['moved']}/{result['live']} live arcs moved "
         f"#{result['before']:06x} -> #{result['after']:06x} in {result['ms']:.0f}ms")
 
 
 def block_immunity_case(page) -> bool:
-    """A block is never coloured by a rule, whatever it matched.
+    """A block is never colored by a rule, whatever it matched.
 
     The rule matches the block's own address deliberately: the wall exists
     to show blocks, and the alarm layer is one visual language -- outline,
@@ -101,8 +101,8 @@ def block_immunity_case(page) -> bool:
       const m = await import('./js/config.js');
       m.CONFIG.arcs.rules = [{match: '198.51.100.0/24', color: '#00ff00'}];
       arcs.setRules(m.CONFIG.arcs.rules);
-      const ruleHex = arcs.classColour('rule1').getHex();
-      const blockHex = arcs.classColour('block').getHex();
+      const ruleHex = arcs.classColor('rule1').getHex();
+      const blockHex = arcs.classColor('block').getHex();
       const cl = await import('./js/classify.js');
       const ev = {k: 'block', s: '198.51.100.7', d: '192.168.0.1', sc: 'CN', dc: '--',
                   sll: [39.9, 116.4], dll: [29.8, -95.4], b: 900};
@@ -140,11 +140,11 @@ def refusal_case(page) -> bool:
       const out = arcs.setRules(m.CONFIG.arcs.rules);
       const cl = await import('./js/classify.js');
       // The third row is the SECOND surviving rule, so an event matching it
-      // must draw in rule2's colour -- the refusal shifts the ones after it
+      // must draw in rule2's color -- the refusal shifts the ones after it
       // and the classes must agree with the compiled list, not the raw one.
       const cls = cl.classNameFor({k: 'flow', s: '198.51.100.7', d: '192.168.0.9'});
       return {applied: out.applied, refused: out.refused, cls,
-              hex: arcs.classColour(cls) ? arcs.classColour(cls).getHex() : null};
+              hex: arcs.classColor(cls) ? arcs.classColor(cls).getHex() : null};
     }""")
     refused = result["refused"]
     ok = (result["applied"] == 2 and len(refused) == 1 and refused[0]["index"] == 1
@@ -170,7 +170,7 @@ def country_case(page) -> bool:
       // deployment this case is about whatever that feed carries.
       m.CONFIG.arcs.rules = [{match: 'DE', color: '#ff00ff'}];
       arcs.setRules(m.CONFIG.arcs.rules);
-      const want = arcs.classColour('rule1').getHex();
+      const want = arcs.classColor('rule1').getHex();
       const t0 = performance.now();
       while (performance.now() - t0 < cap * 1000) {
         await new Promise((r) => setTimeout(r, 200));
@@ -188,7 +188,7 @@ def country_case(page) -> bool:
 
 def run(page) -> bool:
     ok = True
-    ok &= live_recolour_case(page)
+    ok &= live_recolor_case(page)
     ok &= block_immunity_case(page)
     ok &= refusal_case(page)
     ok &= country_case(page)

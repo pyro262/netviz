@@ -93,11 +93,11 @@ test('coerce rejects the wrong shape rather than guessing', () => {
   assert.equal(coerce('traffic.flowsPerSecond', 'lots').ok, false);
   assert.equal(coerce('traffic.flowsPerSecond', NaN).ok, false);
   assert.equal(coerce('rail.enabled', 'yes').ok, false);
-  assert.equal(coerce('appearance.background', 'not-a-colour').ok, false);
+  assert.equal(coerce('appearance.background', 'not-a-color').ok, false);
   assert.equal(coerce('nonsense.path', 1).ok, false);
 });
 
-test('coerce accepts a colour in the form the renderer uses', () => {
+test('coerce accepts a color in the form the renderer uses', () => {
   assert.deepEqual(coerce('appearance.background', '#0b0916'),
                    { ok: true, value: '#0b0916' });
   assert.deepEqual(coerce('appearance.background', '#FFF'),

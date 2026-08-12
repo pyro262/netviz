@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the colour-rules EDITOR against a real page.
+"""Prove the color-rules EDITOR against a real page.
 
 `rules.js`'s arithmetic and `rulestore.js`'s pure half are proved under
 `node --test`. What that cannot prove is the same gap `verify_rules.py`
@@ -108,8 +108,8 @@ def panel_open_case(page, cx, cy) -> bool:
     return report("1: the panel really opens", ok, f"clicked={clicked} state={state}")
 
 
-def live_recolour_case(page) -> bool:
-    """2: typing recolours live arcs.
+def live_recolor_case(page) -> bool:
+    """2: typing recolors live arcs.
 
     The arc is spawned BEFORE the rule is typed, on purpose -- a rule that
     only reached arcs spawned later would still read as a dead control on
@@ -137,7 +137,7 @@ def live_recolour_case(page) -> bool:
                   sll: [-40, 150], dll: [-45, 160], b: 1000};
 
       // The synthetic feed keeps spawning ordinary 'flow' arcs in the
-      // background, so filtering group.children by "shares flow's colour"
+      // background, so filtering group.children by "shares flow's color"
       // would catch dozens of unrelated arcs, not just this one -- and only
       // ONE of them (ours) would move when the rule is installed, failing a
       // moved === live.length check for a reason that has nothing to do with
@@ -168,7 +168,7 @@ def live_recolour_case(page) -> bool:
       }
       const row = rows[rows.length - 1];           // the one just added, whatever its index
       const match = row.querySelector('.rules-match');
-      const colour = row.querySelector('.rules-colour');
+      const color = row.querySelector('.rules-color');
       match.focus();
       let acc = '';
       for (const ch of '203.0.113.0/24') {
@@ -177,14 +177,14 @@ def live_recolour_case(page) -> bool:
         match.dispatchEvent(new Event('input', {bubbles: true}));
       }
       const stillFocused = document.activeElement === match;
-      colour.value = '#ff00ff';
-      colour.dispatchEvent(new Event('input', {bubbles: true}));
+      color.value = '#ff00ff';
+      color.dispatchEvent(new Event('input', {bubbles: true}));
 
       const t0 = performance.now();
       await new Promise((r) => setTimeout(r, 100));
       const cls = cl.classNameFor(ev);              // whichever rule slot this became
-      const beforeHex = arcs.classColour('flow').getHex();
-      const afterHex = arcs.classColour(cls) ? arcs.classColour(cls).getHex() : null;
+      const beforeHex = arcs.classColor('flow').getHex();
+      const afterHex = arcs.classColor(cls) ? arcs.classColor(cls).getHex() : null;
       const moved = live.filter(
         (mesh) => mesh.material.uniforms.color.value.getHex() === afterHex).length;
       // Handed to case 3: which rule slot our rule became, and the address
@@ -196,12 +196,12 @@ def live_recolour_case(page) -> bool:
               ms: performance.now() - t0};
     }""")
     if result.get("error"):
-        return report("2: typing recolours live arcs", False, result["error"])
+        return report("2: typing recolors live arcs", False, result["error"])
     ok = (result["cls"] != "flow" and result["afterHex"] is not None
           and result["afterHex"] != result["beforeHex"]
           and result["moved"] == result["live"] and result["stillFocused"])
     return report(
-        "2: typing recolours live arcs", ok,
+        "2: typing recolors live arcs", ok,
         f"class {result['cls']}, {result['moved']}/{result['live']} live arcs moved "
         f"#{result['beforeHex']:06x} -> #{result['afterHex']:06x}, "
         f"stillFocused={result['stillFocused']}, {result['ms']:.0f}ms")
@@ -213,7 +213,7 @@ def bad_row_case(page) -> bool:
     Adds another row with an unparseable matcher and asserts `.rules-reason`
     shows on that row only, and that CASE 2'S RULE -- not literally
     `arcs.rules[0]`, which on this synthetic collector is already occupied by
-    the NETVIZ_HIGHLIGHT* migration -- keeps colouring its arcs: an invalid
+    the NETVIZ_HIGHLIGHT* migration -- keeps coloring its arcs: an invalid
     row must not blank out a working one."""
     have_rule = page.evaluate("() => !!window.__vreRule")
     if not have_rule:
@@ -244,9 +244,9 @@ def bad_row_case(page) -> bool:
       const goodReason = goodRow ? goodRow.querySelector('.rules-reason') : null;
 
       const stillCls = cl.classNameFor(ev);
-      const ruleHex = arcs.classColour(cls) ? arcs.classColour(cls).getHex() : null;
+      const ruleHex = arcs.classColor(cls) ? arcs.classColor(cls).getHex() : null;
       // A FRESH arc, spawned after the bad row, must still take the rule's
-      // colour -- proving the bad row did not knock the good one out of the
+      // color -- proving the bad row did not knock the good one out of the
       // compiled list, not just that the DOM still shows a swatch.
       // `arcs.spawn` rate-caps ordinary flows against a real 1-second window
       // the background synthetic feed is also drawing from, so a single call
@@ -278,7 +278,7 @@ def bad_row_case(page) -> bool:
         f"bad row reason={result['badHasReason']}, good row found={result['goodRowFound']}, "
         f"good row reason={result['goodHasReason']}, class still {result['stillCls']} "
         f"(was {result['cls']}), {result['stillLive']}/{result['live']} fresh arc(s) "
-        f"still took its colour")
+        f"still took its color")
 
 
 def reload_survives_case(page) -> bool:
@@ -519,7 +519,7 @@ def rule_deletion_reclass_case(page) -> bool:
     re-look-up `CLASS[slot.cls]` by NAME -- a position, not an identity.
     Installs two rules (A, B), spawns one live arc matching each, then
     deletes A. The bug: the arc that matched A (was `rule1`) inherited
-    whatever now sits at index 1 -- i.e. B's colour, a match it never had
+    whatever now sits at index 1 -- i.e. B's color, a match it never had
     -- while the arc that matched B (was `rule2`) found no `CLASS.rule2`
     at all and fell back to flow violet even though B still claims it.
     Both are wrong; the fix re-matches each slot's stored spawning event
@@ -553,7 +553,7 @@ def rule_deletion_reclass_case(page) -> bool:
         return {error: 'could not spawn tracked arcs for both rules'};
       }
 
-      const flowHex = arcs.classColour('flow').getHex();
+      const flowHex = arcs.classColor('flow').getHex();
 
       // Delete rule A -- only B remains, now at index 0 (class 'rule1').
       settings.apply({'arcs.rules': [
@@ -561,12 +561,12 @@ def rule_deletion_reclass_case(page) -> bool:
       ]});
       await new Promise((r) => setTimeout(r, 50));
 
-      // B's expected colour is read from the LIVE class table, not a raw
+      // B's expected color is read from the LIVE class table, not a raw
       // literal: gain (arcs.highlight, default 0.70) scales every rule
-      // colour down, so comparing against '#00ff00' directly would fail
+      // color down, so comparing against '#00ff00' directly would fail
       // for a reason that has nothing to do with which rule an arc is
       // attached to.
-      const bWantHex = arcs.classColour('rule1').getHex();
+      const bWantHex = arcs.classColor('rule1').getHex();
 
       return {
         aHex: liveA[0].material.uniforms.color.value.getHex(),
@@ -584,14 +584,14 @@ def rule_deletion_reclass_case(page) -> bool:
         "9: deleting a rule reclassifies by match, not index", ok,
         f"deleted rule's arc -> flow (#{result['flowHex']:06x}): "
         f"{a_ok} (got #{result['aHex']:06x}); "
-        f"surviving rule's arc keeps its own colour (#{result['bWantHex']:06x}): "
+        f"surviving rule's arc keeps its own color (#{result['bWantHex']:06x}): "
         f"{b_ok} (got #{result['bHex']:06x})")
 
 
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= panel_open_case(page, cx, cy)
-    ok &= live_recolour_case(page)
+    ok &= live_recolor_case(page)
     ok &= bad_row_case(page)
     ok &= keyboard_typing_case(page, cx, cy)
     ok &= reload_survives_case(page)

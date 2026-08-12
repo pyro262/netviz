@@ -58,7 +58,7 @@ export function start({ isOpen }) {
   const applyState = (state) => {
     banner.textContent = state.text;
     banner.classList.toggle('on', state.degraded);
-    // The drain is a CSS filter on the canvas rather than per-material colour
+    // The drain is a CSS filter on the canvas rather than per-material color
     // work: it catches the arcs, the city sprites and the bloom in one move,
     // and costs nothing when the class is off.
     document.body.classList.toggle('degraded', state.degraded);

@@ -2,7 +2,7 @@
 """Fire synthetic geo-block syslog lines at a running collector.
 
 For eyeballing the block-arc styling on the wall: real blocks land a couple of
-times an hour, which is useless for tuning a colour. These take the genuine
+times an hour, which is useless for tuning a color. These take the genuine
 path -- netfilter-shaped syslog over UDP -> syslog_parse -> GeoIP -> fanout --
 so what you see is exactly what a real block draws, not a renderer-side mock.
 

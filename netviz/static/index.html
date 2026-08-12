@@ -34,7 +34,7 @@
       /* An arrow parked on a dark wall for a week is the most visible thing in
          the room. */
       canvas.cursor-hidden { cursor: none; }
-      /* Degraded: drain the colour out of the whole scene in one move --
+      /* Degraded: drain the color out of the whole scene in one move --
          arcs, city lights and bloom included -- so a dead feed cannot be
          mistaken for a quiet night. */
       body.degraded canvas { filter: grayscale(0.88) brightness(0.62); }
@@ -121,7 +121,7 @@
          1px after the viewBox is stretched to the column -- without it the
          non-uniform scale turns the line into a wedge. */
       /* Update watermark, lower left. Deliberately not the alarm amber: an
-         available update is not an alarm, and spending that colour on one
+         available update is not an alarm, and spending that color on one
          devalues it where it matters. Violet is the map's own hue, so this
          reads as part of the furniture rather than as an event.
 
@@ -211,7 +211,7 @@
       .menu-note { font-size: 11px; opacity: 0.7; max-width: 9em; text-align: right; }
 
       /* --------------------------------------------------------- rules panel --
-         Opened from the menu's "Colour rules…" item. Mounted on document.body,
+         Opened from the menu's "Color rules…" item. Mounted on document.body,
          never on #stage -- see js/rules_panel.js for why that is load-bearing
          (the same stacking-context trap the menu itself hit). */
       .rules-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
@@ -241,13 +241,13 @@
                     text-transform: uppercase; opacity: .5; }
       .rules-head .h-match { flex: 2 1 200px; min-width: 0; }
       .rules-head .h-end { flex: 0 0 88px; }
-      .rules-head .h-colour { flex: 0 0 44px; }
+      .rules-head .h-color { flex: 0 0 44px; }
       .rules-head .h-name { flex: 1 1 120px; min-width: 0; }
       .rules-head .h-flags { flex: 0 0 50px; }
       .rules-panel input, .rules-panel select, .rules-panel button {
         background: #0b0916; color: inherit; border: 1px solid #2a2540;
         border-radius: 3px; padding: 3px 6px; font: inherit; }
-      .rules-colour { width: 44px; padding: 1px; }
+      .rules-color { width: 44px; padding: 1px; }
       .rules-reason { flex: 1 0 100%; color: #e0a020; opacity: .9; padding-left: 2px; }
       .rules-add { margin-top: 8px; }
       .rules-foot { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }

@@ -20,10 +20,10 @@ const RADIAL = 5;
 // collector still stores and streams everything.
 const FLOWS_PER_SECOND = cfg('traffic.flowsPerSecond', 14);
 
-// Colour is derived, not stored: `color` (an explicit hex) wins over `colorAt`
+// Color is derived, not stored: `color` (an explicit hex) wins over `colorAt`
 // (a position on the plasma ramp) and `gain` multiplies the result down. Any of
 // the three changing means the derived value has to be recomputed.
-const COLOUR_KEYS = ['color', 'colorAt', 'gain'];
+const COLOR_KEYS = ['color', 'colorAt', 'gain'];
 
 function specColor(c) {
   const base = c.color ? new THREE.Color(c.color) : plasmaAt(c.colorAt);
@@ -40,12 +40,12 @@ function specColor(c) {
  *  field does and why the defaults are where they are. */
 function classSpec(name, fallback) {
   const c = { ...fallback, ...cfg(`arcs.${name}`, {}) };
-  // `hex` keeps the source of the colour around, because setSpec has to be able
+  // `hex` keeps the source of the color around, because setSpec has to be able
   // to recompute the derived THREE.Color when gain or colorAt moves later.
   return { ...c, hex: c.color, color: specColor(c) };
 }
 
-/** The geometry every colour rule shares, read fresh on each call so a
+/** The geometry every color rule shares, read fresh on each call so a
  *  settings change to `arcs.highlight` reaches the next rebuild. `gain` and
  *  `bloomScale` are the fallbacks a rule that omits them takes -- the shipped
  *  0.70 / 0.41 live in config.js, not here. */
@@ -57,12 +57,12 @@ function sharedShape() {
 /**
  * Build the class -> spec table.
  *
- * Called from createArcs() rather than evaluated at import, because the colour
+ * Called from createArcs() rather than evaluated at import, because the color
  * rules can arrive from the collector's /config.json and a table frozen at
  * module load would be built before that fetch resolves. See
  * loadServerConfig() in config.js.
  *
- * Every rule shares one shape (`arcs.highlight`) and differs only in colour,
+ * Every rule shares one shape (`arcs.highlight`) and differs only in color,
  * gain and bloomScale. A single rule's class can still be overridden on its
  * own with an `arcs.rule2` key.
  */
@@ -73,7 +73,7 @@ function buildClasses() {
     block: classSpec('block', { life: 18.0, tube: 0.0052, colorAt: 0.86, gain: 0.74,
                                 speed: 0.55, lift: 0.45, maxRise: 0.21, bloomScale: 0.5 }),
   };
-  // One class per rule, all sharing the `arcs.highlight` geometry. Colour,
+  // One class per rule, all sharing the `arcs.highlight` geometry. Color,
   // gain and bloomScale come from the rule; a rule that omits gain or
   // bloomScale gets the shape's own, which is where the shipped 0.70 / 0.41
   // live -- no default is invented here.
@@ -146,17 +146,17 @@ function arcCurve(a, b, radius, lift, maxRise) {
 }
 
 /** @param onLand called once per arc, when its travelling head reaches the
- *  destination: (lat, lon, className, country, colour, bloomScale). Used for
+ *  destination: (lat, lon, className, country, color, bloomScale). Used for
  *  the impact ripples and the block flash. Fired from update(), not spawn(),
  *  so the ring appears when the arc arrives rather than when the event did.
  *
- *  `colour` is the slot's LIVE shader uniform, not a copy -- the pool rewrites
+ *  `color` is the slot's LIVE shader uniform, not a copy -- the pool rewrites
  *  it when the slot is recycled, so a callback that keeps the reference will
- *  watch its ring change colour under it. Copy it. This is what lets a ripple
- *  be drawn in its own arc's colour, including the highlight classes, whose
- *  colours come from the collector and are not in any hardcoded table. */
+ *  watch its ring change color under it. Copy it. This is what lets a ripple
+ *  be drawn in its own arc's color, including the highlight classes, whose
+ *  colors come from the collector and are not in any hardcoded table. */
 export function createArcs(radius, capacity = 220, onLand = null) {
-  // Built here, not at import: the highlight colours come from the
+  // Built here, not at import: the highlight colors come from the
   // collector and main.js awaits that fetch before calling this.
   const CLASS = buildClasses();
   const group = new THREE.Group();
@@ -355,15 +355,15 @@ export function createArcs(radius, capacity = 220, onLand = null) {
    * density gain -- swapping in a fresh object would orphan every arc already
    * in the air and undercount them for the rest of their life.
    *
-   * `highlight` is the shape shared by every colour rule, so it writes through
-   * to each live ruleN class; a rule's own colour, gain and bloomScale come
+   * `highlight` is the shape shared by every color rule, so it writes through
+   * to each live ruleN class; a rule's own color, gain and bloomScale come
    * from the rule list and move through setRules, not through here.
    *
-   * Almost every field is COPIED OUT of the spec at spawn -- colour into the
+   * Almost every field is COPIED OUT of the spec at spawn -- color into the
    * slot's uniform, bloomScale into userData, life into slot.life -- so writing
    * the spec alone changes nothing a viewer can see until the next arc of that
    * class happens to spawn. Block arcs live 18s and arrive rarely, so a block
-   * recolour would read as a control that did nothing. The four that can be
+   * recolor would read as a control that did nothing. The four that can be
    * pushed into the arcs already in the air are pushed here; `speed` needs
    * nothing, since update() reads it from the spec every frame; and
    * lift/maxRise/tube are baked into the TubeGeometry and cannot be pushed at
@@ -377,14 +377,14 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       const spec = CLASS[name];
       if (!spec) continue;
       spec[key] = value;
-      if (COLOUR_KEYS.includes(key)) {
+      if (COLOR_KEYS.includes(key)) {
         spec.color = specColor({ ...spec, color: spec.hex });
       }
       for (const slot of pool) {
         // Identity, not name: a slot keeps the spec object it spawned with, and
         // setSpec mutates in place precisely so that comparison stays valid.
         if (!slot.active || slot.spec !== spec) continue;
-        if (COLOUR_KEYS.includes(key)) slot.mat.uniforms.color.value.copy(spec.color);
+        if (COLOR_KEYS.includes(key)) slot.mat.uniforms.color.value.copy(spec.color);
         else if (key === 'bloomScale') slot.mesh.userData.bloomScale = value;
         else if (key === 'life') slot.life = value;
       }
@@ -395,10 +395,10 @@ export function createArcs(radius, capacity = 220, onLand = null) {
    * Install a new rule list.
    *
    * Every rule shares the same geometry, so nothing here needs the pool
-   * cleared -- colour, gain and bloomScale are pushed into the arcs ALREADY IN
+   * cleared -- color, gain and bloomScale are pushed into the arcs ALREADY IN
    * THE AIR. That is the difference between a control that works and one that
    * appears to do nothing: a rule change that only affected arcs spawned later
-   * would read as dead, exactly as the block recolour did before setSpec
+   * would read as dead, exactly as the block recolor did before setSpec
    * learned to push (block arcs live 18s and arrive rarely).
    *
    * An arc whose rule was deleted falls back to the flow spec rather than
@@ -411,14 +411,14 @@ export function createArcs(radius, capacity = 220, onLand = null) {
    * plain re-lookup, deleting rule 1 left every `rule2` arc pointing at a
    * CLASS entry that no longer existed (falling back to flow, even though
    * rule 2 still claims it) while every `rule1` arc silently inherited
-   * whatever rule now occupies index 1 -- a colour it never matched. The same
+   * whatever rule now occupies index 1 -- a color it never matched. The same
    * shift happened on any edit that drops a row, since `readyRules` renumbers
    * everything after it. Re-matching against the event fixes all three: a
    * surviving rule keeps its arcs, a deleted rule's arcs fall back to flow,
    * and an arc that was flow because nothing matched yet is promoted the
    * moment a new rule claims it -- which is also what makes the "pushed into
    * the arcs already in the air" promise true for arcs that were not
-   * previously rule-coloured at all, not just recoloured.
+   * previously rule-colored at all, not just recolored.
    *
    * classify.classNameFor is NOT used here on purpose: it reads
    * CONFIG.arcs.rules, which is still the OLD list at the moment this handler
@@ -441,7 +441,7 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       });
     });
     for (const slot of pool) {
-      // Blocks are never rule-coloured, whatever they matched -- the wall
+      // Blocks are never rule-colored, whatever they matched -- the wall
       // exists to show them, full stop. A slot with no stored event (should
       // not happen post-spawn, but a wall must never throw) keeps its
       // current class rather than being guessed at.
@@ -468,14 +468,14 @@ export function createArcs(radius, capacity = 220, onLand = null) {
     }
   }
 
-  /** Diagnostics only -- tools/verify_walk.py names the expected ripple colour
+  /** Diagnostics only -- tools/verify_walk.py names the expected ripple color
    *  with this rather than re-deriving it. Nothing on the wall reads it. */
-  function classColour(name) {
+  function classColor(name) {
     return CLASS[name] && CLASS[name].color;
   }
 
   return {
     group, spawn, update, liveCount, origins, setUniform, setSpec, setRules, rebuild,
-    classColour,
+    classColor,
   };
 }

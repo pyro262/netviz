@@ -197,7 +197,7 @@ test('the rail lists a row per rule, busiest first', () => {
   const ruleB = { match: 'B', color: '#222222', name: 'b' };
   // Seeded under ruleKey(rule) -- the same stable identity main.js counts
   // under -- not a positional 'rule1'/'rule2' label, which would desync from
-  // the counter the moment a rule is reordered rather than recoloured.
+  // the counter the moment a rule is reordered rather than recolored.
   for (let i = 0; i < 5; i += 1) c.add(ruleKey(ruleB), 1000 + i * 1000);
   c.add(ruleKey(ruleA), 1000);
   const p = rulePanel([ruleA, ruleB], c, 6000, 5);

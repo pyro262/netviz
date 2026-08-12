@@ -10,7 +10,7 @@ Outputs into netviz/static/:
 The small sizes are deliberately a *different drawing*, not a downscale --
 the meridian grid and three arcs turn to grey mush below ~48px.
 
-Colours are the plasma ramp from netviz/static/js/palette.js. Keep them in
+Colors are the plasma ramp from netviz/static/js/palette.js. Keep them in
 sync by hand; there are only ten stops and they never change.
 
 Run:  python3 tools/make_icon.py
@@ -156,7 +156,7 @@ def _grid(size: int, r: float) -> Image.Image:
 
 
 def _stroke(img, pts, width, color_at, alpha):
-    """Polyline with a per-segment colour and round joints."""
+    """Polyline with a per-segment color and round joints."""
     d = ImageDraw.Draw(img)
     n = len(pts) - 1
     for i in range(n):

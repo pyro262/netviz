@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the walk's span and its ramp -- and the ripple's colour -- against a
+"""Prove the walk's span and its ramp -- and the ripple's color -- against a
 real page.
 
 The unit suite proves `walkRateAt` integrates to `spanDegrees` and that
@@ -118,7 +118,7 @@ def run(page) -> bool:
     # and the synthetic feed lands flows on home continuously, so a target
     # chosen after 150s of sampling might already be inside somebody's cell.
     # A deliberately remote destination keeps it out of the feed's way.
-    ok &= ripple_colour_case(page)
+    ok &= ripple_color_case(page)
 
     # ------------------------------------------------ cases 1, 2 and 3 --
     print(f"sampling camera state until a whole walk phase has run "
@@ -185,17 +185,17 @@ def run(page) -> bool:
     return ok
 
 
-def ripple_colour_case(page) -> bool:
-    """A ripple is drawn in its ARC's colour, not its class's own.
+def ripple_color_case(page) -> bool:
+    """A ripple is drawn in its ARC's color, not its class's own.
 
-    The discriminator has to be a class whose two colours differ, or the
+    The discriminator has to be a class whose two colors differ, or the
     case passes whatever the code does: the block ring and the block arc are
     both plasmaAt(0.86) * 0.74 and would agree either way. Flow does not --
     the arc is plasmaAt(0.30) and RIPPLE.flow was plasmaAt(0.34).
     """
     result = page.evaluate("""async () => {
       const {arcs, ripples} = window.__netviz;
-      const want = arcs.classColour('flow').getHex();
+      const want = arcs.classColor('flow').getHex();
       // Somewhere the synthetic feed does not land on, so the two-minute
       // per-cell cooldown cannot swallow the ring being measured.
       const ev = {k: 'flow', s: '203.0.113.9', d: '198.51.100.7',
@@ -206,7 +206,7 @@ def ripple_colour_case(page) -> bool:
       // to arrive rather than stepping it here. The live feed is landing its
       // own arcs throughout, so the ring is identified by WHERE it landed,
       // not by being the most recent one -- the first cut of this case read
-      // a highlight-class ring from the feed and reported its colour.
+      // a highlight-class ring from the feed and reported its color.
       while (performance.now() - t0 < 30000) {
         await new Promise((r) => setTimeout(r, 100));
         const r = ripples.lastRipple();
@@ -218,7 +218,7 @@ def ripple_colour_case(page) -> bool:
     }""")
     got, want = result["got"], result["want"]
     return report(
-        "4: a ripple takes its arc's colour",
+        "4: a ripple takes its arc's color",
         got is not None and got == want,
         f"ring #{got:06x} vs arc #{want:06x}" if got is not None
         else "no ripple was drawn within 20s")

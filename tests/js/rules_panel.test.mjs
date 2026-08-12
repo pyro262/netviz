@@ -57,7 +57,7 @@ test('readyRules drops the rows that do not parse and keeps the order', () => {
 
 test('a disabled row is ready and keeps its position', () => {
   // Position is precedence, so a disabled rule must still occupy its slot --
-  // turning one off may not renumber, and therefore recolour, the rest.
+  // turning one off may not renumber, and therefore recolor, the rest.
   const ready = readyRules(panelRows([
     { match: '10.0.0.0/8', color: '#111111', enabled: false },
     { match: 'DE', color: '#222222' },

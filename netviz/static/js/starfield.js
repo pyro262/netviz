@@ -1,5 +1,5 @@
 // Sky geometry: real equatorial coordinates, real sidereal rotation, real star
-// colours. Kept free of three.js so it runs under `node --test`; stars.js turns
+// colors. Kept free of three.js so it runs under `node --test`; stars.js turns
 // what is here into geometry.
 //
 // The stars used to be uniform random points. They are now the HYG catalogue to
@@ -41,14 +41,14 @@ export function starDirection(raDeg, decDeg, date) {
 export const GALACTIC_POLE = equatorialToVec(192.859508, 27.128336);
 
 /**
- * Approximate RGB for a B-V colour index. Piecewise fit to the usual
+ * Approximate RGB for a B-V color index. Piecewise fit to the usual
  * blackbody-to-sRGB tables: about right at O/B (blue-white) through M (orange-
  * red), which is all that survives being drawn as a 2-pixel point anyway.
  * Unknown indices arrive as 0, which lands sun-like, and that is the safe miss.
  */
 export function bvToRgb(bv) {
   const t = Math.max(-0.4, Math.min(2.0, bv));
-  // Rough colour temperature from B-V (Ballesteros' formula), then a simple
+  // Rough color temperature from B-V (Ballesteros' formula), then a simple
   // ramp. Clamped hard: the tails of any such fit go out of gamut.
   const k = 4600 * (1 / (0.92 * t + 1.7) + 1 / (0.92 * t + 0.62));
   const x = Math.max(1000, Math.min(40000, k)) / 100;
