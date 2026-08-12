@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { panelRows, readyRules, createRulesPanel } from '../../netviz/static/js/rules_panel.js';
+import { panelRows, readyRules, createRulesPanel, MATCH_FORMS } from '../../netviz/static/js/rules_panel.js';
+import { parseRule } from '../../netviz/static/js/rules.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
 
 test('one row per rule, in list order, with its own validity', () => {
@@ -314,5 +315,48 @@ test('the enabled toggle survives more than one click', () => {
     });
   } finally {
     CONFIG.arcs.rules = savedRules;
+  }
+});
+
+test('every example in the MATCH legend actually parses', () => {
+  // The legend is the panel's answer to "what can I type here", so an example
+  // that does not parse is worse than no legend at all -- it teaches a form
+  // the engine rejects. This pins the two together: add a form to rules.js and
+  // the legend can follow it, but the legend can never drift ahead of it.
+  for (const [form, example] of MATCH_FORMS) {
+    const { rule, reason } = parseRule({ match: example, color: '#ff8800' });
+    assert.ok(rule, `legend example for ${form} does not parse: ${example} -- ${reason}`);
+  }
+});
+
+test('the legend covers every matcher kind the parser has', () => {
+  // Not just "each example parses" -- that passes with three of the four forms
+  // deleted. The set of KINDS the legend produces has to be the full set the
+  // parser can return, so dropping a form from the legend fails here.
+  const kinds = new Set(MATCH_FORMS.map(
+    ([, example]) => parseRule({ match: example, color: '#ff8800' }).rule.match.kind));
+  assert.deepEqual([...kinds].sort(), ['cidr', 'country', 'port', 'range']);
+});
+
+test('every legend example is documentation space, not somebody\'s network', () => {
+  // An example lifted from the network a build happens to run on is how a site
+  // fact reaches a public repo, and this project has already had to rewrite
+  // history over exactly that. Written as an ALLOWLIST of ranges reserved for
+  // documentation (RFC 5737, RFC 3849) plus RFC 1918 private space -- a
+  // denylist would have to name the real network to forbid it, which puts the
+  // fact in the tree that the rule exists to keep out. The first cut did
+  // exactly that and was refused by the pre-push guard, which is the guard
+  // working.
+  const ALLOWED = [
+    /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./,       // RFC 1918
+    /^192\.0\.2\./, /^198\.51\.100\./, /^203\.0\.113\./,       // RFC 5737
+    /^2001:db8/i,                                                  // RFC 3849
+  ];
+  const addresses = MATCH_FORMS.flatMap(([, example, note]) =>
+    `${example} ${note}`.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b|\b[0-9a-f]{1,4}:[0-9a-f:]+/gi) || []);
+  assert.ok(addresses.length >= 4, 'no addresses found to check -- the regex missed');
+  for (const addr of addresses) {
+    assert.ok(ALLOWED.some((re) => re.test(addr)),
+              `legend example ${addr} is not in documentation or private space`);
   }
 });

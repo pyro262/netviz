@@ -94,6 +94,21 @@ function el(tag, cls, text) {
 const ENDS = ['either', 'src', 'dst'];
 const END_LABEL = { either: 'either', src: 'source', dst: 'dest' };
 
+// Every form the matcher accepts, in the order rules.js's parser tries to make
+// sense of one, each with an example that really parses. Kept beside MATCH_HELP
+// so the legend on the panel, the tooltip and the parser cannot drift: if a
+// fifth form is ever added to rules.js, this list is the visible half of it.
+//
+// The examples are documentation ranges (RFC 5737 203.0.113.0/24, RFC 3849
+// 2001:db8::/32) and an RFC 1918 block, never anything from the network this
+// happens to be deployed on.
+export const MATCH_FORMS = [
+  ['subnet', '10.20.50.0/24', 'a whole network, v4 or v6 (2001:db8::/32)'],
+  ['range', '203.0.113.10-203.0.113.40', 'first to last address, inclusive'],
+  ['country', 'DE', 'two-letter code, matched against the arc\'s end'],
+  ['port', 'tcp/443', 'or udp/51820, or just 443 for either protocol'],
+];
+
 // The help each control carries, as a `title` and in the header above it. Kept
 // here rather than inline so the header and the field cannot drift apart, and
 // so the wording is one edit rather than five.
@@ -316,6 +331,22 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     node.append(el('div', 'rules-hint',
                    'Checked top to bottom -- the first enabled rule that '
                    + 'matches an arc colors it. Blocks are never recolored.'));
+
+    // Every form MATCH accepts, with a working example of each, on the panel
+    // rather than in a tooltip. A matcher is the one field with no affordance
+    // of its own -- the others are a dropdown, a swatch and free text -- so
+    // "what can I even type here" is the question the panel has to answer
+    // without being asked. A placeholder cannot: it shows one form out of
+    // four and disappears on the first keystroke.
+    const legend = el('div', 'rules-legend');
+    for (const [form, example, note] of MATCH_FORMS) {
+      const rowEl = el('div', 'rules-legend-row');
+      rowEl.append(el('span', 'rules-legend-form', form));
+      rowEl.append(el('code', 'rules-legend-eg', example));
+      rowEl.append(el('span', 'rules-legend-note', note));
+      legend.append(rowEl);
+    }
+    node.append(legend);
 
     // A header row, not placeholder text alone: a placeholder vanishes the
     // moment somebody types, which is exactly when they are least sure which

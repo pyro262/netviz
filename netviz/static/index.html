@@ -236,6 +236,18 @@
       /* The header carries the same flex bases as the row below it, so the
          labels sit over the fields they name. Any change to one is a change to
          both. */
+      /* What MATCH accepts, spelled out. Dim and small: it is reference
+         material somebody reads once, and it must not compete with the rows
+         they came to edit. The example column is fixed-width so the four
+         forms line up as a table without being one. */
+      .rules-legend { margin: 0 0 10px; font-size: 12px; opacity: .62; }
+      .rules-legend-row { display: flex; gap: 8px; align-items: baseline;
+                          padding: 1px 0; }
+      .rules-legend-form { flex: 0 0 64px; text-transform: uppercase;
+                           font-size: 10px; letter-spacing: .08em; opacity: .8; }
+      .rules-legend-eg { flex: 0 0 210px; color: #a855f7; font: inherit;
+                         white-space: nowrap; }
+      .rules-legend-note { flex: 1 1 auto; min-width: 0; }
       .rules-head { display: flex; gap: 6px; align-items: center;
                     margin-bottom: 4px; font-size: 11px; letter-spacing: .08em;
                     text-transform: uppercase; opacity: .5; }
