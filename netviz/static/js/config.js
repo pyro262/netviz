@@ -75,39 +75,6 @@ export const CONFIG = {
     extraResolvers: [],
   },
 
-  // ------------------------------------------------------------- highlight --
-  //
-  // Up to three networks drawn in their own colour -- a server VLAN, an IoT
-  // segment, a guest network, whatever is worth telling apart at a glance.
-  // Each is matched as a string prefix against either end of a flow.
-  //
-  // **Set the prefixes in .env, not here.** An address prefix describes how
-  // your LAN is laid out, and this file is tracked by git. The collector reads
-  // NETVIZ_HIGHLIGHT{1,2,3}_{PREFIX,LABEL,COLOR,GAIN} and serves them to the
-  // page at /config.json, which overrides whatever is below. What is here is
-  // the fallback for a collector too old to serve it, and the place to change
-  // the default colours.
-  //
-  // Keep the trailing dot on a prefix: '10.0.5.' will not match 10.0.50.x, and
-  // the match is anchored at the start so it will not match 110.0.5.x either.
-  //
-  // A slot with an empty prefix is simply off. All three empty -- the default
-  // -- means every flow draws in the ordinary flow colour.
-  //
-  // colour  an explicit hex, deliberately off the plasma ramp so a highlighted
-  //         network reads as a separate system rather than as busier traffic
-  // gain    multiplies the colour down. Cyan and green are the highest-
-  //         luminance hues on a display and clear the bloom threshold sooner
-  //         than a violet of the same nominal value, hence the lower numbers.
-
-  highlight: {
-    networks: [
-      { prefix: '', label: 'network 1', color: '#a855f7', gain: 0.70 },
-      { prefix: '', label: 'network 2', color: '#22d3ee', gain: 0.51 },
-      { prefix: '', label: 'network 3', color: '#4ade80', gain: 0.55 },
-    ],
-  },
-
   // ----------------------------------------------------------------- arcs --
   //
   // life      seconds on screen

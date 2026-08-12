@@ -15,15 +15,22 @@
 // clamp has to apply to the UI, the API and the file.
 import { cfg } from './config.js';
 
-// DELIBERATELY NOT DECLARED: `home` and `highlight.networks.*`.
+// DELIBERATELY NOT DECLARED: `home` and `arcs.rules`.
 //
-// The collector owns both. It reads NETVIZ_HOME_LAT/LON and
-// NETVIZ_HIGHLIGHT{1,2,3}_* out of .env and serves them to the page through
-// /config.json, which mergeServerConfig() applies over whatever config.js says.
-// A display that overrode either would fight that merge on the next reload --
-// the setting would appear to stick and then silently revert. They are also not
-// preferences: a home position and a set of LAN address prefixes are site data,
-// which is exactly why they live in .env and not in this tracked tree.
+// The collector owns `home`: it reads NETVIZ_HOME_LAT/LON out of .env and
+// serves it through /config.json, which mergeServerConfig() applies over
+// whatever config.js says. A display that overrode it would fight that merge on
+// the next reload -- the setting would appear to stick and then silently
+// revert. It is also not a preference: a home position is site data, which is
+// exactly why it lives in .env and not in this tracked tree.
+//
+// `arcs.rules` is a list of OBJECTS, which no type here describes: `list`
+// carries an element type and nothing else, so it could validate neither a
+// matcher nor a per-rule colour, and a control that accepts a malformed rule
+// silently is worse than no control. rules.js owns that validation and
+// arcs.setRules() is the way in -- it recompiles, reports every refusal by its
+// index, and pushes colour, gain and bloomScale into the arcs already in the
+// air. What IS declared is `arcs.highlight.*`, the shape every rule shares.
 
 /**
  * type      bool | int | number | enum | color | list
