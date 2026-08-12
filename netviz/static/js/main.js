@@ -132,6 +132,20 @@ async function boot() {
   // and createArcs() freezes the class table when it is called.
   await loadServerConfig();
 
+  // The PROPERTY access itself can throw, not just the methods: a managed
+  // kiosk policy that disables DOM storage makes `window.localStorage` a
+  // getter that raises SecurityError. rulestore's own calls are all guarded,
+  // so a null here degrades to "this display remembers nothing" -- which is a
+  // working display, and blanking the wall over a settings nicety is not.
+  // Resolved once and reused at both call sites below, rather than reading
+  // the property again at the second one.
+  let storage = null;
+  try {
+    storage = window.localStorage;
+  } catch (e) {
+    console.warn(`netviz: settings storage unavailable -- ${e.message}`);
+  }
+
   // What this display was told to remember, applied over config.js and over
   // whatever the collector just served. A stored EMPTY rule list wins too: it
   // means "this display has no rules", not "fall back to the environment".
@@ -145,7 +159,7 @@ async function boot() {
   // directly here, validated through the same coerce() the executor would use.
   // Everything else in the stored patch (rail.enabled, layers.*, ...) is
   // applied through the executor once it exists, further down.
-  const stored = loadPatch(window.localStorage);
+  const stored = loadPatch(storage);
   if (stored.error) console.warn(`netviz: ${stored.error}`);
   if (Object.prototype.hasOwnProperty.call(stored.patch, 'arcs.rules')) {
     const c = coerce('arcs.rules', stored.patch['arcs.rules']);
@@ -412,7 +426,7 @@ async function boot() {
     scene, input: null, polling, resize, rail,
   };
   let settings = createApplier(ctx);
-  settings = withPersistence(settings, window.localStorage);
+  settings = withPersistence(settings, storage);
   // The rest of the stored patch (arcs.rules was already applied directly to
   // CONFIG above, before createArcs() -- see the comment there). Re-running it
   // through the executor here is harmless (setRules is idempotent) and is what

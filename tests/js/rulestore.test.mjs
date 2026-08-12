@@ -92,3 +92,32 @@ test('the wrapper passes through every other method of the settings object', () 
   const base = { apply: () => ({ applied: [], rejected: [] }), describe: () => 'x' };
   assert.equal(withPersistence(base, fakeStorage()).describe(), 'x');
 });
+
+// A managed kiosk policy can make `window.localStorage` a getter that throws
+// SecurityError -- main.js guards that PROPERTY access and passes null down
+// here rather than ever calling a method on the throwing getter. Everything
+// below this line is a regression guard for that null, not for the property
+// access itself (which lives in main.js and cannot be unit-tested here).
+test('loadPatch tolerates null storage', () => {
+  const out = loadPatch(null);
+  assert.deepEqual(out.patch, {});
+  assert.equal(out.error, null);
+});
+
+test('savePatch tolerates null storage and reports it, never throws', () => {
+  const out = savePatch(null, { 'rail.enabled': true });
+  assert.equal(out.ok, false);
+  assert.ok(out.error);
+});
+
+test('clearPatch tolerates null storage and reports it, never throws', () => {
+  const out = clearPatch(null);
+  assert.equal(out.ok, false);
+  assert.ok(out.error);
+});
+
+test('withPersistence tolerates null storage: the executor still runs and returns its result', () => {
+  const base = { apply: (p) => ({ applied: Object.keys(p), rejected: [] }) };
+  const out = withPersistence(base, null).apply({ 'rail.enabled': true });
+  assert.deepEqual(out, { applied: ['rail.enabled'], rejected: [] });
+});
