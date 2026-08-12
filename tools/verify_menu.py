@@ -650,6 +650,45 @@ def run(page, canvas_center, ctx, url) -> bool:
         f"before={before_view} burst_target={burst_target} mid_drag={mid_drag} "
         f"visit_result={visit_result} after={after_view} after_state={after_state}")
 
+    # --------------------------------------------------------- case 16 --
+    # Closing the menu hands the camera back on the MENU's countdown
+    # (input.menuResumeSeconds, 2s), not the drag's (input.resumeSeconds, 15s).
+    # Case 9 proves the camera stays put while the menu is open; this proves it
+    # does not stay put afterwards, which is the half a user actually notices --
+    # before this, opening the menu froze the wall for the full drag delay.
+    #
+    # Timed against the RIG's own manual flag rather than a wall clock, and
+    # given a generous cap: the countdown is summed from the render loop's dt,
+    # which under headless swiftshader with the synthetic feed runs ~3x behind
+    # real time (see case 10's note), so 2s of rendered time can be ~6s here.
+    # A wall-clock assertion sized off the nominal 2s would fail against
+    # working code.
+    close_menu()
+    time.sleep(3.0)                       # let any earlier claim expire
+    prevented = dispatch_contextmenu(page, cx, cy)
+    time.sleep(0.2)
+    opened = prevented and menu_state(page)["present"]
+    close_menu()
+    t0 = time.time()
+    still_manual_at = None
+    freed_at = None
+    while time.time() - t0 < 30.0:
+        snap = page.evaluate("() => ({manual: window.__netviz.rig.manual(), "
+                             "menuOpen: window.__netviz.menu.isOpen()})")
+        dt = time.time() - t0
+        if dt < 0.6 and snap["manual"]:
+            still_manual_at = dt      # not handed back instantly on close
+        if not snap["manual"]:
+            freed_at = dt
+            break
+        time.sleep(0.25)
+    ok &= report(
+        "16: the walk resumes shortly after the menu closes",
+        opened and freed_at is not None and still_manual_at is not None,
+        f"opened={opened} still manual at {still_manual_at}s after close, "
+        f"handed back after {freed_at}s "
+        f"(menuResumeSeconds=2 in rendered time; 30s wall cap)")
+
     # --------------------------------------------------------- case 15 --
     # Own page again, because it needs the rail actually mounted.
     ok &= run_menu_over_rail_case(ctx, url)

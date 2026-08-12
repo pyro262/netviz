@@ -53,14 +53,27 @@ test('the walk starts slow and finishes fast', () => {
   const firstHalf = partial(0, 10000);
   const secondHalf = partial(10000, 20000);
   const whole = firstHalf + secondHalf;
-  // At rampFloor 0.15 the split is about 31.5/68.5 (linear ramp from floor to
-  // peak: integral = T*(a+b)/2 where a=floor*peak and b=peak, so first half
-  // integrates to T/8*(3*floor + 1)*peak).
-  assert.ok(firstHalf / whole > 0.30 && firstHalf / whole < 0.33,
-            `first half covered ${(100 * firstHalf / whole).toFixed(1)}%, want ~31.5%`);
-  assert.ok(secondHalf > 2 * firstHalf, 'the second half must cover much more ground');
-  assert.ok(walkRateAt(74, 75, p) > 4 * walkRateAt(1, 75, p),
-            'the end of the walk must be several times faster than the start');
+  // The split is DERIVED from rampFloor, not written down for one tuning: a
+  // linear ramp from floor*peak to peak integrates to T*(a+b)/2, so the first
+  // half is T/8*(3*floor + 1)*peak and its share of the whole is
+  // (3*floor + 1) / (4*(1 + floor)). 0.15 gives 31.5%, 0.35 gives 38.0%.
+  // Hard-coding the number made this test fail on a tuning change that the
+  // property it exists to protect -- slow start, fast finish -- survives
+  // intact.
+  const share = (3 * p.rampFloor + 1) / (4 * (1 + p.rampFloor));
+  assert.ok(Math.abs(firstHalf / whole - share) < 0.01,
+            `first half covered ${(100 * firstHalf / whole).toFixed(1)}%, `
+            + `want ~${(100 * share).toFixed(1)}% at rampFloor ${p.rampFloor}`);
+  assert.ok(firstHalf / whole < 0.5, 'the first half must cover less than half');
+  assert.ok(secondHalf > firstHalf, 'the second half must cover more ground');
+  // Same shape: the rate ratio end-to-start is fixed by the floor alone.
+  const ratio = (p.rampFloor + (1 - p.rampFloor) * (74 / 75))
+              / (p.rampFloor + (1 - p.rampFloor) * (1 / 75));
+  assert.ok(walkRateAt(74, 75, p) > 2 * walkRateAt(1, 75, p),
+            'the end of the walk must be markedly faster than the start');
+  assert.ok(Math.abs(walkRateAt(74, 75, p) / walkRateAt(1, 75, p) - ratio) < 0.01,
+            `rate ratio ${(walkRateAt(74, 75, p) / walkRateAt(1, 75, p)).toFixed(2)} `
+            + `does not match the ramp's own ${ratio.toFixed(2)}`);
 });
 
 test('rampFloor 1 is a flat rate -- the way back to the old behaviour', () => {
@@ -609,6 +622,58 @@ test('resuming does not jump: the target starts at the held view', () => {
   // One eased frame from (10,10) toward the traffic must be a small move.
   assert.ok(Math.abs(s.curLat - 10) < 2, `curLat jumped to ${s.curLat}`);
   assert.ok(Math.abs(deltaLon(10, s.curLon)) < 2, `curLon jumped to ${s.curLon}`);
+});
+
+test('a menu poke resumes on ITS OWN, shorter countdown', () => {
+  // A drag is a deliberate look at somewhere; a menu is a moment's business
+  // with the display, so it hands back sooner. The delay rides the state,
+  // set by whoever claimed the camera, rather than being one number for
+  // every kind of input.
+  const s = initialState();
+  const p = { ...P2, resumeSeconds: 15, menuResumeSeconds: 2 };
+  markInput(s, p.menuResumeSeconds);
+  setManualView(s, 10, 10);
+  for (let i = 0; i < 19; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);       // 1.9s
+  assert.equal(isManual(s), true);
+  step(s, 0.2, { lat: 0, lon: 0 }, p);                                    // past 2s
+  assert.equal(isManual(s), false);
+  assert.equal(s.phase, 'return');
+});
+
+test('a drag keeps the long countdown, even after a menu poke', () => {
+  // The menu's short delay must not leak into the next drag: pointer-down is
+  // a fresh claim on the camera and carries the drag's own delay.
+  const s = initialState();
+  const p = { ...P2, resumeSeconds: 15, menuResumeSeconds: 2 };
+  markInput(s, p.menuResumeSeconds);
+  beginManual(s);
+  setManualView(s, 10, 10);
+  endManual(s);
+  for (let i = 0; i < 149; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);      // 14.9s
+  assert.equal(isManual(s), true);
+  step(s, 0.2, { lat: 0, lon: 0 }, p);                                    // past 15s
+  assert.equal(isManual(s), false);
+});
+
+test('a plain poke -- wheel, arrows -- is a drag, not a menu', () => {
+  const s = initialState();
+  const p = { ...P2, resumeSeconds: 15, menuResumeSeconds: 2 };
+  markInput(s);
+  setManualView(s, 10, 10);
+  for (let i = 0; i < 100; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);      // 10s
+  assert.equal(isManual(s), true);
+});
+
+test('resumeSeconds 0 keeps a panned view forever, menu poke included', () => {
+  // 0 is documented as "a panned view stays put forever", which is a
+  // statement about the display, not about one kind of input -- a shorter
+  // menu delay must not be a way round it.
+  const s = initialState();
+  const p = { ...P2, resumeSeconds: 0, menuResumeSeconds: 2 };
+  markInput(s, p.menuResumeSeconds);
+  setManualView(s, 10, 10);
+  for (let i = 0; i < 600; i++) step(s, 0.1, { lat: 0, lon: 0 }, p);      // 60s
+  assert.equal(isManual(s), true);
 });
 
 test('resumeSeconds 0 keeps a panned view forever', () => {

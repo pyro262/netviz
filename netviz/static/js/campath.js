@@ -84,7 +84,19 @@ export const DEFAULTS = {
   // borrows it: after this many idle seconds the camera eases home and resumes
   // its cycle. 0 means never, which makes a panned view permanent -- the right
   // choice for a desk, and the wrong one for a wall nobody is standing at.
-  resumeSeconds: 30,
+  resumeSeconds: 15,
+  // Opening the menu claims the camera the same way a drag does, but it is not
+  // the same act: a drag is somebody looking at a place, a menu is a moment's
+  // business with the display. So the menu carries its own, much shorter
+  // countdown, started when it closes -- the camera is still frozen for the
+  // whole time it is open (input.tick re-pokes every frame), which is what
+  // stops the view flying out from under a menu being read.
+  //
+  // The delay rides the STATE, set by whoever claimed the camera, rather than
+  // step() trying to infer the cause from `held`: a wheel notch and an arrow
+  // key claim it with no pointer down at all and are still deliberate looking,
+  // so guessing from the flags would file them with the menu.
+  menuResumeSeconds: 2,
   // Safety net, not a feature. `held` is normally cleared by pointerup or
   // pointercancel, and input.js also releases on window blur and on a lost
   // pointer capture -- but every one of those is a DOM event that something
@@ -118,6 +130,7 @@ Object.assign(DEFAULTS, {
   walkEnabled: cfg('camera.walk.enabled', DEFAULTS.walkEnabled),
   detourEnabled: cfg('camera.detour.enabled', DEFAULTS.detourEnabled),
   resumeSeconds: cfg('input.resumeSeconds', DEFAULTS.resumeSeconds),
+  menuResumeSeconds: cfg('input.menuResumeSeconds', DEFAULTS.menuResumeSeconds),
   detourInterruptManual: cfg('camera.detour.interruptManual',
                              DEFAULTS.detourInterruptManual),
 });
@@ -184,6 +197,10 @@ export function initialState() {
     manual: false,
     held: false,           // pointer currently down
     idleT: 0,              // seconds since the last input, while manual
+    // How long this claim's idle countdown runs. null means the ordinary
+    // resumeSeconds; the menu sets its own, shorter one. Cleared by every
+    // fresh claim, so a menu's delay cannot leak into the next drag.
+    resumeAfter: null,
     heldT: 0,              // seconds the pointer has been down, for maxHeldSeconds
     cycles: 0,
   };
@@ -247,6 +264,7 @@ export function beginManual(s) {
   s.manual = true;
   s.held = true;
   s.idleT = 0;
+  s.resumeAfter = null;    // a drag is its own claim, at the ordinary delay
   s.heldT = 0;
   if (isVisiting(s)) {
     s.phase = 'return';
@@ -285,6 +303,7 @@ export function forceHandBack(s) {
   s.held = false;
   s.heldT = 0;
   s.idleT = 0;
+  s.resumeAfter = null;
 }
 
 /** Somebody is still here, without claiming a pointer is down.
@@ -293,10 +312,17 @@ export function forceHandBack(s) {
  *  beginManual/endManual. Faking a grab for them would work by accident and
  *  break on the overlap: a wheel notch during a drag would clear `held` on the
  *  way out and hand the globe back mid-gesture. This only says "the idle
- *  countdown restarts", which is the whole of what those inputs mean. */
-export function markInput(s) {
+ *  countdown restarts", which is the whole of what those inputs mean.
+ *
+ *  `resumeAfter` is the delay this claim wants, in seconds. Omitted -- wheel,
+ *  pinch, arrow keys -- means the ordinary `resumeSeconds`, because those are
+ *  somebody deliberately looking somewhere, same as a drag. The menu passes
+ *  its own shorter value; see `menuResumeSeconds`. */
+export function markInput(s, resumeAfter) {
   s.manual = true;
   s.idleT = 0;
+  s.resumeAfter = typeof resumeAfter === 'number' && resumeAfter >= 0
+    ? resumeAfter : null;
 }
 
 /** The view the user is holding. Wrapped like the autonomous path, but held
@@ -390,8 +416,14 @@ export function step(s, dt, traffic, p = DEFAULTS) {
     }
     s.heldT = 0;
     s.idleT += dt;
-    if (p.resumeSeconds > 0 && s.idleT >= p.resumeSeconds) {
+    // `resumeSeconds: 0` means "a panned view stays put forever", and that is a
+    // statement about the display rather than about one kind of input -- so it
+    // gates every claim, and the menu's shorter delay is not a way round it.
+    const resumeAfter = typeof s.resumeAfter === 'number'
+      ? s.resumeAfter : p.resumeSeconds;
+    if (p.resumeSeconds > 0 && resumeAfter > 0 && s.idleT >= resumeAfter) {
       s.manual = false;
+      s.resumeAfter = null;
       // Start the return from where the user left it, or the first eased frame
       // jumps toward whatever the target was before the drag.
       s.targetLat = s.curLat;

@@ -171,6 +171,13 @@ export const HANDLERS = {
   'input.zoomReturnEase': (v, ctx) => ctx.rig.setParam('input.zoomReturnEase', v),
   'input.rollReturnEase': (v, ctx) => ctx.rig.setParam('input.rollReturnEase', v),
   'input.resumeSeconds': (v, ctx) => ctx.rig.setParam('input.resumeSeconds', v),
+  // Both halves: campath owns the countdown, input.js owns knowing which kind
+  // of claim it is, so the value has to reach both or the menu keeps poking
+  // with a stale delay.
+  'input.menuResumeSeconds': (v, ctx) => {
+    ctx.rig.setParam('input.menuResumeSeconds', v);
+    ctx.input.setParam('input.menuResumeSeconds', v);
+  },
 
   ...layerHandlers(['cityLights', 'coastline', 'bordersWatched', 'bordersWorld',
                     'admin1', 'stars', 'aurora', 'atmosphere', 'ripples',

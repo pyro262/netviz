@@ -142,9 +142,15 @@ export const CONFIG = {
       holdSeconds: 25,      // stillness over the traffic before setting off
       returnMaxSeconds: 45, // cap, so drifting traffic cannot eat a whole cycle
       arriveDegrees: 3,     // close enough to call it home
-      degreesPerSecond: 1.6,
-      spanDegrees: 60,      // how far from the traffic a walk may get
-      rampFloor: 0.15,      // the walk sets off at this fraction of its peak rate
+      // 1.6 / 60 / 0.15 until 0.4.1, when the walk was judged too slow to set
+      // off and too tight a sweep on the wall. The three move together: the
+      // peak rate is DERIVED from spanDegrees and the phase length, so raising
+      // the span alone buys distance at the same pace, and raising the floor
+      // alone starts quicker but flattens the ramp. The cap has to clear the
+      // derived peak or it silently becomes the rate.
+      degreesPerSecond: 2.2,
+      spanDegrees: 75,      // how far from the traffic a walk may get
+      rampFloor: 0.35,      // the walk sets off at this fraction of its peak rate
       latitudeClamp: 62,    // the walk bounces off this rather than stalling
     },
     // A burst of blocks from one country is the most interesting thing the
@@ -203,7 +209,19 @@ export const CONFIG = {
     // throttles requestAnimationFrame to nothing -- stops it entirely, and a
     // display running below real time counts slow. Accepted: a wall kiosk is
     // never a hidden tab, and the alternative costs campath.js its purity.
-    resumeSeconds: 30,
+    // 30 until 0.4.1. A drag is somebody deliberately looking at a place, so
+    // the display waits before taking it back -- but half a minute of a still
+    // globe reads as a frozen wall to anyone who did not do the dragging.
+    resumeSeconds: 15,
+    // The same countdown for a claim made by opening the menu (or the colour
+    // rules panel), which is not somebody looking at a place -- it is a
+    // moment's business with the display, so the walk starts again shortly
+    // after the menu closes. The camera is still frozen for the whole time it
+    // is open; this is only the delay that begins when it goes away.
+    //
+    // Gated by resumeSeconds: at 0 the display never takes itself back at all,
+    // whatever this says.
+    menuResumeSeconds: 2,
     // How fast the distance eases back to camera.distance once the display has
     // taken itself back, as a fraction of the remaining gap per second -- the
     // same easing the camera walk uses, so it reads as the same motion.

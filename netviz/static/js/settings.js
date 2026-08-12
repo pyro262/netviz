@@ -28,10 +28,10 @@ import { compileRules } from './rules.js';
 // `arcs.rules` IS declared, as its own `rules` type, below. It is a list of
 // OBJECTS, which the generic `list` type cannot describe -- `list` carries an
 // element type and nothing else, so it could validate neither a matcher nor a
-// per-rule colour. The `rules` case in `coerce` delegates to rules.js's own
+// per-rule color. The `rules` case in `coerce` delegates to rules.js's own
 // compileRules() rather than re-deriving any of that validation, and
 // arcs.setRules() is the way a compiled list reaches the display -- it
-// recompiles, reports every refusal by its index, and pushes colour, gain and
+// recompiles, reports every refusal by its index, and pushes color, gain and
 // bloomScale into the arcs already in the air. `arcs.highlight.*` is the
 // shape every rule shares.
 
@@ -60,11 +60,11 @@ import { compileRules } from './rules.js';
  *
  * THE STRATEGY HERE DESCRIBES WHAT A VIEWER WILL SEE, not how the value is
  * stored. Almost everything about an arc is copied out of the spec at spawn:
- * colour into the slot's uniform, lift/maxRise into its TubeGeometry,
+ * color into the slot's uniform, lift/maxRise into its TubeGeometry,
  * bloomScale into userData, life into slot.life. Only `speed` is re-read from
  * the live spec every frame. So a naive "it is only a field, call it uniform"
  * gives six controls that do nothing until the next arc happens to spawn --
- * and block arcs live 18s and arrive rarely, so changing block colour would
+ * and block arcs live 18s and arrive rarely, so changing block color would
  * read as a dead control. arcs.setSpec pushes the four that can be pushed into
  * the slots already in the air; the three that are baked into geometry cannot
  * be, so they are `rebuild` and clear the pool instead.
@@ -83,12 +83,12 @@ function arcClass(cls, keys) {
     colorAt: { type: 'number', min: 0, max: 1, strategy: 'uniform',
                help: 'Position on the plasma ramp, 0 (indigo) to 1 (pale '
                    + 'yellow). Ignored when the class carries an explicit hex. '
-                   + 'Recoloured into the arcs already on screen, or a block '
-                   + 'recolour would wait up to 18s to show.' },
+                   + 'Recolored into the arcs already on screen, or a block '
+                   + 'recolor would wait up to 18s to show.' },
     gain: { type: 'number', min: 0, max: 3, strategy: 'uniform',
-            help: 'Multiplies the colour down; the wall usually wants less '
+            help: 'Multiplies the color down; the wall usually wants less '
                 + 'than 1. Use this when the line itself is too bright. Same '
-                + 'live recolour as colorAt.' },
+                + 'live recolor as colorAt.' },
     speed: { type: 'number', min: 0.05, max: 5, strategy: 'uniform',
              help: 'How fast the travelling head runs along the arc. The head '
                  + 'reaching 1 is what fires the impact ripple. The one field '
@@ -118,10 +118,10 @@ function arcClass(cls, keys) {
 
 const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
                   'maxRise', 'bloomScale'];
-// `arcs.highlight` is the shape EVERY colour rule shares. A rule carries its
-// own colour, and may carry its own gain and bloomScale; what is here is the
+// `arcs.highlight` is the shape EVERY color rule shares. A rule carries its
+// own color, and may carry its own gain and bloomScale; what is here is the
 // geometry they all share, plus the gain and bloomScale a rule that omits them
-// falls back to. `colorAt` is absent because a rule's colour is an explicit hex
+// falls back to. `colorAt` is absent because a rule's color is an explicit hex
 // and a ramp position would never be read.
 const HIGHLIGHT_KEYS = ['life', 'tube', 'gain', 'speed', 'lift', 'maxRise', 'bloomScale'];
 
@@ -194,12 +194,12 @@ export const SCHEMA = {
   ...arcClass('highlight', HIGHLIGHT_KEYS),
   'arcs.rules': {
     type: 'rules', strategy: 'uniform',
-    help: 'Colour rules, in precedence order: the first ENABLED rule that '
-        + 'claims an arc colours it. A rule matches a subnet (10.20.50.0/24), '
+    help: 'Color rules, in precedence order: the first ENABLED rule that '
+        + 'claims an arc colors it. A rule matches a subnet (10.20.50.0/24), '
         + 'an inclusive address range, a country code, or a port (tcp/443), '
         + 'against the source, the destination or either end. Blocks are never '
-        + 'coloured by a rule. Pushed into the arcs already in the air, so a '
-        + 'recolour shows within a frame rather than on the next spawn.',
+        + 'colored by a rule. Pushed into the arcs already in the air, so a '
+        + 'recolor shows within a frame rather than on the next spawn.',
   },
 
   // -------------------------------------------------------------- camera --
@@ -370,6 +370,14 @@ export const SCHEMA = {
         + 'for a wall nobody is standing at. Measured in RENDERED time, so a '
         + 'hidden tab stops the countdown entirely.',
   },
+  'input.menuResumeSeconds': {
+    type: 'number', min: 0, max: 3600, strategy: 'uniform',
+    help: 'The same countdown, for a camera claimed by opening the menu or the '
+        + 'color rules panel rather than by a drag -- a moment\'s business '
+        + 'with the display, so the walk resumes shortly after it closes. The '
+        + 'camera is still frozen for as long as the menu is open. Gated by '
+        + 'resumeSeconds: at 0 nothing resumes at all.',
+  },
   'input.zoomReturnEase': {
     type: 'number', min: 0, max: 10, strategy: 'uniform',
     help: 'How fast the distance eases back to camera.distance once the '
@@ -458,7 +466,7 @@ export const SCHEMA = {
   },
   'appearance.starBrightness': {
     type: 'number', min: 0, max: 4.0, strategy: 'uniform',
-    help: "Multiplies every star's colour. Stars blend additively, so this is "
+    help: "Multiplies every star's color. Stars blend additively, so this is "
         + 'a straight scale on the light each one contributes. Deliberately '
         + 'NOT applied to the per-magnitude alpha: that curve saturates at 1, '
         + 'so scaling it there would flatten every star brighter than mag 3 to '
@@ -486,7 +494,7 @@ export const SCHEMA = {
   },
   'rail.maxRules': {
     type: 'int', min: 1, max: 20, strategy: 'uniform',
-    help: 'How many colour rules the rail lists, ranked by their last hour so '
+    help: 'How many color rules the rail lists, ranked by their last hour so '
         + 'the busiest are the ones on screen. The overflow is named (+N more) '
         + 'rather than dropped: a truncated list that does not say it '
         + 'truncated is a lie about the traffic.',
@@ -567,7 +575,7 @@ export function coerce(path, value) {
       return { ok: true, value };
     case 'color':
       if (typeof value !== 'string' || !HEX.test(value)) {
-        return { ok: false, why: 'not a #rgb or #rrggbb colour' };
+        return { ok: false, why: 'not a #rgb or #rrggbb color' };
       }
       return { ok: true, value };
     case 'list': {
@@ -589,7 +597,7 @@ export function coerce(path, value) {
     }
     case 'rules': {
       if (!Array.isArray(value)) return { ok: false, why: 'not a list of rules' };
-      // Delegated, never re-derived: rules.js owns every bound (a hex colour,
+      // Delegated, never re-derived: rules.js owns every bound (a hex color,
       // gain 0.05-2.0, bloomScale 0-2.0, a prefix length inside its family's
       // width). A second copy here would drift, and the panel, an imported
       // file and any future write API must obey one set.

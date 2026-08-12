@@ -106,9 +106,12 @@ def run(page) -> bool:
     # /config.json merged over it. Nothing is exposed on window for it.
     cfgvals = page.evaluate("""async () => {
       const m = await import('./js/config.js');
-      return {span: m.cfg('camera.walk.spanDegrees'), home: m.CONFIG.home || null};
+      return {span: m.cfg('camera.walk.spanDegrees'),
+              rampFloor: m.cfg('camera.walk.rampFloor'),
+              home: m.CONFIG.home || null};
     }""")
     span, home = cfgvals["span"], cfgvals["home"]
+    ramp_floor = cfgvals["rampFloor"]
 
     # --------------------------------------------------------- case 4 --
     # Run this FIRST: the ripple cooldown is 2 minutes per target per class,
@@ -156,10 +159,22 @@ def run(page) -> bool:
         first = path_length(rows[:half + 1])
         second = path_length(rows[half:])
         ratios.append(second / first if first > 1e-6 else float("inf"))
+    # The expected split is fixed by rampFloor alone, so DERIVE it rather than
+    # hard-coding one tuning's number: a linear ramp from floor*peak to peak
+    # puts (3f+1)/(4(1+f)) of the ground in the first half, so the second/first
+    # ratio is the reciprocal of that minus one. 0.15 gives 2.17, 0.35 gives
+    # 1.63. A flat 2.0 was written for 0.15 and failed the moment the walk was
+    # retuned, reporting a working ramp as broken. 0.85 of the ideal is the
+    # allowance for the traffic drifting under a walk and for the eased camera
+    # trailing its target -- the ramp is a rate, the samples are a path.
+    share = (3 * ramp_floor + 1) / (4 * (1 + ramp_floor))
+    want = (1 - share) / share
     ok &= report("2: the walk starts slower than it finishes",
-                 bool(ratios) and all(x >= 2.0 for x in ratios),
+                 bool(ratios) and all(x >= want * 0.85 for x in ratios),
                  f"{len(ratios)} complete walk phase(s), second/first halves "
-                 + ", ".join(f"{x:.2f}" for x in ratios))
+                 + ", ".join(f"{x:.2f}" for x in ratios)
+                 + f" (rampFloor {ramp_floor} implies {want:.2f}, "
+                 f"floor {want * 0.85:.2f})")
 
     reach = max((great_circle_deg(s["lat"], s["lon"],
                                   s["originLat"], s["originLon"])

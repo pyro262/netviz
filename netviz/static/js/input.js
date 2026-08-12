@@ -33,6 +33,10 @@ export function startInput({ canvas, rig, menu, rulesPanel }) {
   let damping = cfg('input.inertia', 0.85);
   let zoomFactor = cfg('input.zoomFactor', 1.12);
   let hideAfter = cfg('input.hideCursorSeconds', 3);
+  // How long the camera stays borrowed after the menu closes, as opposed to
+  // after a drag. Read here rather than inside campath's step because it is
+  // the MENU that knows which kind of claim this is, not the state machine.
+  let menuResume = cfg('input.menuResumeSeconds', 2);
 
   const pointers = new Map();          // pointerId -> {x, y}
   // Down position and time per live pointer, keyed separately from `pointers`
@@ -104,7 +108,7 @@ export function startInput({ canvas, rig, menu, rulesPanel }) {
     // for the autonomous walk but broken for residual momentum: the menu
     // opens over a globe that keeps spinning underneath it.
     spinRate = 0;
-    rig.poke();
+    rig.poke(menuResume);
   }
 
   function onDown(ev) {
@@ -358,10 +362,12 @@ export function startInput({ canvas, rig, menu, rulesPanel }) {
   function tick(dt) {
     if (!enabled) { spinRate = 0; return; }
     // Opening the menu pokes the rig once; that is only enough if the idle
-    // countdown cannot expire underneath it. resumeSeconds is 30 -- long
-    // enough to read the menu -- so keep restarting it every frame it stays
-    // open, or the camera flies home mid-read.
-    if (menu.isOpen() || rulesPanel?.isOpen()) rig.poke();
+    // countdown cannot expire underneath it -- so keep restarting it every
+    // frame it stays open, or the camera flies home mid-read. The poke carries
+    // `menuResume`, so the frame the menu closes on leaves a claim that hands
+    // back in a couple of seconds instead of the drag's much longer wait: the
+    // walk resumes on its own shortly after the menu goes away.
+    if (menu.isOpen() || rulesPanel?.isOpen()) rig.poke(menuResume);
     // The hand-back ends input's ownership of the view, full stop. Damping
     // 0.85/s has a ~6.2s time constant against a 1e-6 floor, so a fling coasts
     // for ~114 seconds -- nearly four times resumeSeconds. Without this guard
@@ -410,6 +416,7 @@ export function startInput({ canvas, rig, menu, rulesPanel }) {
       case 'input.invert': invert = value ? -1 : 1; return;
       case 'input.inertia': damping = value; return;
       case 'input.zoomFactor': zoomFactor = value; return;
+      case 'input.menuResumeSeconds': menuResume = value; return;
       case 'input.hideCursorSeconds':
         hideAfter = value;
         showCursor();       // restart the countdown on the new interval

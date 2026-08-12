@@ -41,6 +41,7 @@ const PARAM_KEYS = {
   'camera.detour.visitMaxSeconds': 'visitMaxSeconds',
   'camera.detour.interruptManual': 'detourInterruptManual',
   'input.resumeSeconds': 'resumeSeconds',
+  'input.menuResumeSeconds': 'menuResumeSeconds',
 };
 
 /** Weighted mean direction of arc origins, as a unit vector. Averaging
@@ -246,8 +247,13 @@ export function createCameraRig(camera, radius, params = DEFAULTS) {
     release() { endManual(state); },
     /** Somebody is still here. For inputs that are not a grab -- wheel, pinch,
      *  the zoom and arrow keys -- which must restart the idle countdown
-     *  without claiming a pointer is down. */
-    poke() { markInput(state); },
+     *  without claiming a pointer is down.
+     *
+     *  `resumeAfter` overrides how long that countdown runs, for a claim that
+     *  is not somebody looking at a place: the menu passes
+     *  `input.menuResumeSeconds` so the walk starts again a couple of seconds
+     *  after it closes, rather than after the full drag delay. */
+    poke(resumeAfter) { markInput(state, resumeAfter); },
     held() { return state.held === true; },
     manual() { return isManual(state); },
     /** One step of a drag: turn the globe so the point at `ref` moves to `hit`.
