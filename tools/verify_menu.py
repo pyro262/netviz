@@ -8,8 +8,9 @@ double-click, its interaction with the camera rig and the settings layer,
 four cases added after a whole-branch review found real bugs a spy
 assertion had let through -- "Look here" silently doing nothing (case 10),
 the native context menu still appearing over an open menu (case 11), the
-rail toggle misreporting under the documented `?rail=1` kiosk setup
-(case 12), and the corner-clamp layout path (case 13) -- and one more
+rail toggle disagreeing with what is on screen once `?rail=1` was removed
+in favour of a stored setting (case 12), and the corner-clamp layout path
+(case 13) -- and one more
 (case 14) added after a SCOPED RE-REVIEW of the case 10 fix found it had
 introduced a regression: a block burst could now steal a view someone was
 holding, because the fix's hand-back lived in the one method both the
@@ -186,21 +187,26 @@ def js_tap_pair(page, x1, y1, x2, y2, gap_ms, moved=None):
     }""", {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "gapMs": gap_ms, "moved": moved})
 
 
-def run_rail_url_case(ctx, url) -> bool:
-    """Case 12, on its own page: the documented kiosk setup is `?rail=1`
-    with CONFIG.rail.enabled at its false default -- main.js must reconcile
-    that at boot, or the menu reads cfg('rail.enabled') and draws the item
-    unchecked while the rail is visibly mounted, and the first click applies
-    rail.enabled: true, which apply.js's handler skips because the rail is
-    already mounted (a control that reads as dead and needs two clicks)."""
-    sep = "&" if "?" in url else "?"
+def run_rail_toggle_case(ctx, url) -> bool:
+    """Case 12, on its own page: the menu's rail toggle agrees with what is
+    on screen, from storage.
+
+    The old form of this case loaded `?rail=1`. The parameter is gone: the
+    rail is a stored setting, so this seeds storage exactly as a person
+    clicking the toggle would have, reloads, and checks the menu agrees."""
     page = ctx.new_page()
     errors: list[str] = []
     page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
     page.on("console", lambda m: errors.append(f"{m.type}: {m.text}")
             if m.type == "error" else None)
     try:
-        page.goto(url + sep + "rail=1", wait_until="load")
+        page.goto(url, wait_until="load")
+        page.wait_for_function("window.__netvizReady === true", timeout=20_000)
+        page.evaluate("""() => {
+          window.localStorage.setItem('netviz.settings.v1',
+            JSON.stringify({'rail.enabled': true}));
+        }""")
+        page.reload(wait_until="load")
         page.wait_for_function("window.__netvizReady === true", timeout=20_000)
         time.sleep(2.0)
         install_touch_patch(page)
@@ -224,9 +230,10 @@ def run_rail_url_case(ctx, url) -> bool:
         }""")
         time.sleep(0.6)
         rail_after_click = page.evaluate("() => document.body.classList.contains('rail')")
+        page.evaluate("() => window.localStorage.removeItem('netviz.settings.v1')")
 
         ok = report(
-            "12: ?rail=1 reconciled into the menu; one click turns it off",
+            "12: the rail toggle agrees with the stored setting",
             prevented and rail_on_boot and rail_row_on is True
             and not rail_after_click and not errors,
             f"rail_on_boot={rail_on_boot} rail_row_on={rail_row_on} "
@@ -237,8 +244,8 @@ def run_rail_url_case(ctx, url) -> bool:
 
 
 def run_menu_over_rail_case(ctx, url) -> bool:
-    """Case 15, on its own `?rail=1` page: the menu must be the topmost thing
-    where it overlaps the rail.
+    """Case 15, on its own page with the rail seeded through storage: the
+    menu must be the topmost thing where it overlaps the rail.
 
     `#stage` is `position: fixed`, and a fixed element creates a STACKING
     CONTEXT -- so a `.menu` mounted under it ranks its `z-index: 5` only
@@ -252,10 +259,15 @@ def run_menu_over_rail_case(ctx, url) -> bool:
     Hit-testing is the check, not a screenshot: `elementsFromPoint` returns
     the paint order the eye sees, and a pixel comparison of amber-on-near-
     black would need a threshold nobody can defend."""
-    sep = "&" if "?" in url else "?"
     page = ctx.new_page()
     try:
-        page.goto(url + sep + "rail=1", wait_until="load")
+        page.goto(url, wait_until="load")
+        page.wait_for_function("window.__netvizReady === true", timeout=20_000)
+        page.evaluate("""() => {
+          window.localStorage.setItem('netviz.settings.v1',
+            JSON.stringify({'rail.enabled': true}));
+        }""")
+        page.reload(wait_until="load")
         page.wait_for_function("window.__netvizReady === true", timeout=20_000)
         time.sleep(2.0)
         # The rail is the right 26%; open the menu just inside its left edge
@@ -285,6 +297,7 @@ def run_menu_over_rail_case(ctx, url) -> bool:
             "15: the menu paints over the rail, not under it",
             bool(probe) and prevented and probe["overlaps"] and probe["menuIsTopmost"],
             f"probe={probe}")
+        page.evaluate("() => window.localStorage.removeItem('netviz.settings.v1')")
         return ok
     finally:
         page.close()
@@ -564,8 +577,8 @@ def run(page, canvas_center, ctx, url) -> bool:
     close_menu()
 
     # --------------------------------------------------------- case 12 --
-    # Own page, own query string -- see run_rail_url_case's docstring.
-    ok &= run_rail_url_case(ctx, url)
+    # Own page, own seeded storage -- see run_rail_toggle_case's docstring.
+    ok &= run_rail_toggle_case(ctx, url)
 
     # --------------------------------------------------------- case 13 --
     # clampPosition's real offsetWidth/offsetHeight path is exercised by

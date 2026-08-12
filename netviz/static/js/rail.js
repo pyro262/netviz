@@ -3,13 +3,13 @@
 // OFF by default. The globe was tuned full-width against a wall, and shrinking
 // it to 74% changes the apparent size of every arc, sprite and bloom halo, so
 // the rail cannot be something a build turns on for everybody. It is opted into
-// per display, by URL:
+// per display, through the menu -- and remembered, so a kiosk keeps it across
+// a reload.
 //
-//     http://HOST:8099/?rail=1     rail on
-//     http://HOST:8099/            rail off  (or ?rail=0)
-//
-// URL rather than config.js because one collector serves several kiosks: two
-// Chromium autostart lines, one image, no rebuild to change your mind.
+// There is deliberately no URL parameter. `?rail=1` and `rail.enabled` were two
+// ways to say one thing and they disagreed: with the parameter set and the
+// config false, the menu drew the toggle UNCHECKED while the rail was visibly
+// on screen, and the first click did nothing.
 //
 // Everything above start() is pure -- no DOM, no fetch -- so the formatting and
 // the layout decisions are tested under `node --test` rather than judged by
@@ -21,27 +21,6 @@ import { ruleKey } from './classcount.js';
 // Read at mount, not at import: polling.railSeconds is a live setting, and a
 // rail mounted after that setting moved must use the current value.
 const pollMs = () => cfg('polling.railSeconds', 10) * 1000;
-
-/** Does this URL ask for the rail?
- *
- *  `?rail`, `?rail=1`, `?rail=true`, `?rail=on` all mean yes; `?rail=0`,
- *  `?rail=false`, `?rail=off` mean no. Anything else -- including no parameter
- *  at all -- falls back to `rail.enabled` in config.js, so an installation that
- *  always wants it can flip the default without editing every kiosk's URL. */
-export function railEnabled(search, fallback) {
-  const fb = fallback === undefined ? cfg('rail.enabled', false) : fallback;
-  let params;
-  try {
-    params = new URLSearchParams(search || '');
-  } catch {
-    return fb;
-  }
-  if (!params.has('rail')) return fb;
-  const v = (params.get('rail') || '').toLowerCase();
-  if (v === '' || v === '1' || v === 'true' || v === 'on' || v === 'yes') return true;
-  if (v === '0' || v === 'false' || v === 'off' || v === 'no') return false;
-  return fb;
-}
 
 /** Thousands separators up to 9999, then k/M. A wall display is read at three
  *  metres: "1.6M" lands, "1614382" does not. */
@@ -336,7 +315,7 @@ function paint(root, data, clock, version) {
 }
 
 /**
- * Mount the rail and start polling. Call only when railEnabled() is true --
+ * Mount the rail and start polling. Call only when the rail is wanted --
  * with the rail off nothing here runs, no element is created and no request is
  * made, so a wall that does not want it pays nothing for its existence.
  *

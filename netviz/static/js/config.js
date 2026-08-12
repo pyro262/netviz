@@ -273,10 +273,11 @@ export const CONFIG = {
   // ----------------------------------------------------------------- rail --
   //
   // The right rail: block counts, netflow rate, feed health, clock. It takes
-  // 26% of the screen from the globe, so it is off unless a display asks for
-  // it with `?rail=1` -- one collector, several kiosks, some with and some
-  // without. This is only the fallback for a URL that says nothing; set it
-  // true if every display at your site should have it.
+  // 26% of the screen from the globe, so it is off unless a display turns it
+  // on from the on-screen menu -- one collector, several kiosks, some with
+  // and some without. This is only the shipped default; the menu's own
+  // choice is remembered in localStorage and wins on every later boot. Set
+  // this true if every display at your site should default to having it.
 
   rail: {
     enabled: false,
@@ -304,8 +305,10 @@ const SHIPPED_RULE_COLOURS = ['#a855f7', '#22d3ee', '#4ade80'];
 /**
  * The three NETVIZ_HIGHLIGHT* slots, as colour rules.
  *
- * Supported for ONE release and then dropped -- the same migration `?rail=1`
- * got. A prefix is a string with a trailing dot standing in for a mask, so
+ * Supported for ONE release and then dropped -- the URL parameter `?rail=1`
+ * got the same treatment (removed 2026-08-11 once the rail became a stored
+ * setting; see CLAUDE.md's "The right rail"). A prefix is a string with a
+ * trailing dot standing in for a mask, so
  * '10.20.50.' is a /24; anything not on an octet boundary cannot be converted
  * and is REFUSED WITH A REASON rather than dropped, because a network that
  * silently stops being highlighted looks exactly like a network with no

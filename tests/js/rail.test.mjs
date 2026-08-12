@@ -2,35 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  railEnabled, formatCount, formatLag, formatPercent, formatAge, formatClock, panels, sparkPoints, versionLabel,
+  formatCount, formatLag, formatPercent, formatAge, formatClock, panels, sparkPoints, versionLabel,
 } from '../../netviz/static/js/rail.js';
-
-test('rail is off by default', () => {
-  assert.equal(railEnabled(''), false);
-  assert.equal(railEnabled('?quality=high'), false);
-});
-
-test('?rail turns it on in every spelling a person would try', () => {
-  for (const q of ['?rail', '?rail=1', '?rail=true', '?rail=on', '?rail=YES']) {
-    assert.equal(railEnabled(q), true, q);
-  }
-});
-
-test('?rail=0 turns it off even when the site default is on', () => {
-  for (const q of ['?rail=0', '?rail=false', '?rail=off', '?rail=no']) {
-    assert.equal(railEnabled(q, true), false, q);
-  }
-});
-
-test('an unrecognised value falls back rather than guessing', () => {
-  assert.equal(railEnabled('?rail=maybe', true), true);
-  assert.equal(railEnabled('?rail=maybe', false), false);
-});
-
-test('the config default applies when the URL says nothing', () => {
-  assert.equal(railEnabled('', true), true);
-  assert.equal(railEnabled('?other=1', true), true);
-});
 
 test('formatCount stays exact until a wall stops being able to read it', () => {
   assert.equal(formatCount(0), '0');

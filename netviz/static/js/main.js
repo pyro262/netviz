@@ -14,7 +14,7 @@ import { createCameraRig } from './camera.js';
 import { startInput } from './input.js';
 import { isDns, classNameFor, foreignEnd } from './classify.js';
 import { createBurstDetector } from './burst.js';
-import { railEnabled, start as startRail } from './rail.js';
+import { start as startRail } from './rail.js';
 import { createClassCounter, ruleKey } from './classcount.js';
 import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
@@ -155,18 +155,25 @@ async function boot() {
   // Applied through the same executor a runtime change uses, so a stored path
   // the schema no longer declares is reported and skipped rather than
   // reviving a setting that no longer exists. `settings` does not exist yet at
-  // this point in boot -- createArcs() below is what needs CONFIG.arcs.rules
-  // set correctly, and it runs long before createApplier() is called near the
-  // end of boot() -- so the one key createArcs() reads is written into CONFIG
-  // directly here, validated through the same coerce() the executor would use.
-  // Everything else in the stored patch (rail.enabled, layers.*, ...) is
-  // applied through the executor once it exists, further down.
+  // this point in boot, and two of the stored keys are needed before it does:
+  // createArcs() below reads CONFIG.arcs.rules, and the rail-mount decision a
+  // little further down (still before the first resize()) reads
+  // CONFIG.rail.enabled -- both run long before createApplier() is called near
+  // the end of boot(). So those two keys are written into CONFIG directly
+  // here, validated through the same coerce() the executor would use.
+  // Everything else in the stored patch (layers.*, camera.*, ...) is applied
+  // through the executor once it exists, further down.
   const stored = loadPatch(storage);
   if (stored.error) console.warn(`netviz: ${stored.error}`);
   if (Object.prototype.hasOwnProperty.call(stored.patch, 'arcs.rules')) {
     const c = coerce('arcs.rules', stored.patch['arcs.rules']);
     if (c.ok) CONFIG.arcs.rules = c.value;
     else console.warn(`netviz: stored arcs.rules skipped -- ${c.why}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(stored.patch, 'rail.enabled')) {
+    const c = coerce('rail.enabled', stored.patch['rail.enabled']);
+    if (c.ok) CONFIG.rail.enabled = c.value;
+    else console.warn(`netviz: stored rail.enabled skipped -- ${c.why}`);
   }
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -332,12 +339,11 @@ async function boot() {
   }
   // Before the first resize(): mounting the rail narrows #stage, and reading
   // the stage box afterwards is what makes the globe fit the space it actually
-  // has. Off by default -- see js/rail.js for why it is per-URL and not a build
-  // setting.
+  // has. Off by default -- see js/rail.js for why it is per-display and not a
+  // build setting.
   //
   // The rail is mounted through the same path a settings change takes, so the
-  // boot case and the toggle case cannot diverge. `?rail=1` is still how a
-  // display asks for it until profiles land; see docs/specs for step 2.
+  // boot case and the toggle case cannot diverge.
   let railHandle = null;
   const rail = {
     mounted: () => railHandle !== null,
@@ -361,18 +367,10 @@ async function boot() {
     // rail reads it when it next mounts.
     setMaxRules() {},
   };
-  // Resolved once, at boot, and reconciled into CONFIG immediately: the URL
-  // (`?rail=1`) can override the config default, and everything downstream
-  // that asks cfg('rail.enabled') -- the menu's toggle state chief among them
-  // -- must agree with what actually got mounted. Without this, the documented
-  // kiosk setup (?rail=1, CONFIG.rail.enabled false) draws the menu's "Stats
-  // rail" item unchecked while the rail is visibly on screen, and the first
-  // click applies rail.enabled: true, which apply.js's handler then skips
-  // because the rail is already mounted -- a control that reads as dead and
-  // needs two clicks to do anything.
-  const railWanted = railEnabled(window.location.search, cfg('rail.enabled', false));
-  CONFIG.rail.enabled = railWanted;
-  if (railWanted) rail.mount();
+  // One source, and it is already reconciled: the stored patch was applied
+  // over config.js before this point, so cfg('rail.enabled') is what the menu
+  // will show and what the display will have.
+  if (cfg('rail.enabled', false)) rail.mount();
 
   window.addEventListener('resize', resize);
   resize();
@@ -438,10 +436,12 @@ async function boot() {
   };
   let settings = createApplier(ctx);
   settings = withPersistence(settings, storage);
-  // The rest of the stored patch (arcs.rules was already applied directly to
-  // CONFIG above, before createArcs() -- see the comment there). Re-running it
-  // through the executor here is harmless (setRules is idempotent) and is what
-  // reports a rejection for any OTHER stored key the schema no longer knows.
+  // The rest of the stored patch (arcs.rules and rail.enabled were already
+  // applied directly to CONFIG above, before createArcs() and the rail-mount
+  // decision needed them -- see the comments there). Re-running the whole
+  // patch through the executor here is harmless (setRules and rail.mount are
+  // both idempotent) and is what reports a rejection for any OTHER stored key
+  // the schema no longer knows.
   if (Object.keys(stored.patch).length) {
     const out = settings.apply(stored.patch);
     for (const r of out.rejected) {

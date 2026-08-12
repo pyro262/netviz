@@ -24,7 +24,7 @@ Group=kiosk
 SupplementaryGroups=video input render seat
 
 # CHANGE THIS if the collector is not on this machine.
-Environment=NETVIZ_URL=http://localhost:8099/?rail=1
+Environment=NETVIZ_URL=http://localhost:8099/
 Environment=NETVIZ_PROFILE=/var/lib/netviz-kiosk/chromium
 # Chromium refuses to start without a writable HOME even with --user-data-dir.
 Environment=HOME=/var/lib/netviz-kiosk

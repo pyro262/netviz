@@ -10,13 +10,18 @@
 #   3. exec the browser under a compositor
 #
 # Configuration comes from the environment (the unit file sets it):
-#   NETVIZ_URL     page to display        default http://localhost:8099/?rail=1
+#   NETVIZ_URL     page to display        default http://localhost:8099/
 #   NETVIZ_PROFILE Chromium profile dir   default /var/lib/netviz-kiosk/chromium
 #   NETVIZ_BROWSER browser binary         default: first of chromium,
 #                                         chromium-browser, google-chrome found
+#
+# The stats rail is no longer a URL parameter (?rail=1 is gone) -- it is a
+# per-display setting toggled from the on-screen menu and remembered in the
+# kiosk browser profile's localStorage, so there is nothing to configure here
+# for it.
 set -euo pipefail
 
-URL="${NETVIZ_URL:-http://localhost:8099/?rail=1}"
+URL="${NETVIZ_URL:-http://localhost:8099/}"
 PROFILE="${NETVIZ_PROFILE:-/var/lib/netviz-kiosk/chromium}"
 
 find_browser() {

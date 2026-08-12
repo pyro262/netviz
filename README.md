@@ -147,12 +147,15 @@ Everything site-specific lives in files git ignores, so a fork stays safe to pus
    ```
    Then open `http://<host>:8099/`.
 
-   Add `?rail=1` for the stats sidebar — 24h geo-block counts and their top
-   countries, flows/min, ingest lag, feed health and a clock. It is off by
-   default because it takes 26% of the screen from the globe, and it is a URL
-   parameter rather than a setting so one collector can drive one wall with it
-   and another without. Set `rail.enabled: true` in
-   `netviz/static/js/config.js` if every display at your site should have it.
+   Right-click (or press `s`, or double-tap on touch) for the on-screen menu
+   and turn on **Stats rail** for the sidebar — 24h geo-block counts and
+   their top countries, flows/min, ingest lag, feed health, a per-rule colour
+   panel and a clock. It is off by default because it takes 26% of the
+   screen from the globe, and it is a per-display choice remembered in that
+   browser's `localStorage`, not a build-wide setting — one collector can
+   drive one wall with it and another without. Set `rail.enabled: true` in
+   `netviz/static/js/config.js` if every display at your site should default
+   to having it.
 
 5. **Point your router at it.** Netflow/IPFIX v10 to `<host>:2055`, syslog to
    `<host>:514`, and turn on logging for the firewall rules you want to see.
@@ -189,7 +192,7 @@ Every key is optional. Delete one and the built-in default is used.
 | `camera` | the return/hold/walk cycle, and the block-burst detour |
 | `layers` | turn any layer off: stars, aurora, borders, ripples, atmosphere… |
 | `appearance` | background colour, bloom strength and rolloff |
-| `rail` | site default for the `?rail=1` stats sidebar |
+| `rail` | site default for the stats sidebar, toggled per display from the menu |
 | `polling` | how often health, build, stats and sun state refresh |
 
 Three worth knowing about:

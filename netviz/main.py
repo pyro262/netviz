@@ -357,9 +357,9 @@ async def run(cfg: Config, synthetic: bool) -> None:
         store = Store(InfluxWriter(cfg), cfg.buffer_path)
 
     # Feeds /stats.json, which only the optional right rail reads. Always
-    # populated: the counters cost two dict lookups per event, and a kiosk that
-    # turns the rail on with ?rail=1 must not have to wait 24h for the window
-    # to fill from the moment somebody asked for it.
+    # populated: the counters cost two dict lookups per event, and a kiosk
+    # whose menu just turned the rail on must not have to wait 24h for the
+    # window to fill from the moment somebody asked for it.
     stats = Stats()
 
     # Synthetic mode with nothing configured still needs highlighted networks,

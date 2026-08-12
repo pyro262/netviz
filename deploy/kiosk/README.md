@@ -60,11 +60,13 @@ never overwrites it:
 
 ```ini
 [Service]
-Environment=NETVIZ_URL=http://collector.example.lan:8099/?rail=1
+Environment=NETVIZ_URL=http://collector.example.lan:8099/
 ```
 
-Drop the `?rail=1` for the plain globe. The rail is per-display, which is the
-reason it is in the URL and not in the build — see the main README.
+The rail is per-display and not a build-wide setting, but it is no longer a URL
+parameter — right-click the running kiosk (or press `s`) and turn on **Stats
+rail** from the menu once. The choice is remembered in that kiosk browser
+profile's `localStorage` across reloads and restarts; see the main README.
 
 ## Check it
 

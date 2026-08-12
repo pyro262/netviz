@@ -38,6 +38,12 @@ def shoot(args, url: str) -> int:
         page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
         page.goto(url, wait_until="load")
         page.wait_for_function("window.__netvizReady === true", timeout=15_000)
+        if args.rail:
+            # The rail is a setting now, not a URL parameter. Applied through
+            # the page's own executor so the screenshot exercises the same
+            # path a person clicking the menu would.
+            page.evaluate("() => window.__netviz.settings.apply({'rail.enabled': true})")
+            page.wait_for_timeout(1500)      # mount, resize, first /stats.json poll
         time.sleep(args.settle)
         live = page.evaluate(
             "() => (window.__netviz && window.__netviz.arcs)"
@@ -63,8 +69,10 @@ def main() -> int:
                          "http://collector.example.lan:8099/) instead of starting a "
                          "synthetic one locally")
     ap.add_argument("--query", default="",
-                    help="query string for the page, without the '?' "
-                         "(e.g. --query rail=1 to shoot the right rail)")
+                    help="query string for the page, without the '?'")
+    ap.add_argument("--rail", action="store_true",
+                    help="turn on the stats rail via settings.apply before the shot "
+                         "(the rail is a stored setting now, not a URL parameter)")
     args = ap.parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)
 

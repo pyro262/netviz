@@ -51,9 +51,10 @@
       #degraded.on { display: block; }
 
       /* ---------------------------------------------------- the right rail --
-         Off unless ?rail=1 -- see js/rail.js. Nothing below applies to a
-         default kiosk, and #rail stays empty and undisplayed. Sizes are in vw
-         so the rail reads the same on a 1080p desk monitor and a 4K wall. */
+         Off unless turned on from the on-screen menu -- see js/rail.js.
+         Nothing below applies to a default kiosk, and #rail stays empty and
+         undisplayed. Sizes are in vw so the rail reads the same on a 1080p
+         desk monitor and a 4K wall. */
       #rail {
         position: fixed; top: 0; right: 0; bottom: 0; width: 26%;
         display: none; flex-direction: column; gap: 1.4vh;
@@ -245,8 +246,8 @@
   <body>
     <div id="degraded" role="status"></div>
     <div id="stage"><canvas id="scene"></canvas></div>
-    <!-- Populated only when ?rail=1 asks for it; otherwise it stays empty and
-         display:none, and js/rail.js never polls. -->
+    <!-- Populated only when the menu's Stats rail toggle is on; otherwise it
+         stays empty and display:none, and js/rail.js never polls. -->
     <aside id="rail"></aside>
     <script type="module" src="/js/main.js"></script>
   </body>
