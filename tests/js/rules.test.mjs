@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAddress, parseRule, compileRules, matchRule, firstMatch, addrContext }
+import { parseAddress, parseRule, compileRules, matchRule, firstMatch, addrContext,
+  overridesSuppression }
   from '../../netviz/static/js/rules.js';
 
 test('parseAddress reads IPv4 as a 32-bit number', () => {
@@ -255,4 +256,85 @@ test('addrContext parses each address once, not once per rule', () => {
   assert.equal(ctx.s.n, parseAddress('10.20.50.1').n);
   assert.equal(ctx.d.family, 4);
   assert.equal(addrContext({ k: 'flow' }).s, null);
+});
+
+// A tiny helper so each case reads as the rule somebody would type.
+const R = (match, extra = {}) => parseRule({ match, color: '#22d3ee', ...extra }).rule;
+
+test('a port rule overrides the port axis it names', () => {
+  const sup = { axis: 'port', port: 53 };
+  assert.equal(overridesSuppression(R('udp/53'), sup), true);
+  assert.equal(overridesSuppression(R('53'), sup), true);
+  assert.equal(overridesSuppression(R('tcp/53'), sup), true);
+});
+
+test('a port rule does not override a port it does not name', () => {
+  assert.equal(overridesSuppression(R('tcp/443'), { axis: 'port', port: 53 }), false);
+  assert.equal(overridesSuppression(R('udp/53'), { axis: 'port', port: 853 }), false);
+});
+
+test('an address rule at least as specific as the hiding entry overrides', () => {
+  // The entry '9.9.9.9' is a whole address, so it hides like a /32 and only a
+  // /32 rule is aimed at it.
+  const sup = { axis: 'address', addr: '9.9.9.9', family: 4, bits: 32 };
+  assert.equal(overridesSuppression(R('9.9.9.9/32'), sup), true);
+  assert.equal(overridesSuppression(R('9.9.9.9-9.9.9.9'), sup), true);
+});
+
+test('an address rule broader than the hiding entry does not override', () => {
+  // This is the whole point of the specificity test: a rule this broad was
+  // written about something else, and honouring it would put the suppressed
+  // third of the feed back on the wall by accident.
+  const sup = { axis: 'address', addr: '9.9.9.9', family: 4, bits: 32 };
+  assert.equal(overridesSuppression(R('9.9.9.0/24'), sup), false);
+  assert.equal(overridesSuppression(R('0.0.0.0/0'), sup), false);
+  assert.equal(overridesSuppression(R('9.9.9.0-9.9.9.255'), sup), false);
+});
+
+test('a prefix entry is overridden by a rule of its own width or narrower', () => {
+  // '203.0.113.' names three octets, so it hides like a /24.
+  const sup = { axis: 'address', addr: '203.0.113.9', family: 4, bits: 24 };
+  assert.equal(overridesSuppression(R('203.0.113.0/24'), sup), true);
+  assert.equal(overridesSuppression(R('203.0.113.9/32'), sup), true);
+  assert.equal(overridesSuppression(R('203.0.0.0/16'), sup), false);
+});
+
+test('specificity is compared inside one family', () => {
+  // A v6 /64 covers vastly more addresses than a v4 /0, so comparing sizes
+  // across families would let one claim the other. family is the guard.
+  const v6 = { axis: 'address', addr: '2001:db8::1', family: 6, bits: 128 };
+  assert.equal(overridesSuppression(R('2001:db8::1/128'), v6), true);
+  assert.equal(overridesSuppression(R('0.0.0.0/0'), v6), false);
+  const v4 = { axis: 'address', addr: '9.9.9.9', family: 4, bits: 32 };
+  assert.equal(overridesSuppression(R('2001:db8::1/128'), v4), false);
+});
+
+test('a country rule never overrides anything', () => {
+  // A country is not aimed at the reason the event was hidden. Honouring it
+  // would restore every suppressed event to that country at once.
+  assert.equal(overridesSuppression(R('DE'), { axis: 'port', port: 53 }), false);
+  assert.equal(
+    overridesSuppression(R('DE'), { axis: 'address', addr: '9.9.9.9', family: 4, bits: 32 }),
+    false);
+});
+
+test('a port rule does not override the address axis, or the reverse', () => {
+  assert.equal(
+    overridesSuppression(R('udp/53'),
+                         { axis: 'address', addr: '9.9.9.9', family: 4, bits: 32 }),
+    false);
+  assert.equal(overridesSuppression(R('9.9.9.9/32'), { axis: 'port', port: 53 }), false);
+});
+
+test('a disabled rule never overrides', () => {
+  // Turning a rule off must turn off everything it does, including this.
+  assert.equal(
+    overridesSuppression(R('udp/53', { enabled: false }), { axis: 'port', port: 53 }),
+    false);
+});
+
+test('overridesSuppression is defensive about missing arguments', () => {
+  assert.equal(overridesSuppression(null, { axis: 'port', port: 53 }), false);
+  assert.equal(overridesSuppression(R('udp/53'), null), false);
+  assert.equal(overridesSuppression(R('udp/53'), { axis: 'nonsense' }), false);
 });

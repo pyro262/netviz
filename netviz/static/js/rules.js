@@ -203,6 +203,54 @@ function matchesPort(m, port, proto) {
   return port === m.port;
 }
 
+/** How many addresses a matcher covers, as a BigInt; null if it is not an
+ *  address matcher.
+ *
+ *  A subnet and a range reduce to the same number, which is why the
+ *  specificity test below needs no separate case for each. */
+function matcherSize(m) {
+  if (m.kind === 'cidr') {
+    return 1n << BigInt((m.family === 4 ? 32 : 128) - m.bits);
+  }
+  if (m.kind === 'range') return m.hi - m.lo + 1n;
+  return null;
+}
+
+/**
+ * Is this rule aimed at the reason an event was suppressed?
+ *
+ * DNS is hidden from the display because it is 20-30% of the feed and nearly
+ * all of it geolocates to one country centroid. A rule may ask for it back,
+ * but only by naming what it is unhiding: a rule broad enough to have been
+ * written about something else (a country, 0.0.0.0/0) would restore that whole
+ * third of the feed as a side effect nobody asked for.
+ *
+ * "Aimed at" means the same axis AND at least as specific:
+ *   - port axis: the rule is a port matcher naming that exact port.
+ *   - address axis: the rule is a subnet or range covering no MORE addresses
+ *     than the resolver-list entry that hid the event. That entry's width is
+ *     `sup.bits` -- a whole address hides like a /32 or /128, a prefix hides
+ *     like the components it names.
+ *
+ * CONTAINMENT IS NOT CHECKED HERE. The caller has already established that the
+ * rule claims the event, via matchRule; this answers only "is it aimed at the
+ * suppression". Re-testing containment would duplicate matchRule's address
+ * arithmetic and give it a second place to drift.
+ */
+export function overridesSuppression(rule, sup) {
+  if (!rule || !rule.enabled || !sup) return false;
+  const m = rule.match;
+  if (sup.axis === 'port') return m.kind === 'port' && m.port === sup.port;
+  if (sup.axis !== 'address') return false;
+  // Family first: a v6 /64 covers far more addresses than the whole v4 space,
+  // so a bare size comparison would let one family's rule claim the other's.
+  if (m.family !== sup.family) return false;
+  const size = matcherSize(m);
+  if (size === null) return false;
+  const entrySize = 1n << BigInt((sup.family === 4 ? 32 : 128) - sup.bits);
+  return size <= entrySize;
+}
+
 /** Does this rule claim this event? `ctx` comes from addrContext(ev). */
 export function matchRule(rule, ev, ctx) {
   const m = rule.match;
