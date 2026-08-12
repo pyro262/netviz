@@ -147,8 +147,8 @@ test('planApply ignores paths it does not know', () => {
 });
 
 test('the rules type accepts a list every row of which parses', () => {
-  const list = [{ match: '10.20.50.0/24', colour: '#22d3ee' },
-                { match: 'DE', colour: '#ff8800', end: 'dst' }];
+  const list = [{ match: '10.20.50.0/24', color: '#22d3ee' },
+                { match: 'DE', color: '#ff8800', end: 'dst' }];
   const c = coerce('arcs.rules', list);
   assert.equal(c.ok, true);
   assert.deepEqual(c.value, list);      // stored raw; rules.js compiles at use
@@ -158,8 +158,8 @@ test('the rules type refuses a bad row by index, naming the reason', () => {
   // A patch is one deliberate act, so it is all-or-nothing here. Per-row
   // partial application belongs to the panel, which knows which row somebody
   // is mid-typing in.
-  const c = coerce('arcs.rules', [{ match: '10.20.50.0/24', colour: '#22d3ee' },
-                                  { match: 'nonsense', colour: '#fff' }]);
+  const c = coerce('arcs.rules', [{ match: '10.20.50.0/24', color: '#22d3ee' },
+                                  { match: 'nonsense', color: '#fff' }]);
   assert.equal(c.ok, false);
   assert.match(c.why, /rule 2/);
   assert.match(c.why, /unrecognised/);

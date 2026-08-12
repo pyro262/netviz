@@ -18,7 +18,7 @@ function fakeStorage(initial = {}, opts = {}) {
 
 test('a saved patch round-trips', () => {
   const s = fakeStorage();
-  const patch = { 'arcs.rules': [{ match: 'DE', colour: '#ff8800' }], 'rail.enabled': true };
+  const patch = { 'arcs.rules': [{ match: 'DE', color: '#ff8800' }], 'rail.enabled': true };
   assert.equal(savePatch(s, patch).ok, true);
   assert.deepEqual(loadPatch(s).patch, patch);
   assert.equal(loadPatch(s).error, null);
@@ -124,7 +124,7 @@ test('withPersistence tolerates null storage: the executor still runs and return
 });
 
 test('an exported list imports back identically', () => {
-  const list = [{ match: '10.20.50.0/24', colour: '#22d3ee', name: 'storj',
+  const list = [{ match: '10.20.50.0/24', color: '#22d3ee', name: 'storj',
                   end: 'either', enabled: true }];
   const out = parseImport(serialiseRules(list));
   assert.equal(out.error, null);
@@ -135,9 +135,9 @@ test('an import is ALL-or-nothing, unlike a live edit', () => {
   // A live edit is a keystroke; an import is one deliberate act, and half of
   // one is confusing. Every bad row is named, not just the first.
   const out = parseImport(JSON.stringify([
-    { match: '10.20.50.0/24', colour: '#22d3ee' },
-    { match: 'nonsense', colour: '#fff' },
-    { match: 'DE', colour: 'blue' },
+    { match: '10.20.50.0/24', color: '#22d3ee' },
+    { match: 'nonsense', color: '#fff' },
+    { match: 'DE', color: 'blue' },
   ]));
   assert.equal(out.rules, undefined);
   assert.match(out.error, /rule 2/);

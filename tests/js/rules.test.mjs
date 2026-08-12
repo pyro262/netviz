@@ -52,12 +52,12 @@ test('parseAddress refuses too many groups with embedded v4 tail', () => {
 });
 
 test('parseRule reads a CIDR rule and keeps the colour', () => {
-  const { rule, reason } = parseRule({ match: '10.20.50.0/24', colour: '#22d3ee' });
+  const { rule, reason } = parseRule({ match: '10.20.50.0/24', color: '#22d3ee' });
   assert.equal(reason, undefined);
   assert.equal(rule.match.kind, 'cidr');
   assert.equal(rule.match.family, 4);
   assert.equal(rule.match.bits, 24);
-  assert.equal(rule.colour, '#22d3ee');
+  assert.equal(rule.color, '#22d3ee');
   // Defaults that are NOT invented here: gain and bloomScale stay undefined so
   // arcs.js can supply the shipped highlight values. end and enabled are the
   // behaviour the prefix matcher already had.
@@ -68,40 +68,40 @@ test('parseRule reads a CIDR rule and keeps the colour', () => {
 });
 
 test('parseRule reads ranges, countries and ports', () => {
-  const r1 = parseRule({ match: '203.0.113.10-203.0.113.40', colour: '#fff' }).rule;
+  const r1 = parseRule({ match: '203.0.113.10-203.0.113.40', color: '#fff' }).rule;
   assert.equal(r1.match.kind, 'range');
   assert.equal(r1.match.lo, parseAddress('203.0.113.10').n);
   assert.equal(r1.match.hi, parseAddress('203.0.113.40').n);
 
-  const r2 = parseRule({ match: 'de', colour: '#fff' }).rule;
+  const r2 = parseRule({ match: 'de', color: '#fff' }).rule;
   assert.equal(r2.match.kind, 'country');
   assert.equal(r2.match.code, 'DE');          // stored upper-case; sc/dc are upper-case
 
-  const r3 = parseRule({ match: 'tcp/443', colour: '#fff' }).rule;
+  const r3 = parseRule({ match: 'tcp/443', color: '#fff' }).rule;
   assert.deepEqual(r3.match, { kind: 'port', proto: 6, port: 443 });
 
-  const r4 = parseRule({ match: '51820', colour: '#fff' }).rule;
+  const r4 = parseRule({ match: '51820', color: '#fff' }).rule;
   assert.deepEqual(r4.match, { kind: 'port', proto: null, port: 51820 });
 });
 
 test('a reversed range is refused, not sorted', () => {
   // Guessing which end was meant is how a control starts lying -- the same
   // call orbit.validateZoomRange makes for a reversed zoom pair.
-  const { rule, reason } = parseRule({ match: '203.0.113.40-203.0.113.10', colour: '#fff' });
+  const { rule, reason } = parseRule({ match: '203.0.113.40-203.0.113.10', color: '#fff' });
   assert.equal(rule, undefined);
   assert.match(reason, /range/i);
 });
 
 test('every malformed rule gives a reason rather than throwing', () => {
   const bad = [
-    { match: '10.20.50.0/33', colour: '#fff' },     // v4 has 32 bits
-    { match: '2001:db8::/129', colour: '#fff' },
-    { match: '10.20.50.0/24', colour: 'blue' },     // not a hex colour
+    { match: '10.20.50.0/33', color: '#fff' },     // v4 has 32 bits
+    { match: '2001:db8::/129', color: '#fff' },
+    { match: '10.20.50.0/24', color: 'blue' },     // not a hex colour
     { match: '10.20.50.0/24' },                     // no colour at all
-    { match: 'nonsense', colour: '#fff' },
-    { match: '10.20.50.0-2001:db8::1', colour: '#fff' },  // mixed families
-    { match: 'tcp/70000', colour: '#fff' },
-    { colour: '#fff' },                             // no matcher
+    { match: 'nonsense', color: '#fff' },
+    { match: '10.20.50.0-2001:db8::1', color: '#fff' },  // mixed families
+    { match: 'tcp/70000', color: '#fff' },
+    { color: '#fff' },                             // no matcher
     null,
   ];
   for (const raw of bad) {
@@ -116,20 +116,20 @@ test('host bits set in a CIDR are masked off rather than refused', () => {
   // 10.20.50.7/24 is what somebody types when they mean the /24 they are
   // standing in. Refusing it teaches nothing; masking it is what every
   // router does.
-  const { rule } = parseRule({ match: '10.20.50.7/24', colour: '#fff' });
+  const { rule } = parseRule({ match: '10.20.50.7/24', color: '#fff' });
   assert.equal(rule.match.base, parseAddress('10.20.50.0').n);
 });
 
 test('gain and bloomScale are bounded, and out-of-range is refused', () => {
-  assert.equal(parseRule({ match: 'DE', colour: '#fff', gain: 0.5 }).rule.gain, 0.5);
-  assert.ok(parseRule({ match: 'DE', colour: '#fff', gain: 0 }).reason);
-  assert.ok(parseRule({ match: 'DE', colour: '#fff', gain: 3 }).reason);
-  assert.equal(parseRule({ match: 'DE', colour: '#fff', bloomScale: 0 }).rule.bloomScale, 0);
-  assert.ok(parseRule({ match: 'DE', colour: '#fff', bloomScale: 2.5 }).reason);
+  assert.equal(parseRule({ match: 'DE', color: '#fff', gain: 0.5 }).rule.gain, 0.5);
+  assert.ok(parseRule({ match: 'DE', color: '#fff', gain: 0 }).reason);
+  assert.ok(parseRule({ match: 'DE', color: '#fff', gain: 3 }).reason);
+  assert.equal(parseRule({ match: 'DE', color: '#fff', bloomScale: 0 }).rule.bloomScale, 0);
+  assert.ok(parseRule({ match: 'DE', color: '#fff', bloomScale: 2.5 }).reason);
 });
 
 test('a three-digit hex colour is accepted and normalised', () => {
-  assert.equal(parseRule({ match: 'DE', colour: '#0f8' }).rule.colour, '#00ff88');
+  assert.equal(parseRule({ match: 'DE', color: '#0f8' }).rule.color, '#00ff88');
 });
 
 const flow = (s, d, extra = {}) => ({ k: 'flow', s, d, ...extra });
@@ -137,7 +137,7 @@ const one = (raw) => parseRule(raw).rule;
 const hit = (raw, ev) => matchRule(one(raw), ev, addrContext(ev));
 
 test('a CIDR matches inside its range and nothing outside it', () => {
-  const r = { match: '10.20.50.0/24', colour: '#fff' };
+  const r = { match: '10.20.50.0/24', color: '#fff' };
   assert.equal(hit(r, flow('10.20.50.1', '8.8.8.8')), true);
   assert.equal(hit(r, flow('8.8.8.8', '10.20.50.255')), true);
   assert.equal(hit(r, flow('10.20.51.0', '8.8.8.8')), false);
@@ -147,28 +147,28 @@ test('a CIDR matches inside its range and nothing outside it', () => {
 test('the /24 that the string matcher got wrong', () => {
   // '10.0.5.' as a prefix claims nothing outside 10.0.5.x only because of a
   // trailing dot somebody has to remember. The arithmetic does not need it.
-  const r = { match: '10.0.5.0/24', colour: '#fff' };
+  const r = { match: '10.0.5.0/24', color: '#fff' };
   assert.equal(hit(r, flow('10.0.50.1', '8.8.8.8')), false);
   assert.equal(hit(r, flow('110.0.5.1', '8.8.8.8')), false);
   assert.equal(hit(r, flow('10.0.5.1', '8.8.8.8')), true);
 });
 
 test('/32 and /0, and a v4 rule never claims v6', () => {
-  assert.equal(hit({ match: '1.2.3.4/32', colour: '#fff' }, flow('1.2.3.4', '8.8.8.8')), true);
-  assert.equal(hit({ match: '1.2.3.4/32', colour: '#fff' }, flow('1.2.3.5', '8.8.8.8')), false);
-  assert.equal(hit({ match: '0.0.0.0/0', colour: '#fff' }, flow('203.0.113.1', '8.8.8.8')), true);
-  assert.equal(hit({ match: '0.0.0.0/0', colour: '#fff' }, flow('2001:db8::1', '::1')), false);
+  assert.equal(hit({ match: '1.2.3.4/32', color: '#fff' }, flow('1.2.3.4', '8.8.8.8')), true);
+  assert.equal(hit({ match: '1.2.3.4/32', color: '#fff' }, flow('1.2.3.5', '8.8.8.8')), false);
+  assert.equal(hit({ match: '0.0.0.0/0', color: '#fff' }, flow('203.0.113.1', '8.8.8.8')), true);
+  assert.equal(hit({ match: '0.0.0.0/0', color: '#fff' }, flow('2001:db8::1', '::1')), false);
 });
 
 test('IPv6 prefixes match on the compressed and the full form alike', () => {
-  const r = { match: '2001:db8::/32', colour: '#fff' };
+  const r = { match: '2001:db8::/32', color: '#fff' };
   assert.equal(hit(r, flow('2001:db8:1234::9', '::1')), true);
   assert.equal(hit(r, flow('2001:0db8:0000:0000:0000:0000:0000:0001', '::1')), true);
   assert.equal(hit(r, flow('2001:db9::1', '::1')), false);
 });
 
 test('a range is inclusive at both ends', () => {
-  const r = { match: '203.0.113.10-203.0.113.40', colour: '#fff' };
+  const r = { match: '203.0.113.10-203.0.113.40', color: '#fff' };
   assert.equal(hit(r, flow('203.0.113.10', '8.8.8.8')), true);
   assert.equal(hit(r, flow('203.0.113.40', '8.8.8.8')), true);
   assert.equal(hit(r, flow('203.0.113.9', '8.8.8.8')), false);
@@ -176,8 +176,8 @@ test('a range is inclusive at both ends', () => {
 });
 
 test('end: src and dst test one end only', () => {
-  const src = { match: '10.20.50.0/24', colour: '#fff', end: 'src' };
-  const dst = { match: '10.20.50.0/24', colour: '#fff', end: 'dst' };
+  const src = { match: '10.20.50.0/24', color: '#fff', end: 'src' };
+  const dst = { match: '10.20.50.0/24', color: '#fff', end: 'dst' };
   assert.equal(hit(src, flow('10.20.50.1', '8.8.8.8')), true);
   assert.equal(hit(src, flow('8.8.8.8', '10.20.50.1')), false);
   assert.equal(hit(dst, flow('8.8.8.8', '10.20.50.1')), true);
@@ -185,11 +185,11 @@ test('end: src and dst test one end only', () => {
 });
 
 test('a country rule reads sc/dc and honours the end selector', () => {
-  const r = { match: 'DE', colour: '#fff' };
+  const r = { match: 'DE', color: '#fff' };
   assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sc: 'DE', dc: 'US' })), true);
   assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sc: 'US', dc: 'DE' })), true);
   assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sc: 'US', dc: 'FR' })), false);
-  const dst = { match: 'DE', colour: '#fff', end: 'dst' };
+  const dst = { match: 'DE', color: '#fff', end: 'dst' };
   assert.equal(hit(dst, flow('1.1.1.1', '2.2.2.2', { sc: 'DE', dc: 'US' })), false);
 });
 
@@ -197,20 +197,20 @@ test('a port rule matches nothing when the event carries no ports', () => {
   // The collector OMITS sp/dp when unknown, because 0 is a real port. A rule
   // that matched an absent port would claim every flow from an exporter that
   // does not export ports.
-  const r = { match: 'tcp/443', colour: '#fff' };
+  const r = { match: 'tcp/443', color: '#fff' };
   assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sp: 51000, dp: 443, pr: 6 })), true);
   assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sp: 443, dp: 51000, pr: 6 })), true);
   assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2', { sp: 51000, dp: 443, pr: 17 })), false);
   assert.equal(hit(r, flow('1.1.1.1', '2.2.2.2')), false);
-  const any = { match: '443', colour: '#fff' };
+  const any = { match: '443', color: '#fff' };
   assert.equal(hit(any, flow('1.1.1.1', '2.2.2.2', { sp: 51000, dp: 443, pr: 17 })), true);
 });
 
 test('compileRules keeps the good rules and reports the bad by index', () => {
   const c = compileRules([
-    { match: '10.20.50.0/24', colour: '#22d3ee' },
-    { match: 'nonsense', colour: '#fff' },
-    { match: 'DE', colour: '#4ade80' },
+    { match: '10.20.50.0/24', color: '#22d3ee' },
+    { match: 'nonsense', color: '#fff' },
+    { match: 'DE', color: '#4ade80' },
   ]);
   assert.equal(c.rules.length, 2);
   assert.equal(c.refused.length, 1);
@@ -220,20 +220,20 @@ test('compileRules keeps the good rules and reports the bad by index', () => {
 
 test('first enabled match wins, in list order', () => {
   const c = compileRules([
-    { match: '10.0.0.0/8', colour: '#111111' },
-    { match: '10.20.50.0/24', colour: '#222222' },
+    { match: '10.0.0.0/8', color: '#111111' },
+    { match: '10.20.50.0/24', color: '#222222' },
   ]);
   const ev = flow('10.20.50.1', '8.8.8.8');
   assert.equal(firstMatch(c, ev), 0);              // the broader rule is first, so it wins
-  assert.equal(c.rules[firstMatch(c, ev)].colour, '#111111');
+  assert.equal(c.rules[firstMatch(c, ev)].color, '#111111');
 });
 
 test('a disabled rule is skipped without shifting the rules after it', () => {
   // Position is precedence, so a disabled rule must keep its slot: turning a
   // rule off may not silently renumber -- and therefore recolour -- the rest.
   const c = compileRules([
-    { match: '10.0.0.0/8', colour: '#111111', enabled: false },
-    { match: '10.20.50.0/24', colour: '#222222' },
+    { match: '10.0.0.0/8', color: '#111111', enabled: false },
+    { match: '10.20.50.0/24', color: '#222222' },
   ]);
   assert.equal(c.rules.length, 2);
   assert.equal(firstMatch(c, flow('10.20.50.1', '8.8.8.8')), 1);
@@ -242,7 +242,7 @@ test('a disabled rule is skipped without shifting the rules after it', () => {
 
 test('no match at all is -1, and an empty list matches nothing', () => {
   assert.equal(firstMatch(compileRules([]), flow('1.1.1.1', '2.2.2.2')), -1);
-  const c = compileRules([{ match: 'DE', colour: '#fff' }]);
+  const c = compileRules([{ match: 'DE', color: '#fff' }]);
   assert.equal(firstMatch(c, flow('1.1.1.1', '2.2.2.2', { sc: 'US', dc: 'US' })), -1);
 });
 

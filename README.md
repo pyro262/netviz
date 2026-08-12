@@ -149,7 +149,7 @@ Everything site-specific lives in files git ignores, so a fork stays safe to pus
 
    Right-click (or press `s`, or double-tap on touch) for the on-screen menu
    and turn on **Stats rail** for the sidebar — 24h geo-block counts and
-   their top countries, flows/min, ingest lag, feed health, a per-rule colour
+   their top countries, flows/min, ingest lag, feed health, a per-rule color
    panel and a clock. It is off by default because it takes 26% of the
    screen from the globe, and it is a per-display choice remembered in that
    browser's `localStorage`, not a build-wide setting — one collector can
@@ -187,11 +187,11 @@ Every key is optional. Delete one and the built-in default is used.
 | Section | What it controls |
 |---|---|
 | `traffic` | how many flow arcs per second are drawn; whether DNS is dropped |
-| `highlight` | up to three networks drawn in their own colours, matched by address prefix |
-| `arcs` | per-class life, thickness, colour, height, glow |
+| `highlight` | up to three networks drawn in their own colors, matched by address prefix |
+| `arcs` | per-class life, thickness, color, height, glow |
 | `camera` | the return/hold/walk cycle, and the block-burst detour |
 | `layers` | turn any layer off: stars, aurora, borders, ripples, atmosphere… |
-| `appearance` | background colour, bloom strength and rolloff |
+| `appearance` | background color, bloom strength and rolloff |
 | `rail` | site default for the stats sidebar, toggled per display from the menu |
 | `polling` | how often health, build, stats and sun state refresh |
 
@@ -202,7 +202,7 @@ Three worth knowing about:
   never sampled — they are the point of the display. Raise it if your network is
   quiet; lower it if the globe disappears behind its own traffic.
 - **`highlight.networks`** (default: three empty slots). Up to three of your own
-  networks, each drawn in its own colour — a server VLAN, an IoT segment, a
+  networks, each drawn in its own color — a server VLAN, an IoT segment, a
   guest network. **Set the prefixes in `.env`**, not in `config.js`: an address
   prefix describes how your LAN is laid out, and `config.js` is tracked by git.
   ```

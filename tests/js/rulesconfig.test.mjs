@@ -10,7 +10,7 @@ test('a dotted prefix becomes the CIDR it was standing in for', () => {
   ]);
   assert.equal(rules.length, 3);
   assert.equal(rules[0].match, '10.20.50.0/24');
-  assert.equal(rules[0].colour, '#22d3ee');
+  assert.equal(rules[0].color, '#22d3ee');
   assert.equal(rules[0].gain, 0.51);
   assert.equal(rules[0].name, 'storj');
   assert.equal(rules[1].match, '192.168.0.0/16');
@@ -42,6 +42,6 @@ test('a slot with no colour takes the shipped colour for its position', () => {
     { prefix: '10.', label: '' },
     { prefix: '172.16.', label: '' },
   ]);
-  assert.equal(rules[0].colour, '#a855f7');
-  assert.equal(rules[1].colour, '#22d3ee');
+  assert.equal(rules[0].color, '#a855f7');
+  assert.equal(rules[1].color, '#22d3ee');
 });

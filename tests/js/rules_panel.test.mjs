@@ -5,8 +5,8 @@ import { CONFIG } from '../../netviz/static/js/config.js';
 
 test('one row per rule, in list order, with its own validity', () => {
   const rows = panelRows([
-    { match: '10.20.50.0/24', colour: '#22d3ee', name: 'storj' },
-    { match: 'nonsense', colour: '#ffffff' },
+    { match: '10.20.50.0/24', color: '#22d3ee', name: 'storj' },
+    { match: 'nonsense', color: '#ffffff' },
   ]);
   assert.equal(rows.length, 2);
   assert.equal(rows[0].index, 0);
@@ -19,8 +19,8 @@ test('one row per rule, in list order, with its own validity', () => {
 
 test('a refusal attaches to its own row and no other', () => {
   const rows = panelRows([
-    { match: 'nonsense', colour: '#fff' },
-    { match: 'DE', colour: '#fff' },
+    { match: 'nonsense', color: '#fff' },
+    { match: 'DE', color: '#fff' },
   ]);
   assert.ok(rows[0].reason);
   assert.equal(rows[1].reason, null);
@@ -29,25 +29,25 @@ test('a refusal attaches to its own row and no other', () => {
 test('defaults are filled in for display without being invented', () => {
   // `end` defaults to 'either' in rules.js; the panel shows what the engine
   // will do, not a blank that reads as "unset".
-  const rows = panelRows([{ match: 'DE', colour: '#0f8' }]);
+  const rows = panelRows([{ match: 'DE', color: '#0f8' }]);
   assert.equal(rows[0].end, 'either');
   assert.equal(rows[0].enabled, true);
-  assert.equal(rows[0].colour, '#00ff88');    // normalised through parseRule
+  assert.equal(rows[0].color, '#00ff88');    // normalised through parseRule
 });
 
 test('a row that cannot parse keeps the text as typed', () => {
   // Re-rendering a half-typed matcher as anything other than what is in the
   // box would fight the person typing it.
-  const rows = panelRows([{ match: '10.20.50.', colour: '#fff' }]);
+  const rows = panelRows([{ match: '10.20.50.', color: '#fff' }]);
   assert.equal(rows[0].match, '10.20.50.');
   assert.ok(rows[0].reason);
 });
 
 test('readyRules drops the rows that do not parse and keeps the order', () => {
   const list = [
-    { match: '10.20.50.0/24', colour: '#22d3ee' },
-    { match: 'nonsense', colour: '#ffffff' },
-    { match: 'DE', colour: '#ff8800' },
+    { match: '10.20.50.0/24', color: '#22d3ee' },
+    { match: 'nonsense', color: '#ffffff' },
+    { match: 'DE', color: '#ff8800' },
   ];
   const ready = readyRules(panelRows(list));
   assert.equal(ready.length, 2);
@@ -59,8 +59,8 @@ test('a disabled row is ready and keeps its position', () => {
   // Position is precedence, so a disabled rule must still occupy its slot --
   // turning one off may not renumber, and therefore recolour, the rest.
   const ready = readyRules(panelRows([
-    { match: '10.0.0.0/8', colour: '#111111', enabled: false },
-    { match: 'DE', colour: '#222222' },
+    { match: '10.0.0.0/8', color: '#111111', enabled: false },
+    { match: 'DE', color: '#222222' },
   ]));
   assert.equal(ready.length, 2);
   assert.equal(ready[0].enabled, false);
@@ -77,7 +77,7 @@ test('gain and bloomScale survive panelRows -> readyRules unchanged', () => {
   // Neither field has a control in this build's UI, so the only way either
   // could change here is by accident -- opening the panel must not be a
   // silent way to strip them from a rule an imported file (Task 4) supplied.
-  const list = [{ match: 'DE', colour: '#ff8800', gain: 0.5, bloomScale: 0.3 }];
+  const list = [{ match: 'DE', color: '#ff8800', gain: 0.5, bloomScale: 0.3 }];
   const ready = readyRules(panelRows(list));
   assert.equal(ready.length, 1);
   assert.equal(ready[0].gain, 0.5);
@@ -85,7 +85,7 @@ test('gain and bloomScale survive panelRows -> readyRules unchanged', () => {
 });
 
 test('a rule without gain/bloomScale does not acquire them', () => {
-  const list = [{ match: 'DE', colour: '#ff8800' }];
+  const list = [{ match: 'DE', color: '#ff8800' }];
   const row = panelRows(list)[0];
   assert.equal('gain' in row, false);
   assert.equal('bloomScale' in row, false);
@@ -193,7 +193,7 @@ test('typing in the match field does not rebuild the row -- the input node stays
   // and is covered by Task 6's verify_rules_editor.py instead.
   const dom = fakeDom();
   const savedRules = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: '10.20.50.0/2', colour: '#22d3ee' }];
+  CONFIG.arcs.rules = [{ match: '10.20.50.0/2', color: '#22d3ee' }];
   try {
     withFakeGlobals(dom, () => {
       const applied = [];
@@ -233,7 +233,7 @@ test('opening the panel alone never calls settings.apply -- only an edit does', 
   // rule nobody touched.
   const dom = fakeDom();
   const savedRules = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'DE', colour: '#22d3ee', name: 'germany' }];
+  CONFIG.arcs.rules = [{ match: 'DE', color: '#22d3ee', name: 'germany' }];
   try {
     withFakeGlobals(dom, () => {
       const applied = [];
@@ -259,7 +259,7 @@ test('opening the panel alone never calls settings.apply -- only an edit does', 
 test('adding a row is a structural change and does rebuild the list', () => {
   const dom = fakeDom();
   const savedRules = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'DE', colour: '#22d3ee' }];
+  CONFIG.arcs.rules = [{ match: 'DE', color: '#22d3ee' }];
   try {
     withFakeGlobals(dom, () => {
       const panel = createRulesPanel({
@@ -289,7 +289,7 @@ test('the enabled toggle survives more than one click', () => {
   // fires the button twice and checks the value is back where it started.
   const dom = fakeDom();
   const savedRules = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'DE', colour: '#22d3ee', enabled: true }];
+  CONFIG.arcs.rules = [{ match: 'DE', color: '#22d3ee', enabled: true }];
   try {
     withFakeGlobals(dom, () => {
       const applied = [];

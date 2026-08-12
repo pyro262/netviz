@@ -134,7 +134,7 @@ export function rulePanel(rules, counter, nowMs, maxRules) {
     const spark = counter.spark(key, nowMs);
     return {
       label: r.name || r.match || '?',
-      swatch: r.colour,
+      swatch: r.color,
       value: `${counter.ratePerMin(key, nowMs).toFixed(1)}/min`,
       spark: spark ? sparkPoints(spark) : null,
       hour: spark ? spark.reduce((a, b) => a + b, 0) : 0,

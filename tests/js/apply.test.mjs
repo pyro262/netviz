@@ -250,7 +250,7 @@ test('arcs.rules is applied through setRules and does not clear the pool', () =>
   const log = [];
   const ctx = fakeCtx(log);
   const applier = createApplier(ctx);
-  const list = [{ match: 'DE', colour: '#ff8800' }];
+  const list = [{ match: 'DE', color: '#ff8800' }];
   const out = applier.apply({ 'arcs.rules': list });
   assert.deepEqual(out.rejected, []);
   assert.deepEqual(ctx.arcs.setRulesCalls, [list]);
@@ -267,7 +267,7 @@ test('arcs.rules tolerates a ctx with no classCounts', () => {
   const ctx = fakeCtx(log);
   delete ctx.classCounts;
   const applier = createApplier(ctx);
-  const out = applier.apply({ 'arcs.rules': [{ match: 'DE', colour: '#ff8800' }] });
+  const out = applier.apply({ 'arcs.rules': [{ match: 'DE', color: '#ff8800' }] });
   assert.deepEqual(out.rejected, []);
 });
 

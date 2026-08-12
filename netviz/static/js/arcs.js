@@ -82,7 +82,7 @@ function buildClasses() {
     const name = `rule${i + 1}`;
     table[name] = classSpec(name, {
       ...shared,
-      color: rule.colour,
+      color: rule.color,
       gain: rule.gain === undefined ? shared.gain : rule.gain,
       bloomScale: rule.bloomScale === undefined ? shared.bloomScale : rule.bloomScale,
     });
@@ -435,7 +435,7 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       const name = `rule${i + 1}`;
       CLASS[name] = classSpec(name, {
         ...shared,
-        color: rule.colour,
+        color: rule.color,
         gain: rule.gain === undefined ? shared.gain : rule.gain,
         bloomScale: rule.bloomScale === undefined ? shared.bloomScale : rule.bloomScale,
       });

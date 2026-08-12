@@ -57,7 +57,7 @@ test('setKeys drops the history of a class that no longer exists', () => {
 });
 
 test('ruleKey ignores colour and name, so a recolour keeps its history', () => {
-  assert.equal(ruleKey({ match: 'DE', end: 'dst', colour: '#fff' }),
-               ruleKey({ match: 'DE', end: 'dst', colour: '#000', name: 'x' }));
+  assert.equal(ruleKey({ match: 'DE', end: 'dst', color: '#fff' }),
+               ruleKey({ match: 'DE', end: 'dst', color: '#000', name: 'x' }));
   assert.notEqual(ruleKey({ match: 'DE', end: 'dst' }), ruleKey({ match: 'DE', end: 'src' }));
 });

@@ -193,8 +193,8 @@ import { createClassCounter, ruleKey } from '../../netviz/static/js/classcount.j
 
 test('the rail lists a row per rule, busiest first', () => {
   const c = createClassCounter();
-  const ruleA = { match: 'A', colour: '#111111', name: 'a' };
-  const ruleB = { match: 'B', colour: '#222222', name: 'b' };
+  const ruleA = { match: 'A', color: '#111111', name: 'a' };
+  const ruleB = { match: 'B', color: '#222222', name: 'b' };
   // Seeded under ruleKey(rule) -- the same stable identity main.js counts
   // under -- not a positional 'rule1'/'rule2' label, which would desync from
   // the counter the moment a rule is reordered rather than recoloured.
@@ -208,14 +208,14 @@ test('the rail lists a row per rule, busiest first', () => {
 test('the rail caps the list and names the overflow', () => {
   const c = createClassCounter();
   const rules = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
-    .map((m) => ({ match: m, colour: '#111111' }));
+    .map((m) => ({ match: m, color: '#111111' }));
   const p = rulePanel(rules, c, 1000, 5);
   assert.equal(p.rows.length, 6, 'five rules plus the overflow line');
   assert.equal(p.rows[5].label, '+2 more');
 });
 
 test('a disabled rule is not listed at all', () => {
-  const p = rulePanel([{ match: 'A', colour: '#111111', enabled: false }],
+  const p = rulePanel([{ match: 'A', color: '#111111', enabled: false }],
                       createClassCounter(), 1000, 5);
   assert.equal(p, null);
 });
@@ -227,7 +227,7 @@ test('no rules means no panel, not an empty one', () => {
 test('a rule with no name is labelled by its matcher', () => {
   // The matcher is already self-describing; forcing a label produces
   // "network 1", which says less than "10.20.50.0/24".
-  const p = rulePanel([{ match: '10.20.50.0/24', colour: '#111111' }],
+  const p = rulePanel([{ match: '10.20.50.0/24', color: '#111111' }],
                       createClassCounter(), 1000, 5);
   assert.equal(p.rows[0].label, '10.20.50.0/24');
 });

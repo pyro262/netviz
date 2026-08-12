@@ -117,7 +117,7 @@ export const CONFIG = {
     //               'DE'                                a country code
     //               'tcp/443' | 'udp/51820' | '443'     a port, protocol optional
     //   end         'src' | 'dst' | 'either'            default 'either'
-    //   colour      any '#rrggbb' or '#rgb'
+    //   color       any '#rrggbb' or '#rgb'
     //   name        optional; an empty name displays the matcher itself
     //   gain        optional; defaults to arcs.highlight.gain
     //   bloomScale  optional; defaults to arcs.highlight.bloomScale
@@ -347,7 +347,7 @@ export function rulesFromNetworks(networks) {
     const base = [...octets, ...Array(4 - octets.length).fill('0')].join('.');
     rules.push({
       match: `${base}/${bits}`,
-      colour: net.color || SHIPPED_RULE_COLOURS[i % SHIPPED_RULE_COLOURS.length],
+      color: net.color || SHIPPED_RULE_COLOURS[i % SHIPPED_RULE_COLOURS.length],
       name: typeof net.label === 'string' ? net.label : '',
       gain: net.gain,
       end: 'either',

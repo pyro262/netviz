@@ -211,7 +211,7 @@ def ripple_colour_case(page) -> bool:
         await new Promise((r) => setTimeout(r, 100));
         const r = ripples.lastRipple();
         if (r && Math.abs(r.lat - ev.dll[0]) < 0.01 && Math.abs(r.lon - ev.dll[1]) < 0.01) {
-          return {want, got: r.colour, waited: performance.now() - t0};
+          return {want, got: r.color, waited: performance.now() - t0};
         }
       }
       return {want, got: null, waited: performance.now() - t0};

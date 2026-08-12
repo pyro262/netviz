@@ -317,8 +317,8 @@ def export_import_roundtrip_case(page) -> bool:
     result = page.evaluate("""async () => {
       const rs = await import('./js/rulestore.js');
       const rules = [
-        {match: '203.0.113.0/24', end: 'either', colour: '#ff00ff', name: 'doc-net', enabled: true},
-        {match: 'DE', end: 'either', colour: '#22d3ee', name: '', enabled: false},
+        {match: '203.0.113.0/24', end: 'either', color: '#ff00ff', name: 'doc-net', enabled: true},
+        {match: 'DE', end: 'either', color: '#22d3ee', name: '', enabled: false},
       ];
       const text = rs.serialiseRules(rules);
       const out = rs.parseImport(text);
@@ -388,9 +388,9 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
     page.evaluate("""() => window.__netviz.settings.apply({
       'rail.enabled': true, 'rail.maxRules': 2,
       'arcs.rules': [
-        {match: 'DE', colour: '#ff0000', name: 'r-de', enabled: true},
-        {match: 'GB', colour: '#00ff00', name: 'r-gb', enabled: true},
-        {match: 'JP', colour: '#0000ff', name: 'r-jp', enabled: true},
+        {match: 'DE', color: '#ff0000', name: 'r-de', enabled: true},
+        {match: 'GB', color: '#00ff00', name: 'r-gb', enabled: true},
+        {match: 'JP', color: '#0000ff', name: 'r-jp', enabled: true},
       ],
     })""")
 
@@ -531,8 +531,8 @@ def rule_deletion_reclass_case(page) -> bool:
       const evB = {k: 'flow', s: '198.51.100.21', d: '198.51.100.22',
                    sll: [20, 20], dll: [22, 22], b: 500};
       settings.apply({'arcs.rules': [
-        {match: '198.51.100.11/32', colour: '#ff0000', name: 'ruleA', enabled: true},
-        {match: '198.51.100.21/32', colour: '#00ff00', name: 'ruleB', enabled: true},
+        {match: '198.51.100.11/32', color: '#ff0000', name: 'ruleA', enabled: true},
+        {match: '198.51.100.21/32', color: '#00ff00', name: 'ruleB', enabled: true},
       ]});
       await new Promise((r) => setTimeout(r, 50));
 
@@ -557,7 +557,7 @@ def rule_deletion_reclass_case(page) -> bool:
 
       // Delete rule A -- only B remains, now at index 0 (class 'rule1').
       settings.apply({'arcs.rules': [
-        {match: '198.51.100.21/32', colour: '#00ff00', name: 'ruleB', enabled: true},
+        {match: '198.51.100.21/32', color: '#00ff00', name: 'ruleB', enabled: true},
       ]});
       await new Promise((r) => setTimeout(r, 50));
 

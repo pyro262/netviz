@@ -1,7 +1,7 @@
-// Event -> which colour rule claims it. Imports NOTHING: no three, no DOM, no
+// Event -> which color rule claims it. Imports NOTHING: no three, no DOM, no
 // config. The list is passed in, so precedence and address arithmetic are
 // decided under `node --test` rather than by watching a wall and squinting at
-// a colour. Same discipline as campath.js and orbit.js.
+// a color. Same discipline as campath.js and orbit.js.
 //
 // Replaces the three fixed highlight slots, which matched with
 // `addr.startsWith(prefix)` -- a matcher that needs a trailing dot kept so
@@ -71,7 +71,7 @@ function parseV6(str) {
   return { family: 6, n };
 }
 
-function normaliseColour(c) {
+function normaliseColor(c) {
   if (typeof c !== 'string') return null;
   const s = c.trim().toLowerCase();
   if (/^#[0-9a-f]{6}$/.test(s)) return s;
@@ -151,8 +151,8 @@ export function parseRule(raw) {
   const m = parseMatch(raw.match);
   if (m.reason) return { reason: m.reason };
 
-  const colour = normaliseColour(raw.colour);
-  if (!colour) return { reason: `not a hex colour: ${raw.colour}` };
+  const color = normaliseColor(raw.color);
+  if (!color) return { reason: `not a hex color: ${raw.color}` };
 
   const end = raw.end === undefined ? 'either' : raw.end;
   if (!['src', 'dst', 'either'].includes(end)) return { reason: `not an end: ${raw.end}` };
@@ -166,7 +166,7 @@ export function parseRule(raw) {
     rule: {
       match: m.match,
       end,
-      colour,
+      color,
       // An empty name is the normal case, not a missing value: whatever
       // displays a rule renders the matcher itself, which is already
       // self-describing. Forcing a label produces "network 1".

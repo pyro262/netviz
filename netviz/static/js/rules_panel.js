@@ -1,4 +1,4 @@
-// The colour-rules editor.
+// The color-rules editor.
 //
 // Everything above the DOM line is pure and unit-tested: which rows exist,
 // which of them are valid, and which are ready to apply. The DOM half below
@@ -36,7 +36,7 @@ export function panelRows(list) {
       index,
       match: typeof src.match === 'string' ? src.match : '',
       end: rule ? rule.end : (src.end || 'either'),
-      colour: rule ? rule.colour : (typeof src.colour === 'string' ? src.colour : ''),
+      color: rule ? rule.color : (typeof src.color === 'string' ? src.color : ''),
       name: rule ? rule.name : (typeof src.name === 'string' ? src.name : ''),
       enabled: src.enabled !== false,
       reason: reason || null,
@@ -63,7 +63,7 @@ export function readyRules(rows) {
   return (rows || [])
     .filter((r) => !r.reason)
     .map((r) => {
-      const out = { match: r.match, end: r.end, colour: r.colour,
+      const out = { match: r.match, end: r.end, color: r.color,
                     name: r.name, enabled: r.enabled };
       if (typeof r.gain === 'number') out.gain = r.gain;
       if (typeof r.bloomScale === 'number') out.bloomScale = r.bloomScale;
@@ -105,7 +105,7 @@ const MATCH_HELP =
 const END_HELP =
   'Which end of the arc has to match: the source, the destination, or either '
   + 'end. Country and port rules read the same end.';
-const COLOUR_HELP =
+const COLOR_HELP =
   'The color arcs matching this rule are drawn in. It reaches arcs already on '
   + 'screen, not just the next one.';
 const NAME_HELP =
@@ -236,12 +236,12 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     end.addEventListener('change', () => editField(row.index, 'end', end.value));
     wrap.append(end);
 
-    const colour = el('input', 'rules-colour');
-    colour.type = 'color';
-    colour.value = /^#[0-9a-f]{6}$/i.test(row.colour) ? row.colour : '#a855f7';
-    colour.title = COLOUR_HELP;
-    colour.addEventListener('input', () => editField(row.index, 'colour', colour.value));
-    wrap.append(colour);
+    const swatch = el('input', 'rules-colour');
+    swatch.type = 'color';
+    swatch.value = /^#[0-9a-f]{6}$/i.test(row.color) ? row.color : '#a855f7';
+    swatch.title = COLOR_HELP;
+    swatch.addEventListener('input', () => editField(row.index, 'color', swatch.value));
+    wrap.append(swatch);
 
     const name = el('input', 'rules-name');
     name.value = row.name;
@@ -273,7 +273,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     if (row.reason) reasonNode = el('div', 'rules-reason', row.reason);
     if (reasonNode) wrap.append(reasonNode);
 
-    rowRefs.set(row.index, { wrap, match, end, colour, name, toggle: on, reason: reasonNode });
+    rowRefs.set(row.index, { wrap, match, end, swatch, name, toggle: on, reason: reasonNode });
     return wrap;
   }
 
@@ -283,7 +283,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
       // A new row starts EMPTY and therefore invalid, which is correct: it
       // contributes no rule until it says something, and its own reason line
       // explains why nothing changed on the globe yet.
-      draft = [...draft, { match: '', colour: '#a855f7', end: 'either', enabled: true }];
+      draft = [...draft, { match: '', color: '#a855f7', end: 'either', enabled: true }];
       dirty = true;
       redraw();
     });
@@ -326,7 +326,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     for (const [cls, text, tip] of [
       ['h-match', 'Match', MATCH_HELP],
       ['h-end', 'Applies to', END_HELP],
-      ['h-colour', 'Color', COLOUR_HELP],
+      ['h-colour', 'Color', COLOR_HELP],
       ['h-name', 'Label', NAME_HELP],
       // 'On' alone: the two buttons under this header are 50px between them
       // and 'On / Del' wraps to two lines inside that, which drags the whole

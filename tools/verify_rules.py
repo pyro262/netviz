@@ -59,7 +59,7 @@ def live_recolour_case(page) -> bool:
       const m = await import('./js/config.js');
       // Documentation space, so nothing the synthetic feed emits collides
       // with it and the arc being measured is the one spawned here.
-      m.CONFIG.arcs.rules = [{match: '203.0.113.0/24', colour: '#22d3ee'}];
+      m.CONFIG.arcs.rules = [{match: '203.0.113.0/24', color: '#22d3ee'}];
       arcs.setRules(m.CONFIG.arcs.rules);
       const before = arcs.classColour('rule1').getHex();
       const ev = {k: 'flow', s: '203.0.113.9', d: '198.51.100.7',
@@ -70,7 +70,7 @@ def live_recolour_case(page) -> bool:
       if (!live.length) return {error: 'no arc took the rule colour on spawn'};
 
       const t0 = performance.now();
-      m.CONFIG.arcs.rules = [{match: '203.0.113.0/24', colour: '#ff00ff'}];
+      m.CONFIG.arcs.rules = [{match: '203.0.113.0/24', color: '#ff00ff'}];
       const out = arcs.setRules(m.CONFIG.arcs.rules);
       const after = arcs.classColour('rule1').getHex();
       // 100ms is the same bound the settings catalogue was verified against.
@@ -99,7 +99,7 @@ def block_immunity_case(page) -> bool:
     result = page.evaluate("""async () => {
       const {arcs} = window.__netviz;
       const m = await import('./js/config.js');
-      m.CONFIG.arcs.rules = [{match: '198.51.100.0/24', colour: '#00ff00'}];
+      m.CONFIG.arcs.rules = [{match: '198.51.100.0/24', color: '#00ff00'}];
       arcs.setRules(m.CONFIG.arcs.rules);
       const ruleHex = arcs.classColour('rule1').getHex();
       const blockHex = arcs.classColour('block').getHex();
@@ -133,9 +133,9 @@ def refusal_case(page) -> bool:
       const {arcs} = window.__netviz;
       const m = await import('./js/config.js');
       m.CONFIG.arcs.rules = [
-        {match: '203.0.113.0/24', colour: '#22d3ee'},
-        {match: 'nonsense', colour: '#ffffff'},
-        {match: '198.51.100.0/24', colour: '#ff8800'},
+        {match: '203.0.113.0/24', color: '#22d3ee'},
+        {match: 'nonsense', color: '#ffffff'},
+        {match: '198.51.100.0/24', color: '#ff8800'},
       ];
       const out = arcs.setRules(m.CONFIG.arcs.rules);
       const cl = await import('./js/classify.js');
@@ -168,7 +168,7 @@ def country_case(page) -> bool:
       const m = await import('./js/config.js');
       // DE is one of the synthetic feed's ambient countries. On a real
       // deployment this case is about whatever that feed carries.
-      m.CONFIG.arcs.rules = [{match: 'DE', colour: '#ff00ff'}];
+      m.CONFIG.arcs.rules = [{match: 'DE', color: '#ff00ff'}];
       arcs.setRules(m.CONFIG.arcs.rules);
       const want = arcs.classColour('rule1').getHex();
       const t0 = performance.now();

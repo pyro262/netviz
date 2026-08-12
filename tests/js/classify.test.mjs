@@ -19,7 +19,7 @@ test('a plain flow is a flow', () => {
 });
 
 test('an event on a rule takes that rule class, 1-based', () => {
-  withRules([{ match: '10.20.50.0/24', colour: '#22d3ee' }], () => {
+  withRules([{ match: '10.20.50.0/24', color: '#22d3ee' }], () => {
     assert.equal(classNameFor({ k: 'flow', s: '10.20.50.7', d: '8.8.8.8' }), 'rule1');
     assert.equal(classNameFor({ k: 'flow', s: '8.8.8.8', d: '10.20.50.7' }), 'rule1');
     assert.equal(classNameFor({ k: 'flow', s: '10.20.51.7', d: '8.8.8.8' }), 'flow');
@@ -29,7 +29,7 @@ test('an event on a rule takes that rule class, 1-based', () => {
 test('a block is never coloured by a rule', () => {
   // The wall exists to show blocks and the alarm layer is one visual language.
   // This is the same guarantee DNS already has.
-  withRules([{ match: '10.20.50.0/24', colour: '#22d3ee' }], () => {
+  withRules([{ match: '10.20.50.0/24', color: '#22d3ee' }], () => {
     assert.equal(classNameFor({ k: 'block', s: '10.20.50.7', d: '1.2.3.4' }), 'block');
     assert.equal(classNameFor({ k: 'block', s: '1.2.3.4', d: '10.20.50.7' }), 'block');
   });
@@ -43,9 +43,9 @@ test('with no rules configured everything is a flow', () => {
 
 test('each rule gets its own class name, in list order', () => {
   withRules([
-    { match: '10.10.10.0/24', colour: '#a855f7' },
-    { match: '10.10.20.0/24', colour: '#22d3ee' },
-    { match: '10.10.30.0/24', colour: '#4ade80' },
+    { match: '10.10.10.0/24', color: '#a855f7' },
+    { match: '10.10.20.0/24', color: '#22d3ee' },
+    { match: '10.10.30.0/24', color: '#4ade80' },
   ], () => {
     assert.equal(classNameFor({ k: 'flow', s: '10.10.10.7', d: '8.8.8.8' }), 'rule1');
     assert.equal(classNameFor({ k: 'flow', s: '10.10.20.7', d: '8.8.8.8' }), 'rule2');
@@ -59,8 +59,8 @@ test('a refused rule does not renumber the ones after it', () => {
   // its index in the ORIGINAL list and the display warns rather than silently
   // recolouring.
   withRules([
-    { match: 'nonsense', colour: '#a855f7' },
-    { match: '10.10.20.0/24', colour: '#22d3ee' },
+    { match: 'nonsense', color: '#a855f7' },
+    { match: '10.10.20.0/24', color: '#22d3ee' },
   ], () => {
     assert.equal(classNameFor({ k: 'flow', s: '10.10.20.7', d: '8.8.8.8' }), 'rule1');
   });
@@ -70,10 +70,10 @@ test('rules are recompiled when the list is replaced', () => {
   // The compiled list is cached -- it must be keyed on the array's identity,
   // or a settings change would apply only after a reload, which is exactly
   // the dead control the settings work exists to prevent.
-  withRules([{ match: 'DE', colour: '#fff' }], () => {
+  withRules([{ match: 'DE', color: '#fff' }], () => {
     const ev = { k: 'flow', s: '1.1.1.1', d: '2.2.2.2', sc: 'DE', dc: 'US' };
     assert.equal(classNameFor(ev), 'rule1');
-    CONFIG.arcs.rules = [{ match: 'FR', colour: '#fff' }];
+    CONFIG.arcs.rules = [{ match: 'FR', color: '#fff' }];
     assert.equal(classNameFor(ev), 'flow');
   });
 });
@@ -88,7 +88,7 @@ test("the collector's slots migrate into colour rules", () => {
     ] } });
     assert.equal(CONFIG.arcs.rules.length, 1);
     assert.equal(CONFIG.arcs.rules[0].match, '172.20.5.0/24');
-    assert.equal(CONFIG.arcs.rules[0].colour, '#ff0000');
+    assert.equal(CONFIG.arcs.rules[0].color, '#ff0000');
     assert.equal(CONFIG.arcs.rules[0].name, 'lab');
     assert.equal(classNameFor({ k: 'flow', s: '172.20.5.9', d: '8.8.8.8' }), 'rule1');
   });
@@ -97,7 +97,7 @@ test("the collector's slots migrate into colour rules", () => {
 test('a display with its own rules is not overwritten by the environment', () => {
   // A configured list is the display's own decision: the migration fills an
   // empty list and never appends to a populated one.
-  withRules([{ match: '10.0.0.0/8', colour: '#123456' }], () => {
+  withRules([{ match: '10.0.0.0/8', color: '#123456' }], () => {
     mergeServerConfig({ highlight: { networks: [{ prefix: '172.20.5.' }] } });
     assert.equal(CONFIG.arcs.rules.length, 1);
     assert.equal(CONFIG.arcs.rules[0].match, '10.0.0.0/8');
