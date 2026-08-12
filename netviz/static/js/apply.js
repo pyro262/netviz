@@ -89,7 +89,10 @@ function arcHandlers(cls, keys) {
 
 const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
                   'maxRise', 'bloomScale'];
-const HIGHLIGHT_KEYS = ['life', 'tube', 'speed', 'lift', 'maxRise', 'bloomScale'];
+// The shape every colour rule shares. `gain` is here because a rule that omits
+// its own reads this one; the list must match settings.js's, which a test
+// asserts by requiring every schema path to have a handler.
+const HIGHLIGHT_KEYS = ['life', 'tube', 'gain', 'speed', 'lift', 'maxRise', 'bloomScale'];
 // Shape of the curve, baked into geometry at spawn. Must match the `rebuild`
 // strategies in settings.js; a test asserts the two lists agree.
 export const ARC_REBUILD_KEYS = ['tube', 'lift', 'maxRise'];

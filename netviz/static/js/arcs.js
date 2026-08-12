@@ -351,9 +351,9 @@ export function createArcs(radius, capacity = 220, onLand = null) {
    * density gain -- swapping in a fresh object would orphan every arc already
    * in the air and undercount them for the rest of their life.
    *
-   * `highlight` is the shape shared by all three highlighted networks, so it
-   * writes through to each live highlightN class; their colour and gain come
-   * from the collector and are not settings here.
+   * `highlight` is the shape shared by every colour rule, so it writes through
+   * to each live ruleN class; a rule's own colour, gain and bloomScale come
+   * from the rule list and move through setRules, not through here.
    *
    * Almost every field is COPIED OUT of the spec at spawn -- colour into the
    * slot's uniform, bloomScale into userData, life into slot.life -- so writing
@@ -367,7 +367,7 @@ export function createArcs(radius, capacity = 220, onLand = null) {
    */
   function setSpec(cls, key, value) {
     const targets = cls === 'highlight'
-      ? Object.keys(CLASS).filter((n) => n.startsWith('highlight'))
+      ? Object.keys(CLASS).filter((n) => n.startsWith('rule'))
       : [cls];
     for (const name of targets) {
       const spec = CLASS[name];
@@ -385,6 +385,44 @@ export function createArcs(radius, capacity = 220, onLand = null) {
         else if (key === 'life') slot.life = value;
       }
     }
+  }
+
+  /**
+   * Install a new rule list.
+   *
+   * Every rule shares the same geometry, so nothing here needs the pool
+   * cleared -- colour, gain and bloomScale are pushed into the arcs ALREADY IN
+   * THE AIR. That is the difference between a control that works and one that
+   * appears to do nothing: a rule change that only affected arcs spawned later
+   * would read as dead, exactly as the block recolour did before setSpec
+   * learned to push (block arcs live 18s and arrive rarely).
+   *
+   * An arc whose rule was deleted falls back to the flow spec rather than
+   * holding a reference to a class that no longer exists.
+   */
+  function setRules(list) {
+    const compiled = compileRules(list);
+    const shared = sharedShape();
+    for (const name of Object.keys(CLASS)) {
+      if (name.startsWith('rule')) delete CLASS[name];
+    }
+    compiled.rules.forEach((rule, i) => {
+      const name = `rule${i + 1}`;
+      CLASS[name] = classSpec(name, {
+        ...shared,
+        color: rule.colour,
+        gain: rule.gain === undefined ? shared.gain : rule.gain,
+        bloomScale: rule.bloomScale === undefined ? shared.bloomScale : rule.bloomScale,
+      });
+    });
+    for (const slot of pool) {
+      if (!slot.active || !slot.cls.startsWith('rule')) continue;
+      const spec = CLASS[slot.cls] || CLASS.flow;
+      slot.spec = spec;
+      slot.mat.uniforms.color.value.copy(spec.color);
+      slot.mesh.userData.bloomScale = spec.bloomScale;
+    }
+    return { applied: compiled.rules.length, refused: compiled.refused };
   }
 
   /** Retire every arc in the air. The tube radius is baked into a slot's
@@ -405,6 +443,7 @@ export function createArcs(radius, capacity = 220, onLand = null) {
   }
 
   return {
-    group, spawn, update, liveCount, origins, setUniform, setSpec, rebuild, classColour,
+    group, spawn, update, liveCount, origins, setUniform, setSpec, setRules, rebuild,
+    classColour,
   };
 }

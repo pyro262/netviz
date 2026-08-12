@@ -108,9 +108,12 @@ function arcClass(cls, keys) {
 
 const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
                   'maxRise', 'bloomScale'];
-// The highlight classes take their colour and gain from `highlight.networks`,
-// which the collector owns -- so the shared shape carries neither.
-const HIGHLIGHT_KEYS = ['life', 'tube', 'speed', 'lift', 'maxRise', 'bloomScale'];
+// `arcs.highlight` is the shape EVERY colour rule shares. A rule carries its
+// own colour, and may carry its own gain and bloomScale; what is here is the
+// geometry they all share, plus the gain and bloomScale a rule that omits them
+// falls back to. `colorAt` is absent because a rule's colour is an explicit hex
+// and a ramp position would never be read.
+const HIGHLIGHT_KEYS = ['life', 'tube', 'gain', 'speed', 'lift', 'maxRise', 'bloomScale'];
 
 /** The ten `layers` booleans. Each is `mesh.visible` on one object -- or the
  *  object's own setVisible where it has one -- and each is independent of the
