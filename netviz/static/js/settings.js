@@ -85,10 +85,12 @@ function arcClass(cls, keys) {
                    + 'yellow). Ignored when the class carries an explicit hex. '
                    + 'Recolored into the arcs already on screen, or a block '
                    + 'recolor would wait up to 18s to show.' },
-    gain: { type: 'number', min: 0, max: 3, strategy: 'uniform',
+    gain: { type: 'number', min: 0.05, max: 3, strategy: 'uniform',
             help: 'Multiplies the color down; the wall usually wants less '
                 + 'than 1. Use this when the line itself is too bright. Same '
-                + 'live recolor as colorAt.' },
+                + 'live recolor as colorAt. Floored at 0.05, the same floor '
+                + 'rules.js puts on a rule gain -- below it the class is '
+                + 'black and the traffic simply stops being drawn.' },
     speed: { type: 'number', min: 0.05, max: 5, strategy: 'uniform',
              help: 'How fast the travelling head runs along the arc. The head '
                  + 'reaching 1 is what fires the impact ripple. The one field '

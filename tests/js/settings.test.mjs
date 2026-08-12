@@ -300,3 +300,29 @@ test('a refused background does not reach the accepted patch', () => {
   assert.equal(rejected.length, 1);
   assert.equal(rejected[0].path, 'appearance.background');
 });
+
+test('an arc gain is clamped to the same floor rules.js enforces', () => {
+  // rules.js floors a rule's gain at 0.05 already. The schema declaring 0 for
+  // the identical quantity meant one of the two was wrong, and the schema was
+  // the one that could multiply a whole arc class to black.
+  //
+  // Clamped rather than refused, unlike the background: every other number in
+  // the schema clamps, and a floor is not an ambiguous intent the way a color
+  // is.
+  for (const p of ['arcs.flow.gain', 'arcs.block.gain', 'arcs.highlight.gain']) {
+    const c = coerce(p, 0);
+    assert.equal(c.ok, true, `${p}: ${c.why}`);
+    assert.equal(c.value, 0.05, `${p} should clamp to the floor`);
+    assert.equal(entry(p).min, 0.05);
+  }
+});
+
+test('bloomScale keeps its zero', () => {
+  // Glow only. An arc with no halo is still a visible arc, so 0 is a real
+  // setting here rather than an invisible class.
+  for (const p of ['arcs.flow.bloomScale', 'arcs.block.bloomScale',
+                   'arcs.highlight.bloomScale']) {
+    assert.equal(entry(p).min, 0);
+    assert.equal(coerce(p, 0).value, 0);
+  }
+});
