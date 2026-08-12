@@ -16,6 +16,7 @@
 // squinting at a photograph of a wall.
 
 import { cfg } from './config.js';
+import { ruleKey } from './classcount.js';
 
 // Read at mount, not at import: polling.railSeconds is a live setting, and a
 // rail mounted after that setting moved must use the current value.
@@ -130,7 +131,45 @@ export function versionLabel(snapshot) {
   return v.startsWith('v') ? v : `v${v}`;
 }
 
-export function panels(snapshot) {
+/**
+ * The COLOUR RULES panel, or null when there is nothing to say.
+ *
+ * Ranked by the last hour rather than by list order, so the busiest rules hold
+ * the visible slots and a rule that never fires cannot sit in front of one
+ * that does. The overflow is NAMED (+N more) rather than dropped: a truncated
+ * list that does not say it truncated is a lie about the traffic.
+ *
+ * Each row scales its own sparkline to its own peak -- sparkPoints already
+ * does that -- because the number beside it carries the magnitude and scaling
+ * every row to the busiest flattens the rest.
+ */
+export function rulePanel(rules, counter, nowMs, maxRules) {
+  const live = (Array.isArray(rules) ? rules : []).filter((r) => r && r.enabled !== false);
+  if (!live.length) return null;
+  const cap = Math.max(1, maxRules || 5);
+  const scored = live.map((r) => {
+    // ruleKey, imported from classcount.js -- NOT rebuilt inline. Two copies
+    // of an identity function drift, and the drift here is invisible: the rail
+    // would simply show 0.0/min for a rule that is firing.
+    const key = ruleKey(r);
+    const spark = counter.spark(key, nowMs);
+    return {
+      label: r.name || r.match || '?',
+      swatch: r.colour,
+      value: `${counter.ratePerMin(key, nowMs).toFixed(1)}/min`,
+      spark: spark ? sparkPoints(spark) : null,
+      hour: spark ? spark.reduce((a, b) => a + b, 0) : 0,
+    };
+  });
+  scored.sort((a, b) => b.hour - a.hour);
+  const rows = scored.slice(0, cap).map(({ hour, ...row }) => row);
+  if (scored.length > cap) {
+    rows.push({ label: `+${scored.length - cap} more`, value: '', muted: true });
+  }
+  return { title: 'COLOUR RULES', note: 'SINCE LOAD', rows };
+}
+
+export function panels(snapshot, extra) {
   const s = snapshot || {};
   const blocks = s.blocks || {};
   const netflow = s.netflow || {};
@@ -171,7 +210,7 @@ export function panels(snapshot) {
     health.push({ label: 'FEEDS', value: '—', muted: true });
   }
 
-  return [
+  const out = [
     {
       title: 'GEO BLOCKS',
       note: '24H',
@@ -191,6 +230,8 @@ export function panels(snapshot) {
     },
     { title: 'FEED HEALTH', rows: health },
   ];
+  if (extra) out.push(extra);
+  return out;
 }
 
 // ---------------------------------------------------------------- the DOM --
@@ -269,6 +310,11 @@ function paint(root, data, clock, version) {
       const value = el('span', 'rail-value', row.value);
       if (row.ok === false) value.classList.add('bad');
       line.append(value);
+      if (row.swatch) {
+        const dot = el('span', 'rail-swatch');
+        dot.style.background = row.swatch;
+        line.prepend(dot);
+      }
       if (row.bar !== undefined) {
         const track = el('span', 'rail-bar');
         const fill = el('span', 'rail-bar-fill');
@@ -302,7 +348,7 @@ function paint(root, data, clock, version) {
  * this returns, `body.rail` is set and the rail is painted, so a caller that
  * measures #stage next sees the narrowed box rather than the full viewport.
  */
-export function start() {
+export function start(rules) {
   const root = document.getElementById('rail');
   if (!root) return null;
   document.body.classList.add('rail');
@@ -316,7 +362,12 @@ export function start() {
   let version = '';
   const draw = () => {
     version = versionLabel(snapshot) || version;
-    paint(root, panels(snapshot), formatClock(new Date()), version);
+    // The rule rows come from the renderer's own counter, not from
+    // /stats.json: the collector has never seen the rule list.
+    const extra = rules
+      ? rulePanel(cfg('arcs.rules', []), rules, Date.now(), cfg('rail.maxRules', 5))
+      : null;
+    paint(root, panels(snapshot, extra), formatClock(new Date()), version);
   };
 
   const poll = async () => {

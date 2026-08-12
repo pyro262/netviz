@@ -15,6 +15,7 @@ import { CONFIG } from './config.js';
 // reached by mutating that object rather than through ctx. Importing it keeps
 // main.js from having to hand a fourth pure module into the context.
 import { BURST } from './burst.js';
+import { ruleKey } from './classcount.js';
 
 /** Write a dotted path into CONFIG, so anything reading cfg() later agrees
  *  with what was just applied to the live objects. */
@@ -123,7 +124,10 @@ export const HANDLERS = {
   // Every rule shares one geometry, so nothing is torn down: setRules pushes
   // colour, gain and bloomScale into the arcs ALREADY IN THE AIR. Marking this
   // `rebuild` would clear the pool for no benefit and cost a pass.
-  'arcs.rules': (v, ctx) => ctx.arcs.setRules(v),
+  'arcs.rules': (v, ctx) => {
+    ctx.arcs.setRules(v);
+    if (ctx.classCounts) ctx.classCounts.setKeys(v.map(ruleKey));
+  },
 
   'camera.distance': (v, ctx) => ctx.rig.setParam('camera.distance', v),
   'camera.walk.enabled': (v, ctx) => ctx.rig.setParam('camera.walk.enabled', v),

@@ -215,6 +215,50 @@ test('a collector without spark support still renders its bars', () => {
   assert.equal(rows[0].spark, null);
 });
 
+import { rulePanel } from '../../netviz/static/js/rail.js';
+import { createClassCounter, ruleKey } from '../../netviz/static/js/classcount.js';
+
+test('the rail lists a row per rule, busiest first', () => {
+  const c = createClassCounter();
+  const ruleA = { match: 'A', colour: '#111111', name: 'a' };
+  const ruleB = { match: 'B', colour: '#222222', name: 'b' };
+  // Seeded under ruleKey(rule) -- the same stable identity main.js counts
+  // under -- not a positional 'rule1'/'rule2' label, which would desync from
+  // the counter the moment a rule is reordered rather than recoloured.
+  for (let i = 0; i < 5; i += 1) c.add(ruleKey(ruleB), 1000 + i * 1000);
+  c.add(ruleKey(ruleA), 1000);
+  const p = rulePanel([ruleA, ruleB], c, 6000, 5);
+  assert.equal(p.rows.length, 2);
+  assert.equal(p.rows[0].label, 'b', 'the busier rule leads');
+});
+
+test('the rail caps the list and names the overflow', () => {
+  const c = createClassCounter();
+  const rules = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+    .map((m) => ({ match: m, colour: '#111111' }));
+  const p = rulePanel(rules, c, 1000, 5);
+  assert.equal(p.rows.length, 6, 'five rules plus the overflow line');
+  assert.equal(p.rows[5].label, '+2 more');
+});
+
+test('a disabled rule is not listed at all', () => {
+  const p = rulePanel([{ match: 'A', colour: '#111111', enabled: false }],
+                      createClassCounter(), 1000, 5);
+  assert.equal(p, null);
+});
+
+test('no rules means no panel, not an empty one', () => {
+  assert.equal(rulePanel([], createClassCounter(), 1000, 5), null);
+});
+
+test('a rule with no name is labelled by its matcher', () => {
+  // The matcher is already self-describing; forcing a label produces
+  // "network 1", which says less than "10.20.50.0/24".
+  const p = rulePanel([{ match: '10.20.50.0/24', colour: '#111111' }],
+                      createClassCounter(), 1000, 5);
+  assert.equal(p.rows[0].label, '10.20.50.0/24');
+});
+
 import { start } from '../../netviz/static/js/rail.js';
 
 /** Minimal DOM: rail.js touches getElementById, classList, and builds nodes

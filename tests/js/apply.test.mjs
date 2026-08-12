@@ -46,6 +46,10 @@ function fakeCtx(log) {
       maxRulesCalls: [],
       setMaxRules(v) { this.maxRulesCalls.push(v); log.push(`rail.maxRules=${v}`); },
     },
+    classCounts: {
+      setKeysCalls: [],
+      setKeys(keys) { this.setKeysCalls.push(keys); log.push(`classCounts.setKeys=${JSON.stringify(keys)}`); },
+    },
   };
 }
 
@@ -251,6 +255,20 @@ test('arcs.rules is applied through setRules and does not clear the pool', () =>
   assert.deepEqual(out.rejected, []);
   assert.deepEqual(ctx.arcs.setRulesCalls, [list]);
   assert.equal(ctx.arcs.rebuildCalls, 0, 'every rule shares one geometry');
+  // A rule list change drops the counter history of any class that no longer
+  // belongs to a rule, keyed the same way ruleKey() identifies a rule.
+  assert.deepEqual(ctx.classCounts.setKeysCalls, [['DE|either']]);
+});
+
+test('arcs.rules tolerates a ctx with no classCounts', () => {
+  // Older test doubles and any future caller that never built a counter must
+  // not crash the handler -- the guard in apply.js is what this proves.
+  const log = [];
+  const ctx = fakeCtx(log);
+  delete ctx.classCounts;
+  const applier = createApplier(ctx);
+  const out = applier.apply({ 'arcs.rules': [{ match: 'DE', colour: '#ff8800' }] });
+  assert.deepEqual(out.rejected, []);
 });
 
 test('rail.maxRules reaches the rail', () => {

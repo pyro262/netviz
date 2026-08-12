@@ -15,6 +15,7 @@ import { startInput } from './input.js';
 import { isDns, classNameFor, foreignEnd } from './classify.js';
 import { createBurstDetector } from './burst.js';
 import { railEnabled, start as startRail } from './rail.js';
+import { createClassCounter, ruleKey } from './classcount.js';
 import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
@@ -238,6 +239,10 @@ async function boot() {
   // starting it when the first arcs are still in the air means the camera gets
   // there while the burst is still on screen.
   const bursts = createBurstDetector();
+  // Counted BEFORE arcs.spawn samples flows: arcs.js drops flows above
+  // flowsPerSecond, and counting downstream of that would report the display's
+  // own sampling rate rather than the network's traffic.
+  const classCounts = createClassCounter();
   // A fresh kiosk is sent the replay window -- 60s of history -- as fast as the
   // socket will carry it, so every block in it lands inside a few milliseconds
   // and looks exactly like a burst. Measured on the deployed page: the camera
@@ -247,8 +252,13 @@ async function boot() {
   const bootedAt = performance.now() / 1000;
   const link = connect((ev) => {
     if (isDns(ev)) return;
+    const cls = classNameFor(ev);
+    if (cls.startsWith('rule')) {
+      const rule = cfg('arcs.rules', [])[Number(cls.slice(4)) - 1];
+      if (rule) classCounts.add(ruleKey(rule), Date.now());
+    }
     arcs.spawn(ev);
-    if (classNameFor(ev) === 'block') {
+    if (cls === 'block') {
       // The blocked country is the FAR end, which on this router is the
       // destination: every geo policy here is outbound, so the source is a LAN
       // address at home. See foreignEnd in classify.js.
@@ -338,7 +348,7 @@ async function boot() {
       // rail.js resize as well made mounting cost TWO resizes against
       // unmounting's one -- and a resize rebuilds the composer's render
       // targets, which is the whole reason the executor collapses them to one.
-      railHandle = startRail();
+      railHandle = startRail(classCounts);
     },
     unmount() {
       if (!railHandle) return;
@@ -424,7 +434,7 @@ async function boot() {
   // input, with input's slot in ctx filled in last.
   const ctx = {
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
-    scene, input: null, polling, resize, rail,
+    scene, input: null, polling, resize, rail, classCounts,
   };
   let settings = createApplier(ctx);
   settings = withPersistence(settings, storage);
