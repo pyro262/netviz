@@ -4,7 +4,8 @@
 // Wire format is the collector's short keys: k (kind), s/d (addresses).
 
 import { cfg } from './config.js';
-import { compileRules, firstMatch } from './rules.js';
+import { compileRules, firstMatch, addrContext, matchRule,
+         overridesSuppression } from './rules.js';
 
 // The compiled list, cached against the ARRAY IDENTITY it was built from.
 // Config is still read per call (a couple of property lookups per event, which
@@ -38,53 +39,111 @@ function isDnsPort(port) {
   return cfg('traffic.dnsPorts', [53, 853, 5353]).includes(port);
 }
 
-/** Is this event DNS chatter rather than data traffic?
+/** Width in bits of a resolver-list entry.
  *
- *  Measured on the real feed: nameserver traffic is 33% of all events and 5.7%
- *  of the bytes, and effectively all of it geolocates to MaxMind's US country
- *  centroid (37.751, -97.822, in Kansas) because GeoLite2 has no city record
- *  for anycast resolvers. Drawn, it is a third of the arcs on the wall all
- *  pointing at one fictional place.
- *
- *  Either end counts: resolvers answer FROM 53 and clients query TO 53, and
- *  both directions are on the feed. Absent ports mean unknown, never port 0 --
- *  a source that carries no ports must keep its arcs. */
-export function isDns(ev) {
-  if (!ev || ev.k === 'block') return false;   // blocks are never suppressed
-  if (cfg('traffic.dropDns', true) && (isDnsPort(ev.sp) || isDnsPort(ev.dp))) {
-    return true;
-  }
-  return isResolverAddress(ev);
+ *  A whole address hides exactly itself. A prefix hides everything under the
+ *  components it actually names -- `203.0.113.` names three octets and hides a
+ *  /24; `2001:db8:` names two groups and hides a /32. This width is what a
+ *  rule's specificity is compared against, so it comes from the list itself
+ *  rather than from a threshold somebody picked. */
+function entryBits(entry, family) {
+  if (entry.endsWith('.')) return entry.split('.').filter(Boolean).length * 8;
+  if (entry.endsWith(':')) return entry.split(':').filter(Boolean).length * 16;
+  return family === 4 ? 32 : 128;
 }
 
-/** Does this address belong to a known public resolver?
+/** The resolver-list entry that hides this address, or null.
  *
  *  An entry ending in `.` or `:` is a prefix and matches anything under it;
- *  anything else must match the whole address. IPv6 is compared lower-case and
- *  as written -- the collector passes the address through from the exporter, so
- *  this will not catch an unusual expansion of the same address. The prefixes
- *  cover the cases that matter.
- */
-export function isResolverAddress(ev) {
-  if (!cfg('traffic.dropResolvers', true)) return false;
-  if (!ev || ev.k === 'block') return false;
-  const list = cfg('traffic.resolvers', []).concat(cfg('traffic.extraResolvers', []));
-  return matchesAny(ev.s, list) || matchesAny(ev.d, list);
-}
-
-function matchesAny(addr, list) {
-  if (typeof addr !== 'string' || !addr) return false;
+ *  anything else must match the whole address, so 1.1.1.10 does not match
+ *  1.1.1.1. IPv6 is compared lower-case and as written -- the collector passes
+ *  the address through from the exporter, so this will not catch an unusual
+ *  expansion of the same address. The prefixes cover the cases that matter. */
+function matchingEntry(addr, list) {
+  if (typeof addr !== 'string' || !addr) return null;
   const a = addr.toLowerCase();
   for (const entry of list) {
     if (typeof entry !== 'string' || !entry) continue;
     const e = entry.toLowerCase();
     if (e.endsWith('.') || e.endsWith(':')) {
-      if (a.startsWith(e)) return true;
+      if (a.startsWith(e)) return e;
     } else if (a === e) {
-      return true;
+      return e;
     }
   }
-  return false;
+  return null;
+}
+
+/** Every reason this event is hidden from the display, as a list.
+ *
+ *  Measured on the real feed: nameserver traffic is 33% of all events and 5.7%
+ *  of the bytes, and effectively all of it geolocates to MaxMind's US country
+ *  centroid because GeoLite2 has no city record for anycast resolvers. Drawn,
+ *  it is a third of the arcs on the wall all pointing at one fictional place.
+ *
+ *  A LIST rather than a boolean, because a rule may ask for this traffic back
+ *  and the answer depends on WHY it was hidden. A query to a known resolver on
+ *  port 53 is hidden twice over, and a rule aimed at either reason is enough --
+ *  the two axes are two heuristics for one question, not two policies.
+ *
+ *  Either end counts on both axes: resolvers answer FROM 53 and clients query
+ *  TO 53, and both directions are on the feed. Absent ports mean unknown, never
+ *  port 0 -- a source that carries no ports must keep its arcs. */
+export function dnsSuppression(ev) {
+  const out = [];
+  if (!ev || ev.k === 'block') return out;   // blocks are never suppressed
+  if (cfg('traffic.dropDns', true)) {
+    if (isDnsPort(ev.sp)) out.push({ axis: 'port', port: ev.sp });
+    if (isDnsPort(ev.dp)) out.push({ axis: 'port', port: ev.dp });
+  }
+  if (cfg('traffic.dropResolvers', true)) {
+    const list = cfg('traffic.resolvers', []).concat(cfg('traffic.extraResolvers', []));
+    for (const addr of [ev.s, ev.d]) {
+      const entry = matchingEntry(addr, list);
+      if (!entry) continue;
+      const family = addr.includes(':') ? 6 : 4;
+      out.push({ axis: 'address', addr, family, bits: entryBits(entry, family) });
+    }
+  }
+  return out;
+}
+
+/** Is this event DNS chatter rather than data traffic? */
+export function isDns(ev) {
+  return dnsSuppression(ev).length > 0;
+}
+
+/** Does this address belong to a known public resolver? */
+export function isResolverAddress(ev) {
+  if (!cfg('traffic.dropResolvers', true)) return false;
+  if (!ev || ev.k === 'block') return false;
+  const list = cfg('traffic.resolvers', []).concat(cfg('traffic.extraResolvers', []));
+  return matchingEntry(ev.s, list) !== null || matchingEntry(ev.d, list) !== null;
+}
+
+/**
+ * The class of the first ENABLED rule aimed at any of these suppressions, or
+ * null if none is -- in which case the caller drops the event as before.
+ *
+ * The first OVERRIDING rule owns the class, not the first rule that merely
+ * matches. For suppressed traffic the eligible set is exactly the rules aimed
+ * at the suppression; a broad rule sitting above them was written about
+ * something else, so it neither authorizes the arc nor lends it a color.
+ *
+ * Numbering is `rule<N>` over the COMPILED list, 1-based -- the same space
+ * classNameFor uses, so arcs.js and rawRuleIndex need no second convention.
+ */
+export function overrideClassFor(ev, sups) {
+  if (!ev || !sups || !sups.length) return null;
+  const active = activeRules();
+  if (!active.rules.length) return null;
+  const ctx = addrContext(ev);
+  for (let i = 0; i < active.rules.length; i += 1) {
+    const rule = active.rules[i];
+    if (!rule.enabled || !matchRule(rule, ev, ctx)) continue;
+    if (sups.some((s) => overridesSuppression(rule, s))) return `rule${i + 1}`;
+  }
+  return null;
 }
 
 /** A country code the collector could actually place. `--` is what GeoIP

@@ -4,6 +4,7 @@ import test, { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   classNameFor, isDns, foreignEnd, isResolverAddress,
+  dnsSuppression, overrideClassFor,
 } from '../../netviz/static/js/classify.js';
 import { CONFIG, mergeServerConfig } from '../../netviz/static/js/config.js';
 
@@ -270,4 +271,108 @@ describe('isResolverAddress', () => {
     assert.equal(isResolverAddress({ k: 'flow' }), false);
     assert.equal(isResolverAddress(null), false);
   });
+});
+
+test('dnsSuppression reports the port axis for either end', () => {
+  assert.deepEqual(dnsSuppression({ k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 53 }),
+                   [{ axis: 'port', port: 53 }]);
+  assert.deepEqual(dnsSuppression({ k: 'flow', s: '203.0.113.5', d: '198.51.100.7', sp: 853 }),
+                   [{ axis: 'port', port: 853 }]);
+});
+
+test('dnsSuppression reports the address axis with the hiding entry width', () => {
+  // 9.9.9.9 is a whole entry in the shipped resolver list, so it hides like a
+  // /32. The width is what Task 1's specificity test compares against.
+  const out = dnsSuppression({ k: 'flow', s: '203.0.113.5', d: '9.9.9.9' });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].axis, 'address');
+  assert.equal(out[0].addr, '9.9.9.9');
+  assert.equal(out[0].family, 4);
+  assert.equal(out[0].bits, 32);
+});
+
+test('dnsSuppression reports BOTH axes when both fired', () => {
+  // A query to a known resolver on port 53 is hidden twice over. Beating
+  // either one is enough, so the caller has to see both.
+  const out = dnsSuppression({ k: 'flow', s: '203.0.113.5', d: '9.9.9.9', dp: 53 });
+  const axes = out.map((s) => s.axis).sort();
+  assert.deepEqual(axes, ['address', 'port']);
+});
+
+test('dnsSuppression is empty for ordinary traffic and for blocks', () => {
+  assert.deepEqual(dnsSuppression({ k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 443 }), []);
+  // A block is never suppressed -- the wall exists to show blocks.
+  assert.deepEqual(dnsSuppression({ k: 'block', s: '9.9.9.9', d: '203.0.113.5', dp: 53 }), []);
+});
+
+test('isDns still answers the same question', () => {
+  assert.equal(isDns({ k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 53 }), true);
+  assert.equal(isDns({ k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 443 }), false);
+  assert.equal(isDns({ k: 'block', s: '9.9.9.9', d: '203.0.113.5', dp: 53 }), false);
+});
+
+test('overrideClassFor returns the class of the rule aimed at the suppression', () => {
+  const prev = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: 'udp/53', color: '#22d3ee' }];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 53, pr: 17 };
+    assert.equal(overrideClassFor(ev, dnsSuppression(ev)), 'rule1');
+  } finally {
+    CONFIG.arcs.rules = prev;
+  }
+});
+
+test('overrideClassFor refuses a rule that matches but is not aimed', () => {
+  // The rule claims the event -- but it was written about a country, not about
+  // DNS, so it does not get to put a third of the feed back on the wall.
+  const prev = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: 'DE', color: '#22d3ee' }];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dc: 'DE', dp: 53 };
+    assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
+  } finally {
+    CONFIG.arcs.rules = prev;
+  }
+});
+
+test('the first OVERRIDING rule owns the class, not the first matching one', () => {
+  // A broad rule above does not participate and does not lend its color: for
+  // suppressed traffic the eligible set is exactly the overriding rules.
+  const prev = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [
+    { match: 'DE', color: '#ff0000' },        // matches, not aimed
+    { match: 'udp/53', color: '#22d3ee' },    // aimed
+  ];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dc: 'DE', dp: 53, pr: 17 };
+    assert.equal(overrideClassFor(ev, dnsSuppression(ev)), 'rule2');
+  } finally {
+    CONFIG.arcs.rules = prev;
+  }
+});
+
+test('beating either axis is enough', () => {
+  // Hidden by the port rule AND by the address rule; a rule aimed at just the
+  // port draws it. Requiring both would make `udp/53` fail on the best-known
+  // resolvers on the internet, which reads as a broken control.
+  const prev = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: 'udp/53', color: '#22d3ee' }];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '9.9.9.9', dp: 53, pr: 17 };
+    assert.equal(overrideClassFor(ev, dnsSuppression(ev)), 'rule1');
+  } finally {
+    CONFIG.arcs.rules = prev;
+  }
+});
+
+test('overrideClassFor is null with no rules and with nothing suppressed', () => {
+  const prev = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 53 };
+    assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
+    assert.equal(overrideClassFor(ev, []), null);
+  } finally {
+    CONFIG.arcs.rules = prev;
+  }
 });
