@@ -6,4 +6,4 @@
 # would then report to every kiosk as a permanent "update available".
 #
 # Keep this, the git tag and the GitHub release on the same number.
-__version__ = "0.4.0"
+__version__ = "0.4.1"
