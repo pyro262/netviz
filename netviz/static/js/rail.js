@@ -327,7 +327,7 @@ function paint(root, data, clock, version) {
  * this returns, `body.rail` is set and the rail is painted, so a caller that
  * measures #stage next sees the narrowed box rather than the full viewport.
  */
-export function start(rules) {
+export function start(counter) {
   const root = document.getElementById('rail');
   if (!root) return null;
   document.body.classList.add('rail');
@@ -343,8 +343,8 @@ export function start(rules) {
     version = versionLabel(snapshot) || version;
     // The rule rows come from the renderer's own counter, not from
     // /stats.json: the collector has never seen the rule list.
-    const extra = rules
-      ? rulePanel(cfg('arcs.rules', []), rules, Date.now(), cfg('rail.maxRules', 5))
+    const extra = counter
+      ? rulePanel(cfg('arcs.rules', []), counter, Date.now(), cfg('rail.maxRules', 5))
       : null;
     paint(root, panels(snapshot, extra), formatClock(new Date()), version);
   };

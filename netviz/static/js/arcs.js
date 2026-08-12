@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { plasmaAt } from './palette.js';
 import { classNameFor, foreignEnd } from './classify.js';
-import { compileRules } from './rules.js';
+import { compileRules, firstMatch } from './rules.js';
 import { densityGain } from './density.js';
 import { latLonToVec3 } from './globe.js';
 import { cfg } from './config.js';
@@ -266,6 +266,10 @@ export function createArcs(radius, capacity = 220, onLand = null) {
     slot.dlat = ev.dll[0];
     slot.dlon = ev.dll[1];
     slot.cls = className;
+    // Kept so a later setRules() can re-run the match against a new rule
+    // list -- see the comment there. The pool is ~220 slots; the cost of
+    // holding one extra object reference per slot is negligible.
+    slot.ev = ev;
     // The country to flash: the FAR end, not the source. Every geo block on
     // this router is outbound, so `sc` is "--" and `sll` is home -- reading the
     // source meant flashCountry was called with "--" on every real block and
@@ -399,6 +403,27 @@ export function createArcs(radius, capacity = 220, onLand = null) {
    *
    * An arc whose rule was deleted falls back to the flow spec rather than
    * holding a reference to a class that no longer exists.
+   *
+   * Every arc still in the air is reclassified by RE-MATCHING its spawning
+   * event against the list just compiled, not by re-looking-up its old
+   * `slot.cls` name against the new CLASS table. `slot.cls` is a position
+   * (`rule2` means "matched the second rule"), not an identity -- so on a
+   * plain re-lookup, deleting rule 1 left every `rule2` arc pointing at a
+   * CLASS entry that no longer existed (falling back to flow, even though
+   * rule 2 still claims it) while every `rule1` arc silently inherited
+   * whatever rule now occupies index 1 -- a colour it never matched. The same
+   * shift happened on any edit that drops a row, since `readyRules` renumbers
+   * everything after it. Re-matching against the event fixes all three: a
+   * surviving rule keeps its arcs, a deleted rule's arcs fall back to flow,
+   * and an arc that was flow because nothing matched yet is promoted the
+   * moment a new rule claims it -- which is also what makes the "pushed into
+   * the arcs already in the air" promise true for arcs that were not
+   * previously rule-coloured at all, not just recoloured.
+   *
+   * classify.classNameFor is NOT used here on purpose: it reads
+   * CONFIG.arcs.rules, which is still the OLD list at the moment this handler
+   * runs -- apply.js writes CONFIG only after every handler in a patch
+   * returns. firstMatch is called directly against the list just compiled.
    */
   function setRules(list) {
     const compiled = compileRules(list);
@@ -416,8 +441,15 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       });
     });
     for (const slot of pool) {
-      if (!slot.active || !slot.cls.startsWith('rule')) continue;
-      const spec = CLASS[slot.cls] || CLASS.flow;
+      // Blocks are never rule-coloured, whatever they matched -- the wall
+      // exists to show them, full stop. A slot with no stored event (should
+      // not happen post-spawn, but a wall must never throw) keeps its
+      // current class rather than being guessed at.
+      if (!slot.active || slot.cls === 'block' || !slot.ev) continue;
+      const idx = firstMatch(compiled, slot.ev);
+      const name = idx >= 0 ? `rule${idx + 1}` : 'flow';
+      const spec = CLASS[name] || CLASS.flow;
+      slot.cls = name;
       slot.spec = spec;
       slot.mat.uniforms.color.value.copy(spec.color);
       slot.mesh.userData.bloomScale = spec.bloomScale;

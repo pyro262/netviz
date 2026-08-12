@@ -12,7 +12,7 @@ import { createAtmosphere } from './atmosphere.js';
 import { createComposer } from './post.js';
 import { createCameraRig } from './camera.js';
 import { startInput } from './input.js';
-import { isDns, classNameFor, foreignEnd } from './classify.js';
+import { isDns, classNameFor, foreignEnd, rawRuleIndex } from './classify.js';
 import { createBurstDetector } from './burst.js';
 import { start as startRail } from './rail.js';
 import { createClassCounter, ruleKey } from './classcount.js';
@@ -261,7 +261,11 @@ async function boot() {
     if (isDns(ev)) return;
     const cls = classNameFor(ev);
     if (cls.startsWith('rule')) {
-      const rule = cfg('arcs.rules', [])[Number(cls.slice(4)) - 1];
+      // cls's index counts positions in the COMPILED rule list (refusals
+      // dropped); the raw list here still carries them, so an unparseable
+      // rule earlier in arcs.rules would otherwise shift every index after
+      // it and the rail would count traffic under the wrong rule's key.
+      const rule = cfg('arcs.rules', [])[rawRuleIndex(Number(cls.slice(4)) - 1)];
       if (rule) classCounts.add(ruleKey(rule), Date.now());
     }
     arcs.spawn(ev);
@@ -436,18 +440,6 @@ async function boot() {
   };
   let settings = createApplier(ctx);
   settings = withPersistence(settings, storage);
-  // The rest of the stored patch (arcs.rules and rail.enabled were already
-  // applied directly to CONFIG above, before createArcs() and the rail-mount
-  // decision needed them -- see the comments there). Re-running the whole
-  // patch through the executor here is harmless (setRules and rail.mount are
-  // both idempotent) and is what reports a rejection for any OTHER stored key
-  // the schema no longer knows.
-  if (Object.keys(stored.patch).length) {
-    const out = settings.apply(stored.patch);
-    for (const r of out.rejected) {
-      console.warn(`netviz: stored setting ${r.path} skipped -- ${r.why}`);
-    }
-  }
   ctx.settings = settings;
   // The menu mounts on `body`, NOT on `#stage`. `#stage` is `position:
   // fixed`, which creates a stacking context, so a menu inside it ranks its
@@ -457,8 +449,22 @@ async function boot() {
   // z-index cannot fix that (measured: 9999 changed nothing).
   const rulesPanel = createRulesPanel({ settings, root: document.body });
   const menu = createMenu({ rig, settings, rulesPanel, root: document.body });
-  input = startInput({ canvas: renderer.domElement, rig, menu });
+  input = startInput({ canvas: renderer.domElement, rig, menu, rulesPanel });
   ctx.input = input;
+  // The rest of the stored patch (arcs.rules and rail.enabled were already
+  // applied directly to CONFIG above, before createArcs() and the rail-mount
+  // decision needed them -- see the comments there). Re-running the whole
+  // patch through the executor here is harmless (setRules and rail.mount are
+  // both idempotent) and is what reports a rejection for any OTHER stored key
+  // the schema no longer knows. This must run AFTER ctx.input is set: eight
+  // apply.js handlers dereference ctx.input and throw otherwise, which sent
+  // every persisted input.* setting to `rejected` on every single boot.
+  if (Object.keys(stored.patch).length) {
+    const out = settings.apply(stored.patch);
+    for (const r of out.rejected) {
+      console.warn(`netviz: stored setting ${r.path} skipped -- ${r.why}`);
+    }
+  }
 
   // Diagnostics only -- no interaction, nothing reads this on the wall. It
   // exists so tools/shoot.py can assert the scene has live arcs rather than

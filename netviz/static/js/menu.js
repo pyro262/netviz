@@ -282,8 +282,10 @@ export function createMenu({ rig, settings, rulesPanel, root }) {
       // this produces. Task 3 does not change that; a later task does.
       settingsPanel: false,
       // The lock is already checked at the top of open(), so a menu that
-      // drew at all may offer this.
-      rulesPanel: true,
+      // drew at all may offer this -- but only if this menu was actually
+      // built with a panel to open; a menu constructed without one (as some
+      // tests still do) must not draw a row whose handler is guarded out.
+      rulesPanel: !!rulesPanel,
     };
 
     node = el('div', 'menu');

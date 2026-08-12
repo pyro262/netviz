@@ -433,11 +433,158 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
     return ok2
 
 
+def keyboard_typing_case(page, cx, cy) -> bool:
+    """8: the panel's text fields can be typed into with a keyboard.
+
+    Regression test for `input.js`'s global keydown handler eating
+    keystrokes meant for the panel: before it checked `ev.target`, '-'
+    zoomed the camera out (untyping an address range like
+    '203.0.113.10-203.0.113.40'), 'f' toggled fullscreen (untyping a name
+    like 'firewall'), and 's' opened the on-screen menu OVER the open
+    panel (untyping a lowercase country code).
+
+    Uses `page.keyboard.type()` -- real keydown/keyup events dispatched at
+    the OS/browser level, not a synthetic `input` event constructed in JS
+    -- because the bug is specifically that `window`'s keydown listener
+    intercepts the keystroke before the input box's own value ever
+    changes; a fabricated `Event('input')` would never exercise that path
+    at all and would pass whether or not the fix was in place."""
+    if not page.evaluate("() => !!document.querySelector('.rules-panel')"):
+        open_menu_and_click(page, "rules", cx, cy)
+        page.wait_for_timeout(300)
+    page.evaluate("() => { const m = document.querySelector('.menu'); if (m) m.remove(); }")
+
+    add_btn = page.query_selector(".rules-add")
+    if not add_btn:
+        return report("8: the panel's text fields can be typed into", False,
+                       "no .rules-add -- is the panel open?")
+    add_btn.click()
+    page.wait_for_timeout(100)
+    rows = page.query_selector_all(".rules-row")
+    if not rows:
+        return report("8: the panel's text fields can be typed into", False,
+                       "add did not append a row")
+    row = rows[-1]
+    match = row.query_selector(".rules-match")
+    name = row.query_selector(".rules-name")
+
+    match_text = "203.0.113.10-203.0.113.40"
+    name_text = "firewalls"   # carries both 'f' (fullscreen) and 's' (menu)
+
+    match.click()
+    page.keyboard.type(match_text, delay=15)
+    name.click()
+    page.keyboard.type(name_text, delay=15)
+
+    result = page.evaluate("""({matchSel, nameSel}) => {
+      const rows = document.querySelectorAll('.rules-row');
+      const row = rows[rows.length - 1];
+      return {
+        matchValue: row.querySelector('.rules-match').value,
+        nameValue: row.querySelector('.rules-name').value,
+        menuOpen: !!document.querySelector('.menu'),
+      };
+    }""", {"matchSel": ".rules-match", "nameSel": ".rules-name"})
+
+    ok = (result["matchValue"] == match_text and result["nameValue"] == name_text
+          and not result["menuOpen"])
+    # Clean up the scratch row so later cases (which assume a known panel
+    # state) are not confused by it.
+    row2 = page.query_selector_all(".rules-row")[-1]
+    del_btn = row2.query_selector(".rules-delete")
+    if del_btn:
+        del_btn.click()
+        page.wait_for_timeout(100)
+    return report(
+        "8: the panel's text fields can be typed into", ok,
+        f"match field: {result['matchValue']!r} (wanted {match_text!r}), "
+        f"name field: {result['nameValue']!r} (wanted {name_text!r}), "
+        f"menu opened: {result['menuOpen']}")
+
+
+def rule_deletion_reclass_case(page) -> bool:
+    """9: deleting a rule reclassifies arcs already in the air by their OWN
+    match, not by the class index they happened to occupy.
+
+    `setRules` used to walk only slots whose `cls` started with 'rule' and
+    re-look-up `CLASS[slot.cls]` by NAME -- a position, not an identity.
+    Installs two rules (A, B), spawns one live arc matching each, then
+    deletes A. The bug: the arc that matched A (was `rule1`) inherited
+    whatever now sits at index 1 -- i.e. B's colour, a match it never had
+    -- while the arc that matched B (was `rule2`) found no `CLASS.rule2`
+    at all and fell back to flow violet even though B still claims it.
+    Both are wrong; the fix re-matches each slot's stored spawning event
+    against the freshly compiled list."""
+    result = page.evaluate("""async () => {
+      const {arcs, settings} = window.__netviz;
+      const evA = {k: 'flow', s: '198.51.100.11', d: '198.51.100.12',
+                   sll: [10, 10], dll: [12, 12], b: 500};
+      const evB = {k: 'flow', s: '198.51.100.21', d: '198.51.100.22',
+                   sll: [20, 20], dll: [22, 22], b: 500};
+      settings.apply({'arcs.rules': [
+        {match: '198.51.100.11/32', colour: '#ff0000', name: 'ruleA', enabled: true},
+        {match: '198.51.100.21/32', colour: '#00ff00', name: 'ruleB', enabled: true},
+      ]});
+      await new Promise((r) => setTimeout(r, 50));
+
+      function spawnAndTrack(ev) {
+        const before = arcs.group.children.map((m) => m.geometry.uuid);
+        arcs.spawn(ev);
+        return arcs.group.children.filter((m, i) => m.geometry.uuid !== before[i]);
+      }
+      let liveA = [];
+      let liveB = [];
+      const deadline = performance.now() + 2000;
+      while ((!liveA.length || !liveB.length) && performance.now() < deadline) {
+        if (!liveA.length) liveA = spawnAndTrack(evA);
+        if (!liveB.length) liveB = spawnAndTrack(evB);
+        if (!liveA.length || !liveB.length) await new Promise((r) => setTimeout(r, 60));
+      }
+      if (!liveA.length || !liveB.length) {
+        return {error: 'could not spawn tracked arcs for both rules'};
+      }
+
+      const flowHex = arcs.classColour('flow').getHex();
+
+      // Delete rule A -- only B remains, now at index 0 (class 'rule1').
+      settings.apply({'arcs.rules': [
+        {match: '198.51.100.21/32', colour: '#00ff00', name: 'ruleB', enabled: true},
+      ]});
+      await new Promise((r) => setTimeout(r, 50));
+
+      // B's expected colour is read from the LIVE class table, not a raw
+      // literal: gain (arcs.highlight, default 0.70) scales every rule
+      // colour down, so comparing against '#00ff00' directly would fail
+      // for a reason that has nothing to do with which rule an arc is
+      // attached to.
+      const bWantHex = arcs.classColour('rule1').getHex();
+
+      return {
+        aHex: liveA[0].material.uniforms.color.value.getHex(),
+        bHex: liveB[0].material.uniforms.color.value.getHex(),
+        flowHex, bWantHex,
+      };
+    }""")
+    if result.get("error"):
+        return report("9: deleting a rule reclassifies by match, not index", False,
+                       result["error"])
+    a_ok = result["aHex"] == result["flowHex"]
+    b_ok = result["bHex"] == result["bWantHex"]
+    ok = a_ok and b_ok
+    return report(
+        "9: deleting a rule reclassifies by match, not index", ok,
+        f"deleted rule's arc -> flow (#{result['flowHex']:06x}): "
+        f"{a_ok} (got #{result['aHex']:06x}); "
+        f"surviving rule's arc keeps its own colour (#{result['bWantHex']:06x}): "
+        f"{b_ok} (got #{result['bHex']:06x})")
+
+
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= panel_open_case(page, cx, cy)
     ok &= live_recolour_case(page)
     ok &= bad_row_case(page)
+    ok &= keyboard_typing_case(page, cx, cy)
     ok &= reload_survives_case(page)
     # The reload above dropped the panel; reopen it for the cases that need it.
     open_menu_and_click(page, "rules", cx, cy)
@@ -447,6 +594,7 @@ def run(page, cx, cy) -> bool:
     # reset_case's reload dropped the panel too, and cleared the rule --
     # case 7 installs its own rules independently, so it does not need it open.
     ok &= rail_lists_rule_case(page, cx, cy)
+    ok &= rule_deletion_reclass_case(page)
     return ok
 
 

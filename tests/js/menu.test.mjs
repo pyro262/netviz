@@ -287,6 +287,31 @@ test('open draws the menu when input.lock is not set', () => {
   });
 });
 
+test('a menu built with no rulesPanel draws no Colour rules row', () => {
+  // createMenu({ rulesPanel }) is optional -- some callers (this test suite
+  // included, until this fix) build a menu without one. `open()` used to
+  // hardcode `rulesPanel: true` into the state it hands menuModel, so that
+  // menu drew a row whose click handler (`if (item.id === 'rules' &&
+  // rulesPanel) rulesPanel.open()`) was permanently guarded out -- a
+  // control that is drawn but can never do anything.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+      // rulesPanel intentionally omitted
+    });
+    menu.open(10, 10, { x: 0, y: 0 });
+    function find(node) {
+      if (node.getAttribute && node.getAttribute('data-id') === 'rules') return node;
+      for (const c of node.children || []) { const r = find(c); if (r) return r; }
+      return null;
+    }
+    assert.equal(find(dom.root), null, 'a "rules" row was drawn with no panel to open');
+  });
+});
+
 test('open draws exactly the rows menuModel describes, not just SOMETHING', () => {
   // children.length > 0 alone would pass against a menu that appended one
   // empty div and nothing else -- this walks the actual tree and checks the
@@ -294,9 +319,14 @@ test('open draws exactly the rows menuModel describes, not just SOMETHING', () =
   // against menuModel's own output for the equivalent state.
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
+    // A rulesPanel IS supplied here -- createMenu draws the "Colour rules"
+    // row only when it has one (state.rulesPanel is `!!rulesPanel`, not a
+    // hardcoded true), or a menu built without a panel would draw a row
+    // whose click handler is guarded out and does nothing.
     const menu = createMenu({
       rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
+      rulesPanel: { open: () => {}, isOpen: () => false },
       root: dom.root,
     });
     menu.open(10, 10, { x: 0, y: 0 });

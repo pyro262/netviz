@@ -126,3 +126,29 @@ export function classNameFor(ev) {
   const idx = firstMatch(activeRules(), ev);
   return idx >= 0 ? `rule${idx + 1}` : 'flow';
 }
+
+/**
+ * Map a `firstMatch`/`classNameFor` index (a position in `compiled.rules`,
+ * i.e. `activeRules()`) back to its position in the RAW `arcs.rules` list.
+ *
+ * `compileRules` drops refused (unparseable) entries from `rules` entirely,
+ * so the two index spaces only agree when nothing before the match was
+ * refused. Anything reading `cfg('arcs.rules', [])[idx]` with the compiled
+ * index -- the rail's per-rule counter did exactly this -- picks the wrong
+ * rule's key whenever an earlier row fails to parse, silently attributing
+ * traffic to a rule nobody matched.
+ *
+ * Reads the module's own cached `compiled` state, so call this only after
+ * `classNameFor`/`activeRules` has run for the current config (it always has
+ * by the time a class name comes back).
+ */
+export function rawRuleIndex(compiledIndex) {
+  const refused = new Set(compiled.refused.map((r) => r.index));
+  let seen = -1;
+  let raw = -1;
+  while (seen < compiledIndex) {
+    raw += 1;
+    if (!refused.has(raw)) seen += 1;
+  }
+  return raw;
+}

@@ -208,10 +208,48 @@ test('typing in the match field does not rebuild the row -- the input node stays
       before.dispatch('input', {});
       const after = dom.root.querySelector('.rules-match');
       assert.equal(after, before, 'the match input was replaced by a new node');
-      // Live validation still fired on the keystroke.
-      assert.ok(applied.length >= 2, 'settings.apply was not called on the edit');
+      // Live validation still fired on the keystroke. Opening the panel does
+      // NOT call settings.apply on its own -- only an actual edit does, so
+      // merely looking at the panel cannot capture a collector-migrated rule
+      // list into localStorage or drop an unparseable rule nobody touched.
+      assert.ok(applied.length >= 1, 'settings.apply was not called on the edit');
       const last = applied[applied.length - 1]['arcs.rules'];
       assert.equal(last[0].match, '10.20.50.0/24');
+    });
+  } finally {
+    CONFIG.arcs.rules = savedRules;
+  }
+});
+
+test('opening the panel alone never calls settings.apply -- only an edit does', () => {
+  // open() -> redraw() -> applyDraft() used to call settings.apply
+  // unconditionally, so merely looking at the panel persisted the current
+  // rule list into localStorage. Two real failures followed: a display
+  // whose rules came from the collector's NETVIZ_HIGHLIGHT* migration got
+  // them captured the moment somebody opened the panel to look (after
+  // which mergeServerConfig never migrates again, since it only fires on
+  // an empty list), and any rule that fails to parse is silently dropped
+  // by readyRules and the reduced list gets written back -- deleting a
+  // rule nobody touched.
+  const dom = fakeDom();
+  const savedRules = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: 'DE', colour: '#22d3ee', name: 'germany' }];
+  try {
+    withFakeGlobals(dom, () => {
+      const applied = [];
+      const panel = createRulesPanel({
+        settings: { apply: (patch) => { applied.push(patch); return { rejected: [] }; } },
+        root: dom.root,
+      });
+      panel.open();
+      assert.equal(applied.length, 0,
+        'opening the panel called settings.apply with no edit made');
+
+      // An actual edit still applies, proving the gate is not just stuck off.
+      const match = dom.root.querySelector('.rules-match');
+      match.value = 'FR';
+      match.dispatch('input', {});
+      assert.ok(applied.length >= 1, 'an edit after opening did not apply');
     });
   } finally {
     CONFIG.arcs.rules = savedRules;

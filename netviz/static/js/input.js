@@ -13,7 +13,7 @@ import { zoomBy, decay } from './orbit.js';
 import { pickCameraSphere, dragRotation, axisAngle } from './arcball.js';
 import { isDoubleTap, DOUBLE_TAP } from './menu.js';
 
-export function startInput({ canvas, rig, menu }) {
+export function startInput({ canvas, rig, menu, rulesPanel }) {
   // `enabled` is a live GATE, not an early return.
   //
   // It used to return a do-nothing stub, and that stub had to carry the whole
@@ -293,6 +293,13 @@ export function startInput({ canvas, rig, menu }) {
   }
 
   function onKey(ev) {
+    // A key typed into a text box belongs to the box, not the camera. Before the
+    // rules panel there were no inputs on this page, so a global handler that
+    // preventDefault()s every key it knows was safe; now `-` in an address range
+    // and `s` in a country code would zoom the globe and open the menu instead.
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT'
+              || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (!enabled || !keysOn || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     const [min, max] = rig.zoomRange();
     const stepDeg = 5;
@@ -354,7 +361,7 @@ export function startInput({ canvas, rig, menu }) {
     // countdown cannot expire underneath it. resumeSeconds is 30 -- long
     // enough to read the menu -- so keep restarting it every frame it stays
     // open, or the camera flies home mid-read.
-    if (menu.isOpen()) rig.poke();
+    if (menu.isOpen() || rulesPanel?.isOpen()) rig.poke();
     // The hand-back ends input's ownership of the view, full stop. Damping
     // 0.85/s has a ~6.2s time constant against a 1e-6 floor, so a fling coasts
     // for ~114 seconds -- nearly four times resumeSeconds. Without this guard

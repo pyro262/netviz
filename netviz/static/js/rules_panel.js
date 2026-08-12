@@ -57,8 +57,8 @@ export function panelRows(list) {
  *
  *  `gain`/`bloomScale` are put back only when the row actually carries them --
  *  same rule as `panelRows`, so a rule that never had them does not acquire
- *  them, and a rule that did keeps them across every apply this panel makes,
- *  including the one that fires merely from opening it. */
+ *  them, and a rule that did keeps them across every apply this panel makes.
+ *  Opening the panel makes none on its own -- see `dirty` on `applyDraft`. */
 export function readyRules(rows) {
   return (rows || [])
     .filter((r) => !r.reason)
@@ -101,18 +101,35 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
   // panel. Rebuilt only on a structural redraw (open, add, delete), which is
   // exactly when the indices this map is keyed by are changing anyway.
   let rowRefs = new Map();
+  // Set by an actual edit (editField, add, delete, import) -- never by
+  // opening the panel. `open()` seeds `draft` from CONFIG and calls
+  // `redraw()` to paint it, and redraw() runs through applyDraft() same as
+  // any other change; without this flag that first call persisted the
+  // current rule list into localStorage from a look with no edit at all.
+  // Two real failures followed from that: a display whose rules came from
+  // the collector's NETVIZ_HIGHLIGHT* migration got them captured into
+  // storage the moment somebody opened the panel to look, after which
+  // mergeServerConfig never migrates again (it only fires on an empty
+  // list) and a later .env change silently stops reaching that wall; and
+  // any rule that fails to parse is dropped by readyRules, so the reduced
+  // list got written back and quietly deleted a rule nobody touched.
+  let dirty = false;
 
   function isOpen() { return node !== null; }
 
-  /** Validate the whole draft and push it through settings.apply. Returns the
-   *  full row list (index-aligned with `draft`) so a caller can read back
-   *  just the row it cares about. Called on every edit, structural or not --
-   *  live validation on every keystroke is the design; only the DOM update
-   *  that follows is what differs. */
+  /** Validate the whole draft and, if an edit actually happened, push it
+   *  through settings.apply. Returns the full row list (index-aligned with
+   *  `draft`) so a caller can read back just the row it cares about --
+   *  validation runs every time regardless of `dirty`, since the row display
+   *  (which fields are red, what the reason line says) has to reflect
+   *  whatever is in the boxes even before anything is saved. Only the
+   *  persisting write is gated. */
   function applyDraft() {
     const rows = panelRows(draft);
-    const out = settings.apply({ 'arcs.rules': readyRules(rows) });
-    for (const r of out.rejected) console.warn(`netviz: ${r.path} -- ${r.why}`);
+    if (dirty) {
+      const out = settings.apply({ 'arcs.rules': readyRules(rows) });
+      for (const r of out.rejected) console.warn(`netviz: ${r.path} -- ${r.why}`);
+    }
     return rows;
   }
 
@@ -146,6 +163,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
    *  every other row's, and rebuild fresh nodes nobody has focused. */
   function editField(index, key, value) {
     draft[index] = { ...draft[index], [key]: value };
+    dirty = true;
     const rows = applyDraft();
     updateRowDisplay(index, rows[index]);
   }
@@ -219,6 +237,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     const del = el('button', 'rules-delete', '✕');
     del.addEventListener('click', () => {
       draft = draft.filter((_, i) => i !== row.index);
+      dirty = true;
       redraw();
     });
     wrap.append(del);
@@ -238,6 +257,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
       // contributes no rule until it says something, and its own reason line
       // explains why nothing changed on the globe yet.
       draft = [...draft, { match: '', colour: '#a855f7', end: 'either', enabled: true }];
+      dirty = true;
       redraw();
     });
     return add;
@@ -260,6 +280,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
   function open() {
     if (node) return true;
     draft = (cfgRules() || []).map((r) => ({ ...r }));
+    dirty = false;
     node = el('div', 'rules-panel');
     node.append(el('div', 'rules-title', 'Colour rules'));
     // Says what the engine does, and nothing it does not: rows are NOT
@@ -298,6 +319,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
       // REPLACE, not merge: a merge cannot express a deleted rule, so an
       // imported backup would resurrect exactly what it was taken to undo.
       draft = out.rules.map((r) => ({ ...r }));
+      dirty = true;
       redraw();
       showNote(`imported ${out.rules.length} rule(s)`);
     });
