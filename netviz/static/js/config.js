@@ -132,11 +132,33 @@ export const CONFIG = {
     block: { life: 18.0, tube: 0.0052, colorAt: 0.86, gain: 0.74,
              speed: 0.55, lift: 0.45, maxRise: 0.21, bloomScale: 0.5 },
 
-    // Shape shared by all three highlighted networks; each takes its own
-    // colour and gain from `highlight.networks` above. Override one slot on
-    // its own with an `arcs.highlight1` / `highlight2` / `highlight3` key.
+    // Shape shared by every colour rule. Colour, gain and bloomScale come from
+    // the rule; everything here is the geometry they all share.
+    //
+    // `gain` is here rather than on each rule so a rule that omits it has one
+    // place to read from. 0.70 is what highlight slot 1 has always shipped --
+    // not a new judgement, just moved up to the shape.
     highlight: { life: 4.0, tube: 0.0032, speed: 0.9, lift: 0.28,
-                 maxRise: 0.24, bloomScale: 0.41 },
+                 maxRise: 0.24, bloomScale: 0.41, gain: 0.70 },
+
+    // Colour rules, in precedence order: the first ENABLED rule that claims an
+    // arc colours it. Empty by default -- every flow draws in the ordinary
+    // flow colour, exactly as an unconfigured display does today.
+    //
+    //   match       '10.20.50.0/24' | '2001:db8::/32'   a subnet
+    //               '203.0.113.10-203.0.113.40'         an inclusive range
+    //               'DE'                                a country code
+    //               'tcp/443' | 'udp/51820' | '443'     a port, protocol optional
+    //   end         'src' | 'dst' | 'either'            default 'either'
+    //   colour      any '#rrggbb' or '#rgb'
+    //   name        optional; an empty name displays the matcher itself
+    //   gain        optional; defaults to arcs.highlight.gain
+    //   bloomScale  optional; defaults to arcs.highlight.bloomScale
+    //   enabled     optional; default true
+    //
+    // Blocks are never coloured by a rule -- the alarm layer is one visual
+    // language and the wall exists to show it.
+    rules: [],
   },
 
   // --------------------------------------------------------------- camera --
@@ -304,6 +326,45 @@ export const CONFIG = {
   },
 };
 
+// The colours the three highlight slots have always shipped with. A migrated
+// slot with no colour of its own keeps the one it was drawing in.
+const SHIPPED_RULE_COLOURS = ['#a855f7', '#22d3ee', '#4ade80'];
+
+/**
+ * The three NETVIZ_HIGHLIGHT* slots, as colour rules.
+ *
+ * Supported for ONE release and then dropped -- the same migration `?rail=1`
+ * got. A prefix is a string with a trailing dot standing in for a mask, so
+ * '10.20.50.' is a /24; anything not on an octet boundary cannot be converted
+ * and is REFUSED WITH A REASON rather than dropped, because a network that
+ * silently stops being highlighted looks exactly like a network with no
+ * traffic.
+ */
+export function rulesFromNetworks(networks) {
+  const rules = [];
+  const refused = [];
+  (Array.isArray(networks) ? networks : []).forEach((net, i) => {
+    const prefix = net && typeof net.prefix === 'string' ? net.prefix.trim() : '';
+    if (!prefix) return;                       // an empty slot is simply off
+    if (!prefix.endsWith('.') || !/^(\d{1,3}\.){1,3}$/.test(prefix)) {
+      refused.push({ index: i, reason: `prefix "${prefix}" is not on an octet boundary` });
+      return;
+    }
+    const octets = prefix.split('.').filter((p) => p !== '');
+    const bits = octets.length * 8;
+    const base = [...octets, ...Array(4 - octets.length).fill('0')].join('.');
+    rules.push({
+      match: `${base}/${bits}`,
+      colour: net.color || SHIPPED_RULE_COLOURS[i % SHIPPED_RULE_COLOURS.length],
+      name: typeof net.label === 'string' ? net.label : '',
+      gain: net.gain,
+      end: 'either',
+      enabled: true,
+    });
+  });
+  return { rules, refused };
+}
+
 /**
  * Merge the collector's /config.json into CONFIG, in place.
  *
@@ -334,19 +395,18 @@ export function mergeServerConfig(served) {
       extra.filter((e) => typeof e === 'string' && e));
   }
 
+  // The collector still serves the three NETVIZ_HIGHLIGHT* slots. They are
+  // converted to rules ONLY when this display has no rules of its own -- a
+  // configured list is the display's own decision and must not be appended to
+  // or overwritten by the environment.
   const networks = served && served.highlight && served.highlight.networks;
-  if (!Array.isArray(networks)) return CONFIG;
-  const local = CONFIG.highlight.networks;
-  CONFIG.highlight.networks = local.map((slot, i) => {
-    const from = networks[i];
-    if (!from || !from.prefix) return slot;
-    return {
-      prefix: from.prefix,
-      label: from.label || slot.label,
-      color: from.color || slot.color,
-      gain: from.gain === undefined ? slot.gain : from.gain,
-    };
-  });
+  if (Array.isArray(networks) && !CONFIG.arcs.rules.length) {
+    const { rules, refused } = rulesFromNetworks(networks);
+    if (rules.length) CONFIG.arcs.rules = rules;
+    for (const r of refused) {
+      console.warn(`netviz: highlight slot ${r.index + 1} not migrated -- ${r.reason}`);
+    }
+  }
   return CONFIG;
 }
 

@@ -80,27 +80,50 @@ test('overlapping prefixes take the lower slot, not iteration order', () => {
   });
 });
 
-test('the collector overrides a slot, and an empty one leaves the local value', () => {
-  withHighlights(['10.10.10.', '10.10.20.', ''], () => {
+test('the collector\'s slots migrate into colour rules', () => {
+  // The three NETVIZ_HIGHLIGHT* slots are converted for one release. An empty
+  // slot contributes nothing rather than a rule matching everything.
+  const saved = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [];
+  try {
     mergeServerConfig({ highlight: { networks: [
       { prefix: '172.20.5.', label: 'lab', color: '#ff0000' },
       { prefix: '' },
     ] } });
-    assert.equal(highlightSlot('172.20.5.9'), 1);
-    assert.equal(CONFIG.highlight.networks[0].label, 'lab');
-    assert.equal(CONFIG.highlight.networks[0].color, '#ff0000');
-    // Slot 2 was sent empty, so the local prefix stands rather than being wiped.
-    assert.equal(highlightSlot('10.10.20.9'), 2);
-  });
+    assert.equal(CONFIG.arcs.rules.length, 1);
+    assert.equal(CONFIG.arcs.rules[0].match, '172.20.5.0/24');
+    assert.equal(CONFIG.arcs.rules[0].colour, '#ff0000');
+    assert.equal(CONFIG.arcs.rules[0].name, 'lab');
+  } finally {
+    CONFIG.arcs.rules = saved;
+  }
+});
+
+test('a display with its own rules is not overwritten by the environment', () => {
+  // A configured list is the display's own decision: the migration fills an
+  // empty list and never appends to a populated one.
+  const saved = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: '10.0.0.0/8', colour: '#123456' }];
+  try {
+    mergeServerConfig({ highlight: { networks: [{ prefix: '172.20.5.' }] } });
+    assert.equal(CONFIG.arcs.rules.length, 1);
+    assert.equal(CONFIG.arcs.rules[0].match, '10.0.0.0/8');
+  } finally {
+    CONFIG.arcs.rules = saved;
+  }
 });
 
 test('a malformed server config leaves the local one alone', () => {
-  withHighlights(['10.10.10.'], () => {
+  const saved = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [];
+  try {
     mergeServerConfig(null);
     mergeServerConfig({});
     mergeServerConfig({ highlight: { networks: 'nope' } });
-    assert.equal(highlightSlot('10.10.10.9'), 1);
-  });
+    assert.equal(CONFIG.arcs.rules.length, 0);
+  } finally {
+    CONFIG.arcs.rules = saved;
+  }
 });
 
 test('an unknown kind falls back to flow', () => {
