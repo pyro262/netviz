@@ -280,6 +280,10 @@ export const CONFIG = {
 
   rail: {
     enabled: false,
+    // How many colour-rule rows the rail lists. Ranked by the last hour, not
+    // by list order, so a rule that never fires cannot hold a slot in front of
+    // one that does.
+    maxRules: 5,
   },
 
   // --------------------------------------------------------------- polling --

@@ -306,6 +306,11 @@ async function boot() {
       railHandle.stop();
       railHandle = null;
     },
+    // A number the rail reads on its next paint. No-op when the rail is not
+    // mounted -- unlike the stars and aurora stubs, which throw, this one has
+    // nothing to refuse: the value is stored in CONFIG by the executor and the
+    // rail reads it when it next mounts.
+    setMaxRules() {},
   };
   // Resolved once, at boot, and reconciled into CONFIG immediately: the URL
   // (`?rail=1`) can override the config default, and everything downstream

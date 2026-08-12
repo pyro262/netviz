@@ -120,6 +120,10 @@ export const HANDLERS = {
   ...arcHandlers('flow', ARC_KEYS),
   ...arcHandlers('block', ARC_KEYS),
   ...arcHandlers('highlight', HIGHLIGHT_KEYS),
+  // Every rule shares one geometry, so nothing is torn down: setRules pushes
+  // colour, gain and bloomScale into the arcs ALREADY IN THE AIR. Marking this
+  // `rebuild` would clear the pool for no benefit and cost a pass.
+  'arcs.rules': (v, ctx) => ctx.arcs.setRules(v),
 
   'camera.distance': (v, ctx) => ctx.rig.setParam('camera.distance', v),
   'camera.walk.enabled': (v, ctx) => ctx.rig.setParam('camera.walk.enabled', v),
@@ -183,6 +187,7 @@ export const HANDLERS = {
     if (v && !ctx.rail.mounted()) ctx.rail.mount();
     if (!v && ctx.rail.mounted()) ctx.rail.unmount();
   },
+  'rail.maxRules': (v, ctx) => ctx.rail.setMaxRules(v),
 
   'polling.healthSeconds': (v, ctx) => ctx.polling('health', v),
   'polling.railSeconds': (v, ctx) => ctx.polling('rail', v),

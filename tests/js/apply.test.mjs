@@ -15,9 +15,12 @@ function fakeCtx(log) {
   return {
     setConfig: (p, v) => log.push(`config ${p}=${v}`),
     arcs: {
-      rebuild: () => log.push('arcs.rebuild'),
+      rebuildCalls: 0,
+      rebuild() { this.rebuildCalls += 1; log.push('arcs.rebuild'); },
       setUniform: (p, v) => log.push(`arcs ${p}=${v}`),
       setSpec: (c, k, v) => log.push(`arcs ${c}.${k}=${v}`),
+      setRulesCalls: [],
+      setRules(v) { this.setRulesCalls.push(v); log.push(`arcs.setRules=${JSON.stringify(v)}`); },
     },
     globe: { setLayer: (n, v) => log.push(`layer ${n}=${v}`) },
     stars: {
@@ -40,6 +43,8 @@ function fakeCtx(log) {
       mount() { this._on = true; log.push('rail.mount'); },
       unmount() { this._on = false; log.push('rail.unmount'); },
       mounted() { return this._on; },
+      maxRulesCalls: [],
+      setMaxRules(v) { this.maxRulesCalls.push(v); log.push(`rail.maxRules=${v}`); },
     },
   };
 }
@@ -235,6 +240,25 @@ test('a rejected value changes nothing and is reported', () => {
   assert.deepEqual(out.applied, []);
   assert.equal(out.rejected[0].path, 'arcs.bodyOpacity');
   assert.deepEqual(log, [], 'a rejected value touched the display');
+});
+
+test('arcs.rules is applied through setRules and does not clear the pool', () => {
+  const log = [];
+  const ctx = fakeCtx(log);
+  const applier = createApplier(ctx);
+  const list = [{ match: 'DE', colour: '#ff8800' }];
+  const out = applier.apply({ 'arcs.rules': list });
+  assert.deepEqual(out.rejected, []);
+  assert.deepEqual(ctx.arcs.setRulesCalls, [list]);
+  assert.equal(ctx.arcs.rebuildCalls, 0, 'every rule shares one geometry');
+});
+
+test('rail.maxRules reaches the rail', () => {
+  const log = [];
+  const ctx = fakeCtx(log);
+  const applier = createApplier(ctx);
+  applier.apply({ 'rail.maxRules': 3 });
+  assert.deepEqual(ctx.rail.maxRulesCalls, [3]);
 });
 
 test('a handler that throws does not cost the rest of the patch', () => {

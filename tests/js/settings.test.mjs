@@ -15,7 +15,7 @@ test('every declared path exists in config.js', () => {
 });
 
 test('every entry declares a type, a strategy and help text', () => {
-  const TYPES = ['bool', 'int', 'number', 'enum', 'color', 'list'];
+  const TYPES = ['bool', 'int', 'number', 'enum', 'color', 'list', 'rules'];
   const STRATS = ['uniform', 'rebuild', 'relayout'];
   for (const p of paths()) {
     const e = entry(p);
@@ -144,4 +144,41 @@ test('planApply ignores paths it does not know', () => {
   assert.deepEqual(plan.uniform, ['arcs.bodyOpacity']);
   assert.deepEqual(plan.rebuild, []);
   assert.equal(plan.relayout, false);
+});
+
+test('the rules type accepts a list every row of which parses', () => {
+  const list = [{ match: '10.20.50.0/24', colour: '#22d3ee' },
+                { match: 'DE', colour: '#ff8800', end: 'dst' }];
+  const c = coerce('arcs.rules', list);
+  assert.equal(c.ok, true);
+  assert.deepEqual(c.value, list);      // stored raw; rules.js compiles at use
+});
+
+test('the rules type refuses a bad row by index, naming the reason', () => {
+  // A patch is one deliberate act, so it is all-or-nothing here. Per-row
+  // partial application belongs to the panel, which knows which row somebody
+  // is mid-typing in.
+  const c = coerce('arcs.rules', [{ match: '10.20.50.0/24', colour: '#22d3ee' },
+                                  { match: 'nonsense', colour: '#fff' }]);
+  assert.equal(c.ok, false);
+  assert.match(c.why, /rule 2/);
+  assert.match(c.why, /unrecognised/);
+});
+
+test('the rules type refuses what is not a list', () => {
+  for (const bad of [null, undefined, 'DE', 42, { match: 'DE' }]) {
+    assert.equal(coerce('arcs.rules', bad).ok, false);
+  }
+});
+
+test('an empty rule list is accepted -- it means no rules, not no opinion', () => {
+  assert.equal(coerce('arcs.rules', []).ok, true);
+});
+
+test('rail.maxRules is bounded and rounds', () => {
+  assert.equal(coerce('rail.maxRules', 5).value, 5);
+  assert.equal(coerce('rail.maxRules', 0).value, 1);      // clamped, not refused
+  assert.equal(coerce('rail.maxRules', 99).value, 20);
+  assert.equal(coerce('rail.maxRules', 4.6).value, 5);
+  assert.equal(coerce('rail.maxRules', 'five').ok, false);
 });

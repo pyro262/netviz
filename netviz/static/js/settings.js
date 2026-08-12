@@ -14,23 +14,26 @@
 // must not be able to smuggle a value past the panel's limits, so the same
 // clamp has to apply to the UI, the API and the file.
 import { cfg } from './config.js';
+import { compileRules } from './rules.js';
 
-// DELIBERATELY NOT DECLARED: `home` and `arcs.rules`.
+// DELIBERATELY NOT DECLARED: `home`.
 //
-// The collector owns `home`: it reads NETVIZ_HOME_LAT/LON out of .env and
-// serves it through /config.json, which mergeServerConfig() applies over
-// whatever config.js says. A display that overrode it would fight that merge on
-// the next reload -- the setting would appear to stick and then silently
-// revert. It is also not a preference: a home position is site data, which is
-// exactly why it lives in .env and not in this tracked tree.
+// The collector owns it: it reads NETVIZ_HOME_LAT/LON out of .env and serves
+// it through /config.json, which mergeServerConfig() applies over whatever
+// config.js says. A display that overrode it would fight that merge on the
+// next reload -- the setting would appear to stick and then silently revert.
+// It is also not a preference: a home position is site data, which is exactly
+// why it lives in .env and not in this tracked tree.
 //
-// `arcs.rules` is a list of OBJECTS, which no type here describes: `list`
-// carries an element type and nothing else, so it could validate neither a
-// matcher nor a per-rule colour, and a control that accepts a malformed rule
-// silently is worse than no control. rules.js owns that validation and
-// arcs.setRules() is the way in -- it recompiles, reports every refusal by its
-// index, and pushes colour, gain and bloomScale into the arcs already in the
-// air. What IS declared is `arcs.highlight.*`, the shape every rule shares.
+// `arcs.rules` IS declared, as its own `rules` type, below. It is a list of
+// OBJECTS, which the generic `list` type cannot describe -- `list` carries an
+// element type and nothing else, so it could validate neither a matcher nor a
+// per-rule colour. The `rules` case in `coerce` delegates to rules.js's own
+// compileRules() rather than re-deriving any of that validation, and
+// arcs.setRules() is the way a compiled list reaches the display -- it
+// recompiles, reports every refusal by its index, and pushes colour, gain and
+// bloomScale into the arcs already in the air. `arcs.highlight.*` is the
+// shape every rule shares.
 
 /**
  * type      bool | int | number | enum | color | list
@@ -189,6 +192,15 @@ export const SCHEMA = {
   ...arcClass('flow', ARC_KEYS),
   ...arcClass('block', ARC_KEYS),
   ...arcClass('highlight', HIGHLIGHT_KEYS),
+  'arcs.rules': {
+    type: 'rules', strategy: 'uniform',
+    help: 'Colour rules, in precedence order: the first ENABLED rule that '
+        + 'claims an arc colours it. A rule matches a subnet (10.20.50.0/24), '
+        + 'an inclusive address range, a country code, or a port (tcp/443), '
+        + 'against the source, the destination or either end. Blocks are never '
+        + 'coloured by a rule. Pushed into the arcs already in the air, so a '
+        + 'recolour shows within a frame rather than on the next spawn.',
+  },
 
   // -------------------------------------------------------------- camera --
   'camera.distance': {
@@ -472,6 +484,13 @@ export const SCHEMA = {
         + 'takes 26% of the screen from the globe, so toggling it resizes the '
         + 'renderer and corrects the camera aspect.',
   },
+  'rail.maxRules': {
+    type: 'int', min: 1, max: 20, strategy: 'uniform',
+    help: 'How many colour rules the rail lists, ranked by their last hour so '
+        + 'the busiest are the ones on screen. The overflow is named (+N more) '
+        + 'rather than dropped: a truncated list that does not say it '
+        + 'truncated is a lie about the traffic.',
+  },
 
   // ------------------------------------------------------------- polling --
   'polling.healthSeconds': {
@@ -565,6 +584,23 @@ export function coerce(path, value) {
           return { ok: false,
                    why: `element ${bad} is ${typeof value[bad]}, not ${e.of}` };
         }
+      }
+      return { ok: true, value };
+    }
+    case 'rules': {
+      if (!Array.isArray(value)) return { ok: false, why: 'not a list of rules' };
+      // Delegated, never re-derived: rules.js owns every bound (a hex colour,
+      // gain 0.05-2.0, bloomScale 0-2.0, a prefix length inside its family's
+      // width). A second copy here would drift, and the panel, an imported
+      // file and any future write API must obey one set.
+      const { refused } = compileRules(value);
+      if (refused.length) {
+        // ALL-or-nothing, unlike a live edit. A patch arriving here is one
+        // deliberate act -- an import, an API call, a restored profile -- and
+        // half of one is confusing. The panel filters its own half-typed rows
+        // before it ever calls apply().
+        const first = refused[0];
+        return { ok: false, why: `rule ${first.index + 1}: ${first.reason}` };
       }
       return { ok: true, value };
     }
