@@ -436,9 +436,22 @@ export const SCHEMA = {
 
   // ---------------------------------------------------------- appearance --
   'appearance.background': {
-    type: 'color', strategy: 'uniform',
+    // 0.0088 is derived, not chosen. The dimmest thing the display draws is a
+    // flow arc: colorAt 0.30 on the plasma ramp is #3b0f70, relative luminance
+    // 0.0244, drawn at arcs.bodyOpacity 0.18 -- an additive contribution of
+    // about 0.0044. Requiring that arc to still lift its pixel by 1.5x gives
+    // 0.0044 / (1.5 - 1) = 0.0088. The shipped ground is 0.0032, so it keeps a
+    // 2.4x lift and this cap leaves two-thirds of that headroom.
+    //
+    // RE-DERIVE THIS if the plasma ramp, bodyOpacity or the flow class moves.
+    // A palette change that darkens the arcs without moving the cap makes the
+    // guard too generous, which is why the shipped default is tested against
+    // it rather than trusted.
+    type: 'color', maxLuminance: 0.0088, strategy: 'uniform',
     help: 'The sky. #0b0916 once the bloom pass stopped adding the background '
-        + 'to itself; the wall wanted darker than the original.',
+        + 'to itself; the wall wanted darker than the original. Capped at '
+        + 'luminance 0.0088 -- arcs blend additively, so a bright ground '
+        + 'swallows them whatever its hue.',
   },
   'appearance.bloom.strength': {
     type: 'number', min: 0, max: 2.0, strategy: 'uniform',
@@ -533,6 +546,31 @@ export const SCHEMA = {
 
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+/**
+ * sRGB relative luminance, 0 (black) to 1 (white).
+ *
+ * Used to keep the ground dark enough for the arcs drawn on it. Arcs blend
+ * ADDITIVELY, so a pixel under one is `ground + arc` -- what decides whether
+ * the arc reads is how much light it adds relative to what is already there,
+ * which makes the ground's absolute luminance the thing to bound, whatever
+ * its hue. A contrast RATIO is the wrong tool for the same reason: it is
+ * defined for opaque text over an opaque ground.
+ *
+ * The three-digit form is expanded rather than rejected, because HEX accepts
+ * it and a cap that only understood #rrggbb would pass #fff straight through.
+ */
+export function relativeLuminance(hex) {
+  const h = String(hex).replace('#', '');
+  const full = h.length === 3
+    ? h[0] + h[0] + h[1] + h[1] + h[2] + h[2]
+    : h;
+  const chan = (i) => {
+    const c = parseInt(full.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * chan(0) + 0.7152 * chan(2) + 0.0722 * chan(4);
+}
+
 export function paths() { return Object.keys(SCHEMA); }
 
 export function entry(path) {
@@ -605,11 +643,26 @@ export function coerce(path, value) {
         return { ok: false, why: `not one of ${e.values.join(', ')}` };
       }
       return { ok: true, value };
-    case 'color':
+    case 'color': {
+      // Shape first. relativeLuminance('nope') returns a number out of NaN
+      // arithmetic rather than throwing, so checking brightness first would
+      // report a typo as a brightness problem.
       if (typeof value !== 'string' || !HEX.test(value)) {
         return { ok: false, why: 'not a #rgb or #rrggbb color' };
       }
+      if (typeof e.maxLuminance === 'number') {
+        const L = relativeLuminance(value);
+        if (L > e.maxLuminance) {
+          // Refused, not darkened: a color somebody picked is an intent, and
+          // silently scaling it down is how a control starts lying. The
+          // reason carries both numbers so it can be acted on.
+          return { ok: false,
+                   why: `too bright to draw on: luminance ${L.toFixed(4)}, `
+                      + `cap ${e.maxLuminance}` };
+        }
+      }
       return { ok: true, value };
+    }
     case 'list': {
       if (!Array.isArray(value)) return { ok: false, why: 'not a list' };
       // Element type, not just "is it an array". `traffic.dnsPorts: ["53"]`
