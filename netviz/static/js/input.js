@@ -405,7 +405,12 @@ export function startInput({ canvas, rig, menu, rulesPanel }) {
         if (!enabled) {
           releaseLost();
           if (cursorTimer) clearTimeout(cursorTimer);
-          canvas.classList.remove('cursor-hidden');
+          // HIDE it, do not reveal it. With input off there is nothing on
+          // screen to point at, and showCursor() early-returns while disabled,
+          // so a revealed cursor could never be hidden again -- a wall whose
+          // input was just turned off kept an arrow parked on it until the
+          // page reloaded, the exact inverse of hideCursorSeconds.
+          canvas.classList.add('cursor-hidden');
         } else {
           showCursor();
         }

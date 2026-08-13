@@ -275,16 +275,26 @@ test('a malformed color is still refused for shape, not luminance', () => {
   assert.equal(c.why, 'not a #rgb or #rrggbb color');
 });
 
-test('maxLuminance is opt-in, not a default on all colors', () => {
-  // Arc colors like arcs.flow.colorAt are drawn ON the ground rather than
-  // being the ground, so brightness is the point there, not a hazard. Only
-  // appearance.background (the ground itself) has a cap. The opt-in behavior
-  // (uncapped colors accepted) is enforced by coerce's guard:
-  // `if (typeof e.maxLuminance === 'number')` — a missing field skips the check.
-  // A positive test of an uncapped entry would require a synthetic entry,
-  // which would require exporting entry() or coerce() internals not currently
-  // public. This assertion proves the cap exists where it should.
-  assert.equal(typeof entry('appearance.background').maxLuminance, 'number');
+test('maxLuminance is opt-in: a color entry without one accepts any hex', () => {
+  // The previous version of this test asserted that the CAPPED entry has a
+  // cap, which proves nothing about the opt-in path and would still pass if
+  // the guard in coerce were inverted. SCHEMA is exported, so the uncapped
+  // path is reachable: add an entry, drive a bright value through the real
+  // coerce, and remove it again in a finally so no other test sees it.
+  SCHEMA['appearance.__uncappedTestColor'] = {
+    type: 'color', strategy: 'uniform',
+    help: 'Test-only entry, added and removed inside one test.',
+  };
+  try {
+    const c = coerce('appearance.__uncappedTestColor', '#ffffff');
+    assert.equal(c.ok, true, `an uncapped color entry should accept any hex: ${c.why}`);
+    assert.equal(c.value, '#ffffff');
+  } finally {
+    delete SCHEMA['appearance.__uncappedTestColor'];
+  }
+  // And the capped one still refuses the same value, so the two paths are
+  // distinguished by the entry rather than by the value.
+  assert.equal(coerce('appearance.background', '#ffffff').ok, false);
 });
 
 test('a shipped color default is inside its own luminance cap', () => {
