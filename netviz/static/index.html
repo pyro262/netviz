@@ -357,9 +357,20 @@
         font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
         padding: 0.9rem 1rem 1.2rem;
       }
-      .tuner-head { display: flex; align-items: center; justify-content: space-between; }
+      /* Revert, Keep and Close all live here now, beside the title and above
+         the 24 rows -- they were in a footer past the fold, where the display
+         reported never having seen them. `flex-wrap` with the three buttons in
+         their own `.tuner-actions` box is what makes a narrow panel degrade
+         honestly: at 380px the title and all three fit on one line (measured
+         ~222px of ~347px usable), and if a smaller panel or a larger font ever
+         breaks that, the whole button group drops to a second line TOGETHER
+         rather than one button wrapping away from its neighbours. */
+      .tuner-head { display: flex; align-items: center; justify-content: space-between;
+                    flex-wrap: wrap; gap: 0.4rem; }
       .tuner-title { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
-                     margin: 0; color: #dda825; }
+                     margin: 0; color: #dda825; flex: 1 1 auto; }
+      .tuner-actions { display: flex; align-items: center; gap: 0.35rem;
+                       flex: 0 0 auto; }
       .tuner-lead { color: #9c96b8; margin: 0.5rem 0 0.9rem; }
       .tuner-group { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
                      color: #9c96b8; margin: 1rem 0 0.4rem;
@@ -376,11 +387,10 @@
       .tuner-hex { flex: 0 0 5.2rem; color: #9c96b8; }
       .tuner-dirty .tuner-label { color: #dda825; }
       .tuner-dirty .tuner-label::after { content: ' *'; }
-      .tuner-foot { display: flex; align-items: center; gap: 0.5rem;
-                    margin-top: 1rem; padding-top: 0.6rem;
-                    border-top: 1px solid #ffffff14; }
-      .tuner-count { flex: 1 1 auto; color: #9c96b8; }
-      .tuner-note { color: #dda825; margin-top: 0.5rem; min-height: 1.2em; }
+      /* Both of these moved up with the buttons: the count is what Revert and
+         Keep act on, and the note reports what they just did. */
+      .tuner-count { color: #9c96b8; margin-top: 0.45rem; }
+      .tuner-note { color: #dda825; min-height: 1.2em; }
       .tuner-panel input, .tuner-panel button {
         font: inherit; color: inherit; background: #ffffff10;
         border: 1px solid #ffffff22; border-radius: 3px; padding: 0.1rem 0.35rem;

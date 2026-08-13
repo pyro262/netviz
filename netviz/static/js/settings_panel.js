@@ -38,7 +38,7 @@
 // numbers, after which the display silently stops tracking any later change
 // to them -- the exact failure `traffic.extraResolvers` was just fixed for.
 import { tunerRows } from './tuner.js';
-import { defaultOf, entry } from './settings.js';
+import { defaultOf, entry, settingLabel } from './settings.js';
 import { savePatch } from './rulestore.js';
 
 /** The patch a Keep writes: the touched paths at their current values.
@@ -74,6 +74,115 @@ export function revertPatch(snapshot, dirty) {
   return out;
 }
 
+// ------------------------------------------------------- the three questions --
+//
+// Each of Keep, Revert and Close ends the pending work in a way clicking again
+// does not undo, so each asks first -- and the words are built HERE, as pure
+// functions of the pending paths, for the same reason main.js builds the reset
+// dialog's words itself: confirm.js is handed its sentences precisely so the
+// caller that knows what is about to happen decides them, and so they can be
+// proved under `node --test` rather than read off a screenshot.
+//
+// Every one of them names the settings ACTUALLY pending, via settingLabel(),
+// rather than saying "your changes" -- "what does this do" is answered for this
+// screen instead of in general -- and every one carries a `wont`, which is the
+// half confirm.js exists to enforce: a warning that only lists consequences
+// reads as "something bad is happening" and gets clicked through.
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** The pending paths as words: "the stars layer, arcs body opacity". */
+function named(paths) {
+  return paths.map(settingLabel).join(', ');
+}
+
+/** Keep: remember the pending settings on this screen. */
+export function keepQuestion(paths = []) {
+  const n = paths.length;
+  return {
+    title: n ? `Remember ${plural(n, 'setting')} on this screen?` : 'Nothing to keep',
+    lead: 'Keeping writes what you changed into this web browser, so this '
+        + 'display starts with it next time. Everything else is left alone.',
+    // Empty when nothing is pending, which turns the dialog into a one-button
+    // acknowledgement: a yes/no over an action with no effect teaches that Yes
+    // does nothing. The button is disabled in that state, so this is the
+    // degenerate case rather than the expected one.
+    will: n ? [
+      `Remember ${plural(n, 'setting')} you changed here: ${named(paths)}.`,
+      'Write them to this web browser only, on this screen.',
+      'Make them what this display starts with after a reload.',
+    ] : [],
+    wont: [
+      'Change anything on the collector, or on any other display.',
+      'Touch your color rules.',
+      'Touch any setting you did not change in this panel.',
+    ],
+    note: n ? null
+            : 'Nothing has been changed in this panel yet, so there is nothing '
+              + 'to remember.',
+    confirmLabel: 'Yes, keep them here',
+    cancelLabel: 'No, leave them unkept',
+  };
+}
+
+/** Revert: put the pending settings back where they came from. */
+export function revertQuestion(paths = []) {
+  const n = paths.length;
+  return {
+    title: n ? `Put ${plural(n, 'setting')} back?` : 'Nothing to put back',
+    lead: 'Reverting returns the wall to what it showed when this panel opened, '
+        + 'or to what you last kept, whichever is later.',
+    will: n ? [
+      `Put ${plural(n, 'setting')} back: ${named(paths)}.`,
+      'Return the wall to what it showed when this panel opened, or to what '
+        + 'you last kept, whichever is later.',
+      'Lose the values you are trying out, which are not written down anywhere.',
+    ] : [],
+    wont: [
+      'Change anything you have already kept -- that stays kept.',
+      'Touch any setting you did not change in this panel.',
+      'Change anything on the collector, or on any other display.',
+    ],
+    note: n ? null
+            : 'Nothing has been changed in this panel yet, so there is nothing '
+              + 'to put back.',
+    confirmLabel: 'Yes, put them back',
+    cancelLabel: 'No, leave them as they are',
+  };
+}
+
+/**
+ * Close with pending changes: closing is a Revert, so it asks the same way.
+ *
+ * Returns NULL when nothing is pending, and that is the whole contract: there
+ * is nothing to confirm, so the caller closes immediately with no dialog at
+ * all. Handing back an acknowledgement here instead would put a modal in front
+ * of every ordinary close of an untouched panel.
+ */
+export function closeQuestion(paths = []) {
+  const n = paths.length;
+  if (!n) return null;
+  return {
+    title: `Close and discard ${plural(n, 'change')}?`,
+    lead: 'Closing this panel is a revert: nothing you are trying out survives '
+        + 'it, because a preview left on the wall after the panel is gone is a '
+        + 'display in a state nothing recorded.',
+    will: [
+      `Discard ${plural(n, 'setting')} you changed and have not kept: ${named(paths)}.`,
+      'Put the wall back to how it was before you opened this panel.',
+      'Close the panel.',
+    ],
+    wont: [
+      'Change anything you have already kept -- that stays kept.',
+      'Change anything on the collector, or on any other display.',
+      'Touch your color rules.',
+    ],
+    note: 'To keep these instead, cancel and click "Keep".',
+    confirmLabel: 'Yes, close and discard',
+    cancelLabel: 'No, go back to the panel',
+  };
+}
+
 // ---------------------------------------------------------------- the DOM --
 
 function el(tag, cls, text) {
@@ -92,7 +201,8 @@ function el(tag, cls, text) {
  *   relayout rebuilds the composer's render targets, so it must happen once
  *   per toggle and not once per module that would like it to.
  */
-export function createSettingsPanel({ preview, storage, root, onClose, onLayout } = {}) {
+export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
+                                      confirmer } = {}) {
   const mount = root || document.body;
   let node = null;
   // The value every row held when the panel opened -- what Revert returns to,
@@ -111,11 +221,12 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout 
     if (n) n.textContent = text || '';
   }
 
-  /** How many rows are pending, on the footer. Also the enable state of the
-   *  two buttons: a Keep or a Revert over nothing teaches that the button
-   *  does nothing, the same argument confirm.js makes about a yes/no over an
-   *  action with no effect. */
-  function refreshFooter() {
+  /** How many rows are pending, in the header beside the buttons that act on
+   *  them. Also the enable state of those two buttons: a Keep or a Revert over
+   *  nothing teaches that the button does nothing, the same argument confirm.js
+   *  makes about a yes/no over an action with no effect -- and it is what stops
+   *  the confirmations ever asking a question with no meaning. */
+  function refreshActions() {
     if (!node) return;
     const n = dirty.size;
     const count = node.querySelector('.tuner-count');
@@ -135,7 +246,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout 
     dirty.add(path);
     const refs = rowRefs.get(path);
     if (refs) refs.row.classList.add('tuner-dirty');
-    refreshFooter();
+    refreshActions();
   }
 
   /** Write one row live. The applier coerces and clamps, so what lands on the
@@ -243,11 +354,8 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout 
    *  holding them -- the panel and the store disagreeing about what the
    *  display is set to. After a Keep, Revert means "back to what I last
    *  kept", which is the only reading true to both. */
-  function keep() {
-    if (!storage) { setNote('This browser is not storing settings.'); return; }
-    const patch = dirtyPatch(snapshot, current, dirty);
+  function doKeep(patch) {
     const n = Object.keys(patch).length;
-    if (!n) return;
     const out = savePatch(storage, patch);
     if (!out.ok) { setNote(out.error); return; }
     for (const [path, v] of Object.entries(patch)) snapshot.set(path, v);
@@ -257,10 +365,36 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout 
     }
     dirty = new Set();
     setNote(`Kept ${n} setting${n === 1 ? '' : 's'} on this display.`);
-    refreshFooter();
+    refreshActions();
   }
 
-  function revert() {
+  /** Ask, then do -- or just do, when this panel was built with no confirmer.
+   *
+   *  `confirmer` is optional so the panel still works standing alone (some
+   *  tests build it that way), but main.js passes the ONE dialog instance the
+   *  page already has, so there is one implementation and one set of rules on
+   *  screen rather than a second dialog with its own idea of which button is
+   *  the safe one. Only one dialog can be up at a time -- confirm.js ignores a
+   *  second `ask` while one is open -- so no extra guard is needed here. */
+  function askThen(question, go) {
+    if (!confirmer || !question) { go(); return; }
+    confirmer.ask({ ...question, onConfirm: go });
+  }
+
+  function keep() {
+    if (!storage) { setNote('This browser is not storing settings.'); return; }
+    const patch = dirtyPatch(snapshot, current, dirty);
+    const paths = Object.keys(patch);
+    // Nothing to write, so nothing to ask: the button is disabled in this
+    // state and a dialog here would be a question with no meaning.
+    if (!paths.length) return;
+    // The question names what a Keep ACTUALLY writes -- dirtyPatch's own keys,
+    // after the `persist: false` filter -- not every row that happens to be
+    // marked, or the dialog would promise to remember a path it then drops.
+    askThen(keepQuestion(paths), () => doKeep(patch));
+  }
+
+  function doRevert() {
     const patch = revertPatch(snapshot, dirty);
     if (Object.keys(patch).length) {
       const out = preview.apply(patch);
@@ -274,7 +408,13 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout 
     }
     dirty = new Set();
     setNote('');
-    refreshFooter();
+    refreshActions();
+  }
+
+  function revert() {
+    const paths = Object.keys(revertPatch(snapshot, dirty));
+    if (!paths.length) return;
+    askThen(revertQuestion(paths), () => { doRevert(); setNote('Put back.'); });
   }
 
   function open() {
@@ -289,13 +429,37 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout 
     // act; this one is a rail with the globe drawn BESIDE it, and it exists to
     // be used while watching that globe -- a scrim would dim the very thing
     // every one of these rows is being judged against.
+    // ALL THREE BUTTONS IN THE HEADER, and the pending count and the feedback
+    // line with them. Revert and Keep used to sit in a footer below 24 rows,
+    // where the display this runs on reported never having seen them at all:
+    // the panel is a scrolling rail, so a control past the fold is a control
+    // that does not exist. Order is Revert, Keep, Close -- the exit on the
+    // right, the two that act on pending work beside each other and beside the
+    // count that says how much there is.
     const head = el('div', 'tuner-head');
     head.append(el('h2', 'tuner-title', 'Tuning'));
+    const actions = el('div', 'tuner-actions');
+    const revertBtn = el('button', 'tuner-revert', 'Revert');
+    revertBtn.title = 'Put the settings you changed back to how they were when '
+                    + 'this panel opened, or to what you last kept.';
+    revertBtn.addEventListener('click', revert);
+    const keepBtn = el('button', 'tuner-keep', 'Keep');
+    keepBtn.title = storage
+      ? 'Remember the settings you changed, on this screen, in this browser.'
+      : 'This browser is not storing settings.';
+    keepBtn.addEventListener('click', keep);
     const close = el('button', 'tuner-close', 'Close');
     close.title = 'Close the panel. Anything not kept goes back to how it was.';
-    close.addEventListener('click', () => closePanel());
-    head.append(close);
+    // The BUTTON asks; the returned close() does not. A person clicking Close
+    // over work they have not kept is exactly who the question is for, while a
+    // programmatic close (the menu, a verifier, anything closing the panel on
+    // the display's behalf) has no one in front of it to answer.
+    close.addEventListener('click', () => closePanel({ confirm: true }));
+    actions.append(revertBtn, keepBtn, close);
+    head.append(actions);
     node.append(head);
+    node.append(el('div', 'tuner-count', 'No changes'));
+    node.append(el('div', 'tuner-note', ''));
 
     node.append(el('p', 'tuner-lead',
       'Changes show on the wall immediately and are forgotten on the next '
@@ -312,37 +476,32 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout 
     }
     node.append(body);
 
-    const foot = el('div', 'tuner-foot');
-    foot.append(el('div', 'tuner-count', 'No changes'));
-    const keepBtn = el('button', 'tuner-keep', 'Keep');
-    keepBtn.title = storage
-      ? 'Remember the settings you changed, on this screen, in this browser.'
-      : 'This browser is not storing settings.';
-    keepBtn.addEventListener('click', keep);
-    const revertBtn = el('button', 'tuner-revert', 'Revert');
-    revertBtn.title = 'Put the settings you changed back to how they were when '
-                    + 'this panel opened, or to what you last kept.';
-    revertBtn.addEventListener('click', revert);
-    foot.append(revertBtn, keepBtn);
-    node.append(foot);
-    node.append(el('div', 'tuner-note', ''));
-
     // The class BEFORE the append and the relayout after both: `body.tuner`
     // is what narrows #stage, so setting it last would have the caller
     // measuring the full viewport for a panel that is already on screen.
     document.body.classList.add('tuner');
     mount.append(node);
-    refreshFooter();
+    refreshActions();
     if (onLayout) onLayout();
   }
 
   /** Closing is a Revert. Nothing kept was ever meant to survive the panel --
    *  that is what makes dragging safe -- and leaving a preview on the wall
    *  after the panel is gone would be a display in a state nothing recorded
-   *  and nobody could find their way back from. */
-  function closePanel() {
+   *  and nobody could find their way back from.
+   *
+   *  Which is why the Close BUTTON asks first when something is pending, and
+   *  why it does not ask when nothing is: a yes/no over an action that would
+   *  change nothing teaches that Yes does nothing, so an untouched panel closes
+   *  on one click as it always did. `closeQuestion` returns null in that case,
+   *  which is what makes "only ever asked when something is pending" a property
+   *  of the words rather than of a condition written twice. */
+  function closePanel({ confirm = false } = {}) {
     if (!node) return;
-    revert();
+    const pending = Object.keys(revertPatch(snapshot, dirty));
+    const question = confirm ? closeQuestion(pending) : null;
+    if (question) { askThen(question, () => closePanel()); return; }
+    doRevert();
     node.remove();
     node = null;
     rowRefs = new Map();

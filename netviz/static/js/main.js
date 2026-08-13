@@ -485,8 +485,17 @@ async function boot() {
   // full viewport's aspect inside a narrower box. One call per direction, for
   // the same reason rail.mount() leaves the resize to its caller: a relayout
   // rebuilds the composer's render targets.
+  //
+  // ONE confirm dialog on the page, built here because two callers need it: the
+  // tuning panel's Keep/Revert/Close and "Reset to netviz defaults" below. A
+  // second instance would be a second implementation of which button is the
+  // safe one, and confirm.js's "only one at a time" guard is per-instance --
+  // two of them could stack two dialogs whose buttons then disagree about which
+  // is on top. Each caller still decides its OWN words; only the dialog is
+  // shared.
+  const confirmer = createConfirm({ root: document.body });
   const settingsPanel = createSettingsPanel({
-    preview, storage, root: document.body, onLayout: resize,
+    preview, storage, root: document.body, onLayout: resize, confirmer,
   });
   // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
   // rules, then reload so config.js and /config.json decide again from the
@@ -506,7 +515,6 @@ async function boot() {
   // instead of in general. With nothing stored but rules, there is nothing to
   // reset and the dialog says exactly that with one button -- a yes/no over an
   // action that would change nothing teaches that Yes does nothing.
-  const confirmer = createConfirm({ root: document.body });
   const onReset = storage ? () => {
     const held = loadPatch(storage).patch || {};
     const losing = Object.keys(held).filter((p) => p !== 'arcs.rules');

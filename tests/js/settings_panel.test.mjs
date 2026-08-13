@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dirtyPatch, revertPatch } from '../../netviz/static/js/settings_panel.js';
+import {
+  dirtyPatch, revertPatch, keepQuestion, revertQuestion, closeQuestion,
+} from '../../netviz/static/js/settings_panel.js';
+import { settingLabel } from '../../netviz/static/js/settings.js';
 
 test('a keep writes only the rows that were touched', () => {
   const snapshot = new Map([['a', 1], ['b', 2], ['c', 3]]);
@@ -63,4 +66,109 @@ test('a persist: false path is applied live but never kept', () => {
   // Both halves, because either alone is passed by a bug that dropped
   // everything: the excluded path is absent AND the ordinary one is present.
   assert.deepEqual(patch, { 'layers.stars': false });
+});
+
+// ------------------------------------------------- the three confirmations --
+//
+// Keep, Revert and Close each end the pending work in a way clicking again does
+// not undo, so each asks first. The words are what is worth testing -- the
+// dialog itself is confirm.js's, already proved, and the DOM half of the panel
+// is proved by tools/verify_tuner.py against a real browser. What is proved
+// here is that the question is built from what is ACTUALLY pending and that it
+// honors confirm.js's contract.
+
+const QUESTIONS = [
+  ['keep', keepQuestion],
+  ['revert', revertQuestion],
+  ['close', closeQuestion],
+];
+const ONE = ['layers.stars'];
+const THREE = ['layers.stars', 'arcs.bodyOpacity', 'appearance.bloom.strength'];
+
+const allText = (q) => [q.title, q.lead, ...(q.will || []), ...(q.wont || []),
+                        q.note || ''].join(' ');
+
+for (const [name, build] of QUESTIONS) {
+  test(`the ${name} question names every pending setting, in words`, () => {
+    const q = build(THREE);
+    const text = allText(q);
+    for (const path of THREE) {
+      const label = settingLabel(path);
+      // The LABEL, not the raw path. `layers.stars` on a wall somebody else
+      // walks up to is jargon; "the stars layer" is the same discipline
+      // main.js's reset dialog follows, and settingLabel is the one place that
+      // translation lives.
+      assert.ok(text.includes(label),
+                `${name}: no mention of ${label} (for ${path}) in:\n${text}`);
+      assert.ok(!text.includes(path),
+                `${name}: names the raw path ${path} rather than its label`);
+    }
+  });
+
+  test(`the ${name} question says what it will NOT do`, () => {
+    // The half confirm.js exists to enforce: a warning that only lists
+    // consequences reads as "something bad is happening" and gets clicked
+    // through. Deleting `wont` from any of the three must fail here.
+    const q = build(THREE);
+    assert.ok(Array.isArray(q.wont) && q.wont.length > 0,
+              `${name} carries no 'wont'`);
+    for (const line of q.wont) assert.ok(line.trim().length > 0);
+  });
+
+  test(`the ${name} question counts and pluralizes for one and for several`, () => {
+    const one = allText(build(ONE));
+    const many = allText(build(THREE));
+    assert.ok(/\b1 (setting|change)\b/.test(one),
+              `${name} does not say "1 setting"/"1 change": ${one}`);
+    assert.ok(!/\b1 (settings|changes)\b/.test(one),
+              `${name} pluralizes a single item: ${one}`);
+    assert.ok(/\b3 (settings|changes)\b/.test(many),
+              `${name} does not say "3 settings"/"3 changes": ${many}`);
+  });
+
+  test(`the ${name} question labels both buttons`, () => {
+    const q = build(THREE);
+    assert.ok(q.confirmLabel && q.cancelLabel, `${name} leaves a button unlabeled`);
+  });
+}
+
+test('the close question is only ever built when something is pending', () => {
+  // Null, not an acknowledgement: closing an untouched panel has nothing to
+  // confirm, and a one-button modal in front of every ordinary close would
+  // teach exactly what confirm.js's empty-`will` rule exists to prevent. The
+  // panel reads this null and closes on the one click.
+  assert.equal(closeQuestion([]), null);
+  assert.equal(closeQuestion(), null);
+  assert.ok(closeQuestion(ONE));
+});
+
+test('keep and revert degrade to an acknowledgement rather than a false yes/no', () => {
+  // Both buttons are disabled with nothing pending, so this is the degenerate
+  // case -- but an empty `will` is what confirm.js reads to drop the Yes
+  // button, so the words must not promise an action either way.
+  for (const build of [keepQuestion, revertQuestion]) {
+    const q = build([]);
+    assert.deepEqual(q.will, []);
+    assert.ok(q.note, 'an acknowledgement with nothing to say is not one');
+  }
+});
+
+test('the keep question says where the settings are written, and where they are not', () => {
+  const text = allText(keepQuestion(ONE));
+  assert.match(text, /browser/i);
+  assert.match(text, /collector/i);
+  assert.match(text, /other display/i);
+  assert.match(text, /color rules/i);
+});
+
+test('the revert question says what the wall goes back to, and what survives', () => {
+  const q = revertQuestion(ONE);
+  assert.match(allText(q).toLowerCase(), /whichever is later/);
+  assert.match(q.wont.join(' '), /already kept/i);
+});
+
+test('the close question points at Keep as the way not to lose the work', () => {
+  const q = closeQuestion(ONE);
+  assert.match(q.note, /Keep/);
+  assert.match(q.wont.join(' '), /already kept/i);
 });

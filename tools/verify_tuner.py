@@ -19,6 +19,11 @@ promises reaches there at all:
     reload is a free escape hatch;
   * that Keep writes the touched rows and ONLY the touched rows;
   * that Revert and Close both put the wall back;
+  * that all three of Keep, Revert and Close ASK FIRST when something is
+    pending, through the one confirm.js dialog the page already has, and
+    that answering Cancel leaves the panel open with the change still
+    pending and still unstored -- the dialog is the only thing standing
+    between a stray click and work nobody wrote down;
   * and that the camera is held for the whole time the panel is open, then
     handed back on the MENU's short delay rather than the drag's long one.
 
@@ -57,7 +62,7 @@ OPACITY = "arcs.bodyOpacity"             # number, 0.04 .. 1.0, ships at 0.18
 BLOOM_TARGET = 1.5
 OPACITY_TARGET = 0.6
 
-# Case 6's hand-back is timed against the rig's own rendered-time countdown
+# Case 7's hand-back is timed against the rig's own rendered-time countdown
 # (`rig.state.idleT`, summed from the render loop's dt) with a wall-clock cap
 # on top. Under headless swiftshader with the synthetic feed competing for the
 # main thread, dt accumulates at roughly a third of wall-clock speed -- the
@@ -75,7 +80,7 @@ HELD_SAMPLE_SECONDS = 20.0
 # to tell apart from the menu's.
 HANDBACK_TOLERANCE = 2.0
 
-# Case 7's viewport. 420 wide is the concrete failure the clamp exists for: an
+# Case 8's viewport. 420 wide is the concrete failure the clamp exists for: an
 # unclamped 380px slice leaves a 40px stage and a camera at aspect 0.055, and
 # anything at or below 380 is a zero-width stage and a blank display.
 SMALL_VIEWPORT = (420, 800)
@@ -147,6 +152,11 @@ def panel_is_really_open(state) -> bool:
 
 
 def close_panel(page):
+    """The API close, which does NOT ask. The Close BUTTON confirms when
+    something is pending; the returned close() is how the menu, this script and
+    anything else closes the panel on the display's behalf, and there is nobody
+    in front of it to answer a question. Cases that mean to exercise the
+    dialog click `.tuner-close` instead."""
     page.evaluate("() => window.__netviz.settingsPanel.close()")
     page.wait_for_timeout(200)
 
@@ -233,6 +243,66 @@ def click_panel_button(page, cls) -> bool:
       b.click();
       return true;
     }""", cls)
+
+
+def confirm_state(page):
+    """The confirm dialog's own ELEMENT, on the same terms panel_state() reads
+    the panel: present in the document with a non-zero rect, never an object
+    claiming it is open. It also reports whether a Yes button exists at all --
+    confirm.js drops it when `will` is empty, so its presence is the difference
+    between a question and an acknowledgement."""
+    return page.evaluate("""() => {
+      const el = document.querySelector('.confirm');
+      if (!el) return {present: false};
+      const r = el.getBoundingClientRect();
+      return {
+        present: true, inDocument: document.contains(el),
+        w: r.width, h: r.height,
+        yes: !!el.querySelector('.confirm-yes'),
+        no: !!el.querySelector('.confirm-no'),
+        title: (el.querySelector('.confirm-title') || {}).textContent || '',
+        text: el.textContent || '',
+      };
+    }""")
+
+
+def confirm_is_really_open(state) -> bool:
+    return bool(state.get("present") and state.get("inDocument")
+                and state.get("w", 0) > 0 and state.get("h", 0) > 0)
+
+
+def answer_confirm(page, yes: bool) -> bool:
+    """Click Yes or Cancel on whatever dialog is up. Returns False when there
+    was no dialog to answer -- which every caller asserts on, because a
+    confirmation that silently failed to appear would otherwise read as one
+    that was answered."""
+    ok = page.evaluate("""(yes) => {
+      const el = document.querySelector('.confirm');
+      if (!el) return false;
+      const b = el.querySelector(yes ? '.confirm-yes' : '.confirm-no');
+      if (!b) return false;
+      b.click();
+      return true;
+    }""", yes)
+    page.wait_for_timeout(250)
+    return bool(ok)
+
+
+def click_and_confirm(page, cls, yes: bool = True):
+    """Click one of the panel's three buttons and answer the dialog it raises.
+
+    Every one of Keep, Revert and Close now asks first when something is
+    pending, so a case that clicks and then reads the wall would measure the
+    state BEFORE the question was answered. Returns (clicked, dialog_seen,
+    answered) so a case can tell "the button was dead" from "the button ran
+    without asking" -- the second is the regression this whole change is."""
+    clicked = click_panel_button(page, cls)
+    page.wait_for_timeout(250)
+    state = confirm_state(page)
+    seen = confirm_is_really_open(state)
+    answered = answer_confirm(page, yes) if seen else False
+    page.wait_for_timeout(250)
+    return clicked, seen, answered, state
 
 
 # ------------------------------------------------------------------ cases --
@@ -370,10 +440,17 @@ def case4_keep_writes_only_touched(page) -> bool:
     panel's dirty-tracking exists to prevent (24 values frozen at today's
     config.js numbers, after which the display silently stops tracking any
     later change to them) -- and it needs no empty start, so this script never
-    has to clear a real display's settings to run."""
+    has to clear a real display's settings to run.
+
+    Keep now ASKS FIRST, and the dialog is asserted rather than merely clicked
+    through: a Keep that wrote without asking would still pass the delta, so
+    `dialog` is part of the verdict. The question is also checked to name the
+    row -- in words, from settingLabel -- because a confirmation that says
+    "your changes" is one nobody can act on."""
     raw_before = read_store(page)
     keys_before = set(json.loads(raw_before).keys()) if raw_before else set()
-    clicked = click_panel_button(page, ".tuner-keep")
+    clicked, dialog, answered, cstate = click_and_confirm(page, ".tuner-keep")
+    names_row = "bloom strength" in (cstate.get("text") or "").lower()
     page.wait_for_timeout(300)
     raw_after = read_store(page)
     stored = json.loads(raw_after) if raw_after else {}
@@ -382,10 +459,13 @@ def case4_keep_writes_only_touched(page) -> bool:
     value_ok = abs(stored.get(BLOOM, 0) - BLOOM_TARGET) < 1e-9
     still_dirty = page.evaluate(
         "() => document.querySelectorAll('.tuner-row.tuner-dirty').length")
-    ok = clicked and keys_after == want and value_ok and still_dirty == 0
+    ok = (clicked and dialog and answered and names_row
+          and keys_after == want and value_ok and still_dirty == 0)
     return report(
-        "4: Keep writes exactly the row that was touched", ok,
-        f"clicked={clicked} stored keys {sorted(keys_before)} -> {sorted(keys_after)} "
+        "4: Keep asks first, then writes exactly the row that was touched", ok,
+        f"clicked={clicked} asked={dialog} answered={answered} "
+        f"question={cstate.get('title')!r} names the row in words={names_row}; "
+        f"stored keys {sorted(keys_before)} -> {sorted(keys_after)} "
         f"(wanted {sorted(want)}), {BLOOM}={stored.get(BLOOM)!r}, "
         f"rows still marked dirty={still_dirty}")
 
@@ -409,7 +489,11 @@ def case5_revert_and_close(page, cx, cy) -> bool:
     if out.get("error"):
         return report("5: Revert restores, and Close reverts too", False, out["error"])
     moved = read_live(page, OPACITY)
-    reverted_click = click_panel_button(page, ".tuner-revert")
+    # Both of these ask first now, and both dialogs are asserted: a Revert or a
+    # Close that put the wall back WITHOUT asking would otherwise pass this
+    # case unchanged, which is precisely the regression to catch.
+    reverted_click, revert_dialog, revert_answered, _ = \
+        click_and_confirm(page, ".tuner-revert")
     page.wait_for_timeout(300)
     after_revert = read_live(page, OPACITY)
 
@@ -417,7 +501,8 @@ def case5_revert_and_close(page, cx, cy) -> bool:
     if out2.get("error"):
         return report("5: Revert restores, and Close reverts too", False, out2["error"])
     moved2 = read_live(page, OPACITY)
-    closed_click = click_panel_button(page, ".tuner-close")
+    closed_click, close_dialog, close_answered, _ = \
+        click_and_confirm(page, ".tuner-close")
     page.wait_for_timeout(400)
     after_close = read_live(page, OPACITY)
     gone = page.evaluate("() => !document.querySelector('.tuner-panel')")
@@ -425,20 +510,99 @@ def case5_revert_and_close(page, cx, cy) -> bool:
     store_same = store_after == store_base
 
     ok = (reverted_click and closed_click and gone
+          and revert_dialog and revert_answered
+          and close_dialog and close_answered
           and abs(moved - OPACITY_TARGET) < 1e-9 and moved != base
           and abs(after_revert - base) < 1e-9
           and abs(moved2 - OPACITY_TARGET) < 1e-9
           and abs(after_close - base) < 1e-9
           and store_same)
     return report(
-        "5: Revert restores, and Close reverts too", ok,
-        f"{OPACITY} base={base}; drag -> {moved}, Revert -> {after_revert}; "
-        f"drag -> {moved2}, Close -> {after_close}; panel removed={gone}; "
-        f"localStorage unchanged={store_same}")
+        "5: Revert restores, and Close reverts too, each asking first", ok,
+        f"{OPACITY} base={base}; drag -> {moved}, Revert (asked={revert_dialog}, "
+        f"answered={revert_answered}) -> {after_revert}; drag -> {moved2}, "
+        f"Close (asked={close_dialog}, answered={close_answered}) -> {after_close}; "
+        f"panel removed={gone}; localStorage unchanged={store_same}")
 
 
-def case6_camera_held(page, cx, cy) -> bool:
-    """6: the camera is held for the whole time the panel is open, then handed
+def case6_cancel_is_safe(page, cx, cy) -> bool:
+    """6: the dialog is real, and Cancel changes nothing.
+
+    Cancel is the default answer in confirm.js precisely so a stray second
+    click destroys nothing, and this is the case that proves the tuning panel
+    actually gets that: after cancelling a Close, the panel must still be open,
+    the change must still be pending on the wall, the row must still be marked,
+    and nothing must have reached localStorage. A dialog whose Cancel closed
+    the panel anyway -- or whose Yes was wired to both buttons -- would pass
+    case 5 unchanged, because case 5 only ever answers yes.
+
+    Then it answers yes and asserts the close really happened, so this case
+    cannot pass against a Close button that does nothing at all."""
+    close_panel(page)
+    page.wait_for_timeout(300)
+    clicked = open_menu_and_click(page, "settings", cx, cy)
+    page.wait_for_timeout(400)
+    if not panel_is_really_open(panel_state(page)):
+        return report("6: the close question is real, and Cancel is safe", False,
+                      f"could not open the panel: clicked={clicked}")
+
+    base = read_live(page, OPACITY)
+    store_base = read_store(page)
+    out = drag_slider(page, OPACITY, OPACITY_TARGET)
+    if out.get("error"):
+        return report("6: the close question is real, and Cancel is safe", False,
+                      out["error"])
+    moved = read_live(page, OPACITY)
+
+    click_panel_button(page, ".tuner-close")
+    page.wait_for_timeout(300)
+    asked = confirm_state(page)
+    asked_ok = confirm_is_really_open(asked) and asked.get("yes") and asked.get("no")
+    # It is a QUESTION, not an acknowledgement: `will` is populated, so
+    # confirm.js draws a Yes. And it names the pending row in words.
+    names_row = "body opacity" in (asked.get("text") or "").lower()
+
+    cancelled = answer_confirm(page, False)
+    page.wait_for_timeout(400)
+    after_cancel = {
+        "panel": panel_is_really_open(panel_state(page)),
+        "dialog": confirm_is_really_open(confirm_state(page)),
+        "live": read_live(page, OPACITY),
+        "dirty": page.evaluate(
+            "() => document.querySelectorAll('.tuner-row.tuner-dirty').length"),
+        "store": read_store(page),
+    }
+    safe = (after_cancel["panel"] and not after_cancel["dialog"]
+            and abs((after_cancel["live"] or 0) - OPACITY_TARGET) < 1e-9
+            and after_cancel["dirty"] >= 1
+            and after_cancel["store"] == store_base)
+
+    # And now through it for real.
+    clicked2, dialog2, answered2, _ = click_and_confirm(page, ".tuner-close")
+    page.wait_for_timeout(400)
+    gone = page.evaluate("() => !document.querySelector('.tuner-panel')")
+    after_close = read_live(page, OPACITY)
+    store_after = read_store(page)
+    confirmed_ok = (clicked2 and dialog2 and answered2 and gone
+                    and abs(after_close - base) < 1e-9
+                    and store_after == store_base)
+
+    ok = (asked_ok and names_row and cancelled and safe and confirmed_ok
+          and abs(moved - OPACITY_TARGET) < 1e-9 and moved != base)
+    return report(
+        "6: the close question is real, and Cancel is safe", ok,
+        f"{OPACITY} base={base} -> drag {moved}; Close asked={asked_ok} "
+        f"(title={asked.get('title')!r}, names the row={names_row}); after Cancel: "
+        f"panel open={after_cancel['panel']}, dialog gone="
+        f"{not after_cancel['dialog']}, live still {after_cancel['live']}, rows "
+        f"marked dirty={after_cancel['dirty']}, store unchanged="
+        f"{after_cancel['store'] == store_base} (safe={safe}); then confirmed: "
+        f"asked={dialog2} panel removed={gone} live -> {after_close}, store "
+        f"unchanged={store_after == store_base}")
+
+
+def case7_camera_held(page, cx, cy) -> bool:
+    """7: the camera is held for the whole time the panel is open, then handed
     back on the MENU's delay.
 
     Someone tuning bloom is watching the globe; the autonomous walk flying it
@@ -460,7 +624,7 @@ def case6_camera_held(page, cx, cy) -> bool:
     page.wait_for_timeout(400)
     state = panel_state(page)
     if not (clicked and panel_is_really_open(state)):
-        return report("6: the camera is held while the panel is open", False,
+        return report("7: the camera is held while the panel is open", False,
                       f"could not open the panel: clicked={clicked} state={state}")
 
     samples = 0
@@ -542,14 +706,14 @@ def case6_camera_held(page, cx, cy) -> bool:
                 f"within {HANDBACK_TOLERANCE:g}x menuResumeSeconds "
                 f"({menu_resume}s -> budget {budget}s rendered)={within}")
     return report(
-        "6: the camera is held while the panel is open, handed back after", ok,
+        "7: the camera is held while the panel is open, handed back after", ok,
         f"{samples} samples over {HELD_SAMPLE_SECONDS:.0f}s with the panel open, "
         f"manual never dropped={held_ok} (lost_at={lost_at}, max idleT while open "
         f"{max_idle:.2f}s -- the per-frame pokes keep it near 0); {tail}")
 
 
-def case7_small_viewport(page) -> bool:
-    """7: on a small viewport the slice is clamped, and the stage stays usable.
+def case8_small_viewport(page) -> bool:
+    """8: on a small viewport the slice is clamped, and the stage stays usable.
 
     ITS OWN CASE, not folded into case 2, for one reason: it has to resize the
     viewport, and case 2's whole strength is a byte-exact comparison at the
@@ -622,7 +786,7 @@ def case7_small_viewport(page) -> bool:
     ok = (clicked and panel_is_really_open(state) and usable and aspect_ok
           and majority and matches)
     return report(
-        f"7: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
+        f"8: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
         "the stage stays usable", ok,
         f"viewport {after['vw']}px: stage {before['stage']['w']} -> "
         f"{after['stage']['w']} (slice {slice_w}, panel {panel_w}, agree={matches}), "
@@ -644,11 +808,12 @@ def run(page, cx, cy) -> bool:
     ok &= case3_preview_stores_nothing(page)
     ok &= case4_keep_writes_only_touched(page)
     ok &= case5_revert_and_close(page, cx, cy)
-    ok &= case6_camera_held(page, cx, cy)
+    ok &= case6_cancel_is_safe(page, cx, cy)
+    ok &= case7_camera_held(page, cx, cy)
     # Last, because it resizes the viewport. It restores it, but a case that
     # moves the ground under the others is one that should have as little
     # after it as possible.
-    ok &= case7_small_viewport(page)
+    ok &= case8_small_viewport(page)
     return ok
 
 
