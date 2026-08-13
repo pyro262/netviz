@@ -149,6 +149,26 @@ def read_store(page):
     return page.evaluate("(k) => window.localStorage.getItem(k)", STORE_KEY)
 
 
+def restore_store(page, original):
+    """Put the display's stored patch back exactly as it was found.
+
+    Case 4 clicks a real Keep, so it mutates real storage by design -- and with
+    `--url` that storage belongs to a wall somebody configured, color rules
+    included. A verifier has no business leaving a display altered, so the raw
+    string is snapshotted before the run and written back after it, from a
+    `finally` so a case that raises does not skip the restore.
+
+    An absent key is restored by REMOVING it, never by writing `{}` or `null`:
+    on this project an empty patch and no patch mean the same thing to every
+    reader, and a stored `{}` reads as "this display was configured" when it
+    was not."""
+    return page.evaluate("""({k, original}) => {
+      if (original === null) window.localStorage.removeItem(k);
+      else window.localStorage.setItem(k, original);
+      return window.localStorage.getItem(k);
+    }""", {"k": STORE_KEY, "original": original})
+
+
 def drag_slider(page, path, value):
     """Drive the panel's OWN range input: set `.value`, dispatch a real `input`
     event, and let the panel's listener decide what happens.
@@ -266,12 +286,14 @@ def case3_preview_stores_nothing(page) -> bool:
 def case4_keep_writes_only_touched(page) -> bool:
     """4: Keep writes exactly the touched path, and nothing else.
 
-    The key SET is what is asserted, not just that the one path is present:
-    a Keep that persisted all 24 rows would satisfy 'the blob contains
-    appearance.bloom.strength', and it is exactly the failure the panel's
-    dirty-tracking exists to prevent (24 values frozen at today's config.js
-    numbers, after which the display silently stops tracking any later change
-    to them)."""
+    A DELTA on the key set, not an assertion that storage started empty: the
+    keys afterward must equal the keys before plus exactly this one path. That
+    is strictly stronger than 'the blob contains appearance.bloom.strength' --
+    which a Keep persisting all 24 rows would satisfy, the exact failure the
+    panel's dirty-tracking exists to prevent (24 values frozen at today's
+    config.js numbers, after which the display silently stops tracking any
+    later change to them) -- and it needs no empty start, so this script never
+    has to clear a real display's settings to run."""
     raw_before = read_store(page)
     keys_before = set(json.loads(raw_before).keys()) if raw_before else set()
     clicked = click_panel_button(page, ".tuner-keep")
@@ -455,21 +477,26 @@ def main() -> int:
             page.goto(url, wait_until="load")
             page.wait_for_function("window.__netvizReady === true", timeout=20_000)
             time.sleep(2.0)          # first-frame jank: textures, shader compile
-            # A clean slate: this script asserts on the exact key SET the store
-            # holds, so a patch left behind by an earlier run (or by a person
-            # using --url against their own wall) would be read as a Keep that
-            # wrote too much. Reloaded so the boot path re-runs with nothing
-            # stored, exactly as a fresh display starts.
-            page.evaluate("(k) => window.localStorage.removeItem(k)", STORE_KEY)
-            page.reload(wait_until="load")
-            page.wait_for_function("window.__netvizReady === true", timeout=20_000)
-            time.sleep(2.0)
 
             rect = page.evaluate("""() => {
               const r = document.querySelector('canvas').getBoundingClientRect();
               return {cx: r.left + r.width / 2, cy: r.top + r.height / 2};
             }""")
-            ok = run(page, rect["cx"], rect["cy"])
+            # Case 4 clicks a real Keep, so this run WILL write to the display's
+            # own stored patch. With --url that display is a wall somebody
+            # configured, so the blob is snapshotted here and written back in
+            # the `finally` below -- never cleared, and never left changed.
+            original_store = read_store(page)
+            try:
+                ok = run(page, rect["cx"], rect["cy"])
+            finally:
+                final_store = restore_store(page, original_store)
+                same = final_store == original_store
+                print(f"stored patch restored: {same} "
+                      f"(key {'absent' if original_store is None else 'present'} "
+                      f"before, {'absent' if final_store is None else 'present'} after)")
+                if not same:
+                    errors.append("localStorage was not restored to its original value")
             b.close()
     finally:
         if col:
