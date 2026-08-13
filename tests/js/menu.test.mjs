@@ -348,6 +348,33 @@ test('clicking reset calls the handler and closes the menu', () => {
   });
 });
 
+test('the settings row opens the panel it was built with', () => {
+  // Same pattern as "clicking reset calls the handler and closes the menu"
+  // above: a menu built with a real settingsPanel, find the row by data-id,
+  // dispatch a click on the fake, assert the panel's own open() ran.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const opened = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      settingsPanel: { open: () => opened.push(true), isOpen: () => false },
+      root: dom.root,
+    });
+    menu.open(10, 10, { x: 0, y: 0 });
+    function find(node) {
+      if (node.getAttribute && node.getAttribute('data-id') === 'settings') return node;
+      for (const c of node.children || []) { const r = find(c); if (r) return r; }
+      return null;
+    }
+    const row = find(dom.root);
+    assert.ok(row, 'no settings row drawn');
+    row.dispatch('click', { target: row });
+    assert.deepEqual(opened, [true]);
+    assert.equal(menu.isOpen(), false, 'the menu stayed open over its own action');
+  });
+});
+
 test('open draws exactly the rows menuModel describes, not just SOMETHING', () => {
   // children.length > 0 alone would pass against a menu that appended one
   // empty div and nothing else -- this walks the actual tree and checks the

@@ -111,7 +111,7 @@ export function menuModel(state) {
     }] : []),
     {
       id: 'settings',
-      label: 'Settings',
+      label: 'Settings…',
       kind: 'action',
       enabled: state.settingsPanel,
       note: state.settingsPanel ? undefined : 'Settings panel coming in a future build',
@@ -172,7 +172,7 @@ function clampPosition(node, x, y) {
 }
 
 /**
- * createMenu({ rig, settings, rulesPanel, onReset, root }) -> { open(x, y, ndc), close(), isOpen() }
+ * createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, root }) -> { open(x, y, ndc), close(), isOpen() }
  *
  * `rig` supplies `pointAt(ndc)` (what the pointer was over, for "Look here")
  * and `lookHere(lat, lon)` (the action itself) -- NOT `visit()`, which is the
@@ -184,8 +184,10 @@ function clampPosition(node, x, y) {
  * there is no second way to write one; the menu never touches CONFIG or a
  * live object directly. `rulesPanel` is the color-rules editor
  * (`createRulesPanel`) -- the menu only opens it, it never touches
- * settings.apply for anything the panel owns. `root` is the DOM node the menu
- * mounts under --
+ * settings.apply for anything the panel owns. `settingsPanel`
+ * (`createSettingsPanel`) is the tuning panel, opened the same way; the two
+ * panels never coexist -- see `open()`'s own comment on that. `root` is the
+ * DOM node the menu mounts under --
  * `document.body` on the real page, and deliberately NOT `#stage`: `#stage`
  * is `position: fixed`, which creates a stacking context, so a menu inside it
  * ranks its z-index only among stage's own children and the `#rail` sibling
@@ -195,7 +197,7 @@ function clampPosition(node, x, y) {
  * toggle flipped a minute ago -- by this menu or by anything else that calls
  * settings.apply -- shows correctly the next time somebody opens it.
  */
-export function createMenu({ rig, settings, rulesPanel, onReset, root }) {
+export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, root }) {
   let node = null;
   // The pointerdown that dismissed the menu, kept only until the next open.
   //
@@ -273,7 +275,14 @@ export function createMenu({ rig, settings, rulesPanel, onReset, root }) {
       if (item.enabled) {
         row.addEventListener('click', act(() => {
           if (item.id === 'lookHere' && point) rig.lookHere(point.lat, point.lon);
-          if (item.id === 'rules' && rulesPanel) rulesPanel.open();
+          // Both panels are opened from this same menu, both mount at
+          // z-index 6 on document.body, and there is no reason to have both
+          // up at once -- so opening one closes the other rather than
+          // letting them overlap. The menu is what dispatches both actions,
+          // so it is the one place that knows about both panels; neither
+          // panel needs to know the other exists.
+          if (item.id === 'rules' && rulesPanel) { settingsPanel?.close(); rulesPanel.open(); }
+          if (item.id === 'settings' && settingsPanel) { rulesPanel?.close(); settingsPanel.open(); }
           if (item.id === 'reset' && onReset) onReset();
         }));
       }
@@ -318,9 +327,10 @@ export function createMenu({ rig, settings, rulesPanel, onReset, root }) {
         ripples: cfg('layers.ripples', true),
       },
       canLookHere: point !== null,
-      // No settings panel exists yet -- see menuModel's own note on the item
-      // this produces. Task 3 does not change that; a later task does.
-      settingsPanel: false,
+      // Enabled when this menu was built with a panel to open. A menu
+      // constructed without one -- as some tests still are -- must not draw
+      // a row whose click handler is guarded out. Same rule as rulesPanel.
+      settingsPanel: !!settingsPanel,
       // The lock is already checked at the top of open(), so a menu that
       // drew at all may offer this -- but only if this menu was actually
       // built with a panel to open; a menu constructed without one (as some

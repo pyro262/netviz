@@ -13,7 +13,7 @@ import { zoomBy, decay } from './orbit.js';
 import { pickCameraSphere, dragRotation, axisAngle } from './arcball.js';
 import { isDoubleTap, DOUBLE_TAP } from './menu.js';
 
-export function startInput({ canvas, rig, menu, rulesPanel }) {
+export function startInput({ canvas, rig, menu, rulesPanel, settingsPanel }) {
   // `enabled` is a live GATE, not an early return.
   //
   // It used to return a do-nothing stub, and that stub had to carry the whole
@@ -386,7 +386,13 @@ export function startInput({ canvas, rig, menu, rulesPanel }) {
     // `menuResume`, so the frame the menu closes on leaves a claim that hands
     // back in a couple of seconds instead of the drag's much longer wait: the
     // walk resumes on its own shortly after the menu goes away.
-    if (menu.isOpen() || rulesPanel?.isOpen()) rig.poke(menuResume);
+    // The camera must stay manual for the WHOLE time a panel is open, not
+    // just the menu: menu.js's act() closes the menu in a `finally` before
+    // the panel opens, so by then the menu already reports closed. Without
+    // this the autonomous walk resumed after input.resumeSeconds and a block
+    // burst was free to fly the view away while somebody was mid-drag on a
+    // slider.
+    if (menu.isOpen() || rulesPanel?.isOpen() || settingsPanel?.isOpen()) rig.poke(menuResume);
     // The hand-back ends input's ownership of the view, full stop. Damping
     // 0.85/s has a ~6.2s time constant against a 1e-6 floor, so a fling coasts
     // for ~114 seconds -- nearly four times resumeSeconds. Without this guard

@@ -21,6 +21,7 @@ import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
 import { createRulesPanel } from './rules_panel.js';
+import { createSettingsPanel } from './settings_panel.js';
 import { createConfirm } from './confirm.js';
 import { coerce, settingLabel } from './settings.js';
 import { loadPatch, withPersistence, clearPatch } from './rulestore.js';
@@ -461,8 +462,13 @@ async function boot() {
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
     scene, input: null, polling, resize, rail, classCounts,
   };
-  let settings = createApplier(ctx);
-  settings = withPersistence(settings, storage);
+  // TWO appliers, on purpose. `preview` is the raw executor: the tuning panel
+  // drives it while somebody drags a slider, so the wall changes and NOTHING
+  // is stored -- a reload is the escape hatch that makes experimenting free.
+  // `settings` is the same executor with persistence around it, and is what
+  // the menu, the rules panel and the stored-patch replay use.
+  const preview = createApplier(ctx);
+  let settings = withPersistence(preview, storage);
   ctx.settings = settings;
   // The menu mounts on `body`, NOT on `#stage`. `#stage` is `position:
   // fixed`, which creates a stacking context, so a menu inside it ranks its
@@ -471,6 +477,8 @@ async function boot() {
   // menu's opaque background and it read as transparent. Raising the menu's
   // z-index cannot fix that (measured: 9999 changed nothing).
   const rulesPanel = createRulesPanel({ settings, root: document.body });
+  // Same mount argument as the rules panel: document.body, never #stage.
+  const settingsPanel = createSettingsPanel({ preview, storage, root: document.body });
   // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
   // rules, then reload so config.js and /config.json decide again from the
   // top. The rules are kept because they are the operator's own work -- this
@@ -524,8 +532,8 @@ async function boot() {
       },
     });
   } : null;
-  const menu = createMenu({ rig, settings, rulesPanel, onReset, root: document.body });
-  input = startInput({ canvas: renderer.domElement, rig, menu, rulesPanel });
+  const menu = createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, root: document.body });
+  input = startInput({ canvas: renderer.domElement, rig, menu, rulesPanel, settingsPanel });
   ctx.input = input;
   // The rest of the stored patch (arcs.rules and rail.enabled were already
   // applied directly to CONFIG above, before createArcs() and the rail-mount
@@ -547,7 +555,7 @@ async function boot() {
   // leaving "looks about right" as the only check.
   window.__netviz = {
     arcs, globe, ripples, aurora, renderer, camera, scene, rig, stars, input,
-    settings, menu,
+    settings, menu, rulesPanel, settingsPanel,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
     project(lat, lon) {
