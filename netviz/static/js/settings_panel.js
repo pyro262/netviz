@@ -1,13 +1,29 @@
 // The tuning panel: the settings whose right value can only be judged by
 // looking at the wall.
 //
-// A LEFT-EDGE OVERLAY, not a second rail. The right rail narrows #stage, and
-// CLAUDE.md records what that costs: the globe becomes 74% as wide for the
-// same 35deg FOV, so every arc, sprite and bloom halo changes apparent size.
-// A panel that resized the canvas would change the very thing it exists to
-// measure -- you would set bloom against one scale and the wall would run it
-// at another. An overlay costs nothing geometrically: at 2560x1440 the globe
-// spans x~540-1354, so 380px at the left edge covers empty sky.
+// A LEFT RAIL, not an overlay. It narrows #stage exactly as the right rail
+// does (`body.tuner #stage { left: var(--tuner-width) }`), so the globe is
+// drawn beside the panel and never underneath it.
+//
+// This reverses the original decision, and BOTH halves of that argument are
+// true, so both are recorded here:
+//
+//   * Narrowing the stage really does change the globe's apparent size. The
+//     right rail is the measurement: 26% of the viewport makes the globe 74%
+//     as wide for the same 35deg FOV, so every arc, sprite and bloom halo
+//     scales with it. A panel that resizes the canvas therefore changes the
+//     very thing it exists to measure.
+//   * The display must not cover the globe. That constraint wins. The overlay
+//     looked harmless at 2560x1440, where the globe spans x 771-1789 (a 509px
+//     radius about centre x=1280, measured with `__netviz.project()` over a
+//     0.5deg grid) and 380px at the left edge is empty sky -- but at 1280x720
+//     the globe spans roughly x 386-894 and a 380px panel reaches its edge.
+//     A rail is right at both sizes; an overlay is right only at one.
+//
+// The honest consequence: anything tuned with the panel open is judged at the
+// NARROWED size. A final look with the panel closed is part of the job -- open
+// the panel, dial the value, close it, and check it still reads on the full
+// wall before Keeping it.
 //
 // Mounted on document.body, NEVER on #stage: #stage is `position: fixed` and
 // a fixed element creates a stacking context, so #rail -- a later sibling --
@@ -59,7 +75,16 @@ function el(tag, cls, text) {
   return node;
 }
 
-export function createSettingsPanel({ preview, storage, root, onClose } = {}) {
+/**
+ * @param onLayout called EXACTLY ONCE after the panel opens and exactly once
+ *   after it closes, with `body.tuner` already set or cleared and the panel
+ *   already in or out of the document -- so a caller that measures #stage in
+ *   it sees the narrowed box, never the one from before the toggle. Same
+ *   ordering contract rail.js's start() states, and for the same reason: a
+ *   relayout rebuilds the composer's render targets, so it must happen once
+ *   per toggle and not once per module that would like it to.
+ */
+export function createSettingsPanel({ preview, storage, root, onClose, onLayout } = {}) {
   const mount = root || document.body;
   let node = null;
   // The value every row held when the panel opened -- what Revert returns to,
@@ -293,8 +318,13 @@ export function createSettingsPanel({ preview, storage, root, onClose } = {}) {
     node.append(foot);
     node.append(el('div', 'tuner-note', ''));
 
+    // The class BEFORE the append and the relayout after both: `body.tuner`
+    // is what narrows #stage, so setting it last would have the caller
+    // measuring the full viewport for a panel that is already on screen.
+    document.body.classList.add('tuner');
     mount.append(node);
     refreshFooter();
+    if (onLayout) onLayout();
   }
 
   /** Closing is a Revert. Nothing kept was ever meant to survive the panel --
@@ -307,6 +337,10 @@ export function createSettingsPanel({ preview, storage, root, onClose } = {}) {
     node.remove();
     node = null;
     rowRefs = new Map();
+    document.body.classList.remove('tuner');
+    // One relayout on the way out too, and only after the class is gone: the
+    // stage is back to the full viewport by the time anyone measures it.
+    if (onLayout) onLayout();
     if (onClose) onClose();
   }
 

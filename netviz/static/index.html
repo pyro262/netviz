@@ -16,13 +16,24 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <style>
-      :root { color-scheme: dark; }
+      :root {
+        color-scheme: dark;
+        /* ONE number, two readers: the tuning panel's width and the slice it
+           takes out of #stage. Written here rather than twice, because the two
+           disagreeing is a panel that either overlaps the globe or floats over
+           a gap. Fixed pixels, unlike the right rail's 26%: the panel's rows
+           are label + slider + typed number, which have a real minimum legible
+           width, so a percentage would be unreadable at 1280 and wasteful at
+           4K. */
+        --tuner-width: 380px;
+      }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0916; }
       /* The canvas sizes itself to #stage, not to the window, so the optional
-         right rail can take a slice of the viewport without the globe rendering
-         off-centre. With the rail off, #stage IS the viewport. */
+         rails can take a slice of the viewport without the globe rendering
+         off-centre. With both off, #stage IS the viewport. */
       #stage { position: fixed; inset: 0; }
       body.rail #stage { right: 26%; }
+      body.tuner #stage { left: var(--tuner-width); }
       /* width/height belt-and-braces against renderer.setSize's updateStyle:
          without a CSS size the canvas lays out at its intrinsic pixel size,
          which is viewport * devicePixelRatio -- correct only at dpr 1. */
@@ -309,14 +320,24 @@
       .rules-add { margin-top: 8px; }
       .rules-foot { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
 
-      /* The tuning panel. A LEFT-EDGE OVERLAY: it must never narrow #stage,
-         because the globe would then render at a different apparent size
-         from the one being tuned. Mounted on body, so its z-index competes
-         with #rail directly rather than being trapped in #stage's stacking
-         context. */
+      /* The tuning panel: a LEFT RAIL, mirroring the right one. It is still
+         `position: fixed` on the left edge, but `body.tuner` narrows #stage by
+         exactly its width, so the globe sits BESIDE it and is never underneath
+         it. It was an overlay until the display it runs on said otherwise; see
+         js/settings_panel.js for what narrowing costs and why it wins anyway.
+         No `max-width`: a panel wider than the slice #stage gives up is a panel
+         back over the globe.
+         Mounted on body, so its z-index competes with #rail directly rather
+         than being trapped in #stage's stacking context. */
       .tuner-panel {
-        position: fixed; top: 0; left: 0; bottom: 0; width: 380px;
-        max-width: 92vw; z-index: 6; overflow-y: auto;
+        position: fixed; top: 0; left: 0; bottom: 0; width: var(--tuner-width);
+        /* border-box, or the padding and the border are ADDED to the width and
+           the panel occupies 413px of a 380px slice -- 33px of it back over the
+           globe, which is the whole thing this rail exists to stop. Caught by
+           verify_tuner.py case 2, which asserts the stage narrows by exactly
+           the panel's own rendered width rather than by the number in the CSS. */
+        box-sizing: border-box;
+        z-index: 6; overflow-y: auto;
         background: #12101fee; color: #d8d4ea;
         border-right: 1px solid #ffffff1a;
         font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;

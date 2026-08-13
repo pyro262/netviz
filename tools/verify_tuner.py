@@ -10,10 +10,11 @@ promises reaches there at all:
     document rather than an object claiming `isOpen()` -- the exact split
     that got through a unit suite and a code review the same week for the
     menu itself;
-  * that opening it does NOT resize the canvas, which is the entire reason
-    it is a left-edge overlay and not a second rail (the right rail narrows
-    #stage, and the globe becomes 74% as wide for the same FOV -- a panel
-    that did that would change the very thing it exists to measure);
+  * that opening it NARROWS #stage and the canvas, and closing it restores
+    both exactly -- it is a left rail, mirroring the right one, so that the
+    globe is never drawn underneath it -- and that the relayout happens
+    exactly once per toggle in each direction, which is how the right rail
+    was verified;
   * that a drag reaches the wall through `preview` and stores nothing, so a
     reload is a free escape hatch;
   * that Keep writes the touched rows and ONLY the touched rows;
@@ -230,15 +231,23 @@ def case1_panel_in_dom(page, cx, cy) -> bool:
                   f"clicked={clicked} state={state}")
 
 
-def case2_no_resize(page, cx, cy) -> bool:
-    """2: opening it does not resize the canvas.
+def case2_narrows_the_stage(page, cx, cy) -> bool:
+    """2: opening the panel narrows #stage and the canvas; closing restores
+    both, and each toggle costs exactly one relayout.
 
-    The whole placement argument -- overlay, not a second rail -- rests on
-    this. The rail narrows #stage and the globe renders 74% as wide for the
-    same 35deg FOV; a tuning panel that did the same would have you set bloom
-    against one scale while the wall runs it at another. Byte-identical, not
-    'about the same': a one-pixel difference here means #stage was reflowed
-    and the argument does not hold."""
+    The panel is a LEFT RAIL, not an overlay: the display must not cover the
+    globe, so #stage gives up the panel's width and the globe is drawn beside
+    it. The stage must move by exactly the panel's own width -- a stage that
+    narrows by some other amount is a panel either overlapping the globe or
+    floating over a gap -- and the drawing buffer must follow, or the globe
+    renders at the full viewport's aspect inside a narrower box.
+
+    `renderer.setSize` is counted, not merely observed to have happened. The
+    right rail was verified the same way and for the same reason: a relayout
+    rebuilds the composer's render targets, so two per toggle is a real cost
+    and a silent one. Restoring is asserted BYTE-IDENTICAL against the
+    pre-open numbers -- 'about the same' would pass a stage left one pixel
+    narrow for the life of the page."""
     close_panel(page)
     page.wait_for_timeout(400)
 
@@ -250,16 +259,60 @@ def case2_no_resize(page, cx, cy) -> bool:
                   stage: {x: s.x, y: s.y, w: s.width, h: s.height}};
         }""")
 
-    before = measure()
-    clicked = open_menu_and_click(page, "settings", cx, cy)
-    page.wait_for_timeout(600)
-    state = panel_state(page)
-    after = measure()
-    ok = (clicked and panel_is_really_open(state)
-          and before["w"] == after["w"] and before["h"] == after["h"]
-          and before["stage"] == after["stage"])
-    return report("2: opening the panel does not resize the canvas", ok,
-                  f"before={before} after={after} panelOpen={panel_is_really_open(state)}")
+    # Count the relayouts by wrapping the real renderer's setSize for the
+    # duration of the case, then putting the original back -- the rest of the
+    # run must see an untouched renderer.
+    page.evaluate("""() => {
+      const r = window.__netviz.renderer;
+      window.__tunerSetSize = {n: 0, orig: r.setSize.bind(r)};
+      r.setSize = (...a) => { window.__tunerSetSize.n += 1;
+                              return window.__tunerSetSize.orig(...a); };
+    }""")
+    calls = lambda: page.evaluate("() => window.__tunerSetSize.n")  # noqa: E731
+
+    try:
+        before = measure()
+        n0 = calls()
+        clicked = open_menu_and_click(page, "settings", cx, cy)
+        page.wait_for_timeout(600)
+        state = panel_state(page)
+        opened = measure()
+        n_open = calls() - n0
+
+        panel_w = page.evaluate("""() => {
+          const el = document.querySelector('.tuner-panel');
+          return el ? el.getBoundingClientRect().width : null;
+        }""")
+
+        close_panel(page)
+        page.wait_for_timeout(600)
+        closed = measure()
+        n_close = calls() - n0 - n_open
+    finally:
+        page.evaluate("""() => {
+          if (window.__tunerSetSize) {
+            window.__netviz.renderer.setSize = window.__tunerSetSize.orig;
+            delete window.__tunerSetSize;
+          }
+        }""")
+
+    narrowed_by = before["stage"]["w"] - opened["stage"]["w"]
+    matches_panel = panel_w is not None and abs(narrowed_by - panel_w) < 1.0
+    shifted = abs(opened["stage"]["x"] - (before["stage"]["x"] + panel_w)) < 1.0 \
+        if panel_w is not None else False
+    canvas_followed = opened["w"] < before["w"] and opened["h"] == before["h"]
+    restored = closed == before
+    ok = (clicked and panel_is_really_open(state) and matches_panel and shifted
+          and canvas_followed and restored and n_open == 1 and n_close == 1)
+    return report(
+        "2: opening the panel narrows the stage, closing restores it, "
+        "one relayout each way", ok,
+        f"stage {before['stage']} -> {opened['stage']} -> {closed}; "
+        f"canvas {before['w']}x{before['h']} -> {opened['w']}x{opened['h']} -> "
+        f"{closed['w']}x{closed['h']}; panel width={panel_w} narrowed by "
+        f"{narrowed_by} (matches={matches_panel}, left edge moved={shifted}); "
+        f"setSize calls open={n_open} close={n_close}; restored exactly="
+        f"{restored}; panelOpen={panel_is_really_open(state)}")
 
 
 def case3_preview_stores_nothing(page) -> bool:
@@ -470,7 +523,11 @@ def case6_camera_held(page, cx, cy) -> bool:
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= case1_panel_in_dom(page, cx, cy)
-    ok &= case2_no_resize(page, cx, cy)
+    ok &= case2_narrows_the_stage(page, cx, cy)
+    # Case 2 now ends with the panel CLOSED -- restoring the stage is half of
+    # what it proves -- so the cases after it open their own.
+    open_menu_and_click(page, "settings", cx, cy)
+    page.wait_for_timeout(400)
     ok &= case3_preview_stores_nothing(page)
     ok &= case4_keep_writes_only_touched(page)
     ok &= case5_revert_and_close(page, cx, cy)

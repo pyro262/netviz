@@ -478,7 +478,16 @@ async function boot() {
   // z-index cannot fix that (measured: 9999 changed nothing).
   const rulesPanel = createRulesPanel({ settings, root: document.body });
   // Same mount argument as the rules panel: document.body, never #stage.
-  const settingsPanel = createSettingsPanel({ preview, storage, root: document.body });
+  //
+  // onLayout is resize(), and the panel calls it exactly once per toggle. The
+  // panel is a LEFT RAIL now -- `body.tuner` narrows #stage the way `body.rail`
+  // does -- so the drawing buffer has to follow, or the globe renders at the
+  // full viewport's aspect inside a narrower box. One call per direction, for
+  // the same reason rail.mount() leaves the resize to its caller: a relayout
+  // rebuilds the composer's render targets.
+  const settingsPanel = createSettingsPanel({
+    preview, storage, root: document.body, onLayout: resize,
+  });
   // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
   // rules, then reload so config.js and /config.json decide again from the
   // top. The rules are kept because they are the operator's own work -- this
