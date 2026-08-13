@@ -38,19 +38,27 @@
 // numbers, after which the display silently stops tracking any later change
 // to them -- the exact failure `traffic.extraResolvers` was just fixed for.
 import { tunerRows } from './tuner.js';
-import { defaultOf } from './settings.js';
+import { defaultOf, entry } from './settings.js';
 import { savePatch } from './rulestore.js';
 
 /** The patch a Keep writes: the touched paths at their current values.
  *
  *  Touched, not changed. A row someone dragged and put back is still their
  *  decision about this display and is written; a row that moved because
- *  something ELSE on the display wrote it is not the panel's to freeze. */
+ *  something ELSE on the display wrote it is not the panel's to freeze.
+ *
+ *  A `persist: false` path is applied live and never written, the same rule
+ *  `withPersistence` enforces for every other write path in the renderer.
+ *  Keep calls savePatch() directly -- it writes the touched paths rather than
+ *  a patch it just applied -- so the filter has to be repeated here, and it
+ *  belongs in the function that DEFINES what a Keep writes rather than in the
+ *  button handler that hands the result to storage. */
 export function dirtyPatch(snapshot, current, dirty) {
   const out = {};
   for (const path of dirty) {
     if (!current.has(path)) continue;
     if (!snapshot.has(path)) continue;
+    if (entry(path) && entry(path).persist === false) continue;
     out[path] = current.get(path);
   }
   return out;
@@ -278,8 +286,9 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout 
 
     node = el('div', 'tuner-panel');
     // No backdrop. The rules panel has one because editing a list is a modal
-    // act; this one exists to be used while watching the wall behind it, and
-    // a scrim over the globe would hide the measurement.
+    // act; this one is a rail with the globe drawn BESIDE it, and it exists to
+    // be used while watching that globe -- a scrim would dim the very thing
+    // every one of these rows is being judged against.
     const head = el('div', 'tuner-head');
     head.append(el('h2', 'tuner-title', 'Tuning'));
     const close = el('button', 'tuner-close', 'Close');

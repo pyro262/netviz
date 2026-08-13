@@ -163,13 +163,25 @@ def read_store(page):
 
 
 def restore_store(page, original):
-    """Put the display's stored patch back exactly as it was found.
+    """Put this RUN's stored patch back exactly as it was found.
 
-    Case 4 clicks a real Keep, so it mutates real storage by design -- and with
-    `--url` that storage belongs to a wall somebody configured, color rules
-    included. A verifier has no business leaving a display altered, so the raw
-    string is snapshotted before the run and written back after it, from a
-    `finally` so a case that raises does not skip the restore.
+    It was written here, and claimed during development, that with `--url` the
+    storage case 4 writes to belongs to a wall somebody configured -- that the
+    release gate was overwriting an operator's color rules. That was measured
+    and it is FALSE, and never was true: Playwright's `new_context()` gives
+    each run its own ephemeral profile, so the origin store this script reads
+    and writes has never been a real display's. The tell was in plain sight and
+    was read past -- every local run started from an empty store, which is what
+    per-context isolation looks like.
+
+    The restore stays, for two reasons that survive the correction. It is
+    defense for the day anyone swaps in `launch_persistent_context()`, where
+    that isolation disappears with nothing announcing it. And case 4 asserts a
+    DELTA -- the keys present before, plus exactly the one path a Keep touched
+    -- which is a stronger assertion than clear-then-assert-empty, needs no
+    empty start, and is the one that survives if the isolation ever goes.
+    The raw string is snapshotted before the run and written back after it,
+    from a `finally` so a case that raises does not skip the restore.
 
     An absent key is restored by REMOVING it, never by writing `{}` or `null`:
     on this project an empty patch and no patch mean the same thing to every
@@ -384,8 +396,15 @@ def case5_revert_and_close(page, cx, cy) -> bool:
     Both, because either alone is passed by a bug: a Close that simply removed
     the node would pass the Revert half, and a Revert wired to Close's handler
     would pass the Close half. A different row from case 4's, so the
-    re-baselining a Keep performs cannot be what makes this pass."""
+    re-baselining a Keep performs cannot be what makes this pass.
+
+    It also asserts the STORE did not move. Neither Revert nor Close is a write
+    -- the whole point of the preview applier is that nothing is remembered
+    until Keep -- but reading only the live value would pass a Revert or a
+    Close that quietly wrote to localStorage on the way past, and the restore
+    in main()'s `finally` would then erase the evidence before anyone looked."""
     base = read_live(page, OPACITY)
+    store_base = read_store(page)
     out = drag_slider(page, OPACITY, OPACITY_TARGET)
     if out.get("error"):
         return report("5: Revert restores, and Close reverts too", False, out["error"])
@@ -402,16 +421,20 @@ def case5_revert_and_close(page, cx, cy) -> bool:
     page.wait_for_timeout(400)
     after_close = read_live(page, OPACITY)
     gone = page.evaluate("() => !document.querySelector('.tuner-panel')")
+    store_after = read_store(page)
+    store_same = store_after == store_base
 
     ok = (reverted_click and closed_click and gone
           and abs(moved - OPACITY_TARGET) < 1e-9 and moved != base
           and abs(after_revert - base) < 1e-9
           and abs(moved2 - OPACITY_TARGET) < 1e-9
-          and abs(after_close - base) < 1e-9)
+          and abs(after_close - base) < 1e-9
+          and store_same)
     return report(
         "5: Revert restores, and Close reverts too", ok,
         f"{OPACITY} base={base}; drag -> {moved}, Revert -> {after_revert}; "
-        f"drag -> {moved2}, Close -> {after_close}; panel removed={gone}")
+        f"drag -> {moved2}, Close -> {after_close}; panel removed={gone}; "
+        f"localStorage unchanged={store_same}")
 
 
 def case6_camera_held(page, cx, cy) -> bool:
@@ -665,10 +688,12 @@ def main() -> int:
               const r = document.querySelector('canvas').getBoundingClientRect();
               return {cx: r.left + r.width / 2, cy: r.top + r.height / 2};
             }""")
-            # Case 4 clicks a real Keep, so this run WILL write to the display's
-            # own stored patch. With --url that display is a wall somebody
-            # configured, so the blob is snapshotted here and written back in
-            # the `finally` below -- never cleared, and never left changed.
+            # Case 4 clicks a real Keep, so this run WILL write to a stored
+            # patch -- but `new_context()` above isolates origin storage, so
+            # that patch is this run's own and never a real display's, even
+            # with --url. Snapshotted here and written back in the `finally`
+            # below all the same: it costs nothing, and it is what keeps this
+            # honest if anyone ever swaps in launch_persistent_context().
             original_store = read_store(page)
             try:
                 ok = run(page, rect["cx"], rect["cy"])
