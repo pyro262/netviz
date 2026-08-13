@@ -377,6 +377,56 @@ test('overrideClassFor is null with no rules and with nothing suppressed', () =>
   }
 });
 
+test('an ordinary /32 on the local end does not unhide that host talking to every resolver', () => {
+  // End to end through the real resolver list: 9.9.9.9 is a shipped whole
+  // entry, so it hides like a /32 and the rule is exactly as specific -- but
+  // it names the LOCAL end, which is not what was hidden. Before containment
+  // was checked, one /32 on a site's own forwarder put its whole conversation
+  // with every listed resolver back on the wall in that rule's color.
+  const prev = CONFIG.arcs.rules;
+  CONFIG.arcs.rules = [{ match: '203.0.113.5/32', color: '#22d3ee' }];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '9.9.9.9' };
+    assert.deepEqual(dnsSuppression(ev).map((s) => s.axis), ['address']);
+    assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
+  } finally {
+    CONFIG.arcs.rules = prev;
+  }
+});
+
+test('a degenerate extraResolvers entry hides nothing', () => {
+  // ':' names no component at all, so read literally it matches every
+  // `::`-form address on the feed at zero bits wide -- the largest possible
+  // suppression, and one even 0.0.0.0/0 could override. It is a typo in the
+  // environment, not a prefix.
+  const prev = CONFIG.traffic.extraResolvers;
+  CONFIG.traffic.extraResolvers = [':', '.'];
+  try {
+    const ev = { k: 'flow', s: '203.0.113.5', d: '2001:db8::1' };
+    assert.deepEqual(dnsSuppression(ev), []);
+    assert.equal(isDns(ev), false);
+    assert.equal(isResolverAddress(ev), false);
+  } finally {
+    CONFIG.traffic.extraResolvers = prev;
+  }
+});
+
+test('an over-long resolver prefix is clamped to the family width', () => {
+  // Free text from the environment: six octets name more bits than an IPv4
+  // address has. The width handed to the specificity comparison is the
+  // family's, not a number no address could reach.
+  const prev = CONFIG.traffic.extraResolvers;
+  CONFIG.traffic.extraResolvers = ['203.0.113.9.9.9.'];
+  try {
+    const ev = { k: 'flow', s: '198.51.100.7', d: '203.0.113.9.9.9.4' };
+    const out = dnsSuppression(ev);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].bits, 32);
+  } finally {
+    CONFIG.traffic.extraResolvers = prev;
+  }
+});
+
 test('overrideClassFor still requires containment -- an aimed rule that does not claim the event refuses it', () => {
   // The rule is aimed at the right axis (port 53) and specific enough, but its
   // `end: 'src'` means it only ever looks at the source port -- and this event

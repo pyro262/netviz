@@ -265,8 +265,10 @@ async function boot() {
     // broader than the resolver-list entry that hid it. A rule broad enough to
     // have been written about something else does not qualify, or one country
     // rule would put the whole suppressed third of the feed back on the wall.
-    // The overriding rule's own class is what the arc is drawn as, so the
-    // lookup is not repeated below.
+    // The overriding rule's own class is what the arc is drawn as: it is
+    // handed to arcs.spawn, which would otherwise recompute it with
+    // classNameFor -- the first rule that MERELY matches -- and draw the arc
+    // in a broad rule's color while the rail counted it under the narrow one.
     const sups = dnsSuppression(ev);
     let overrideCls = null;
     if (sups.length) {
@@ -282,7 +284,7 @@ async function boot() {
       const rule = cfg('arcs.rules', [])[rawRuleIndex(Number(cls.slice(4)) - 1)];
       if (rule) classCounts.add(ruleKey(rule), Date.now());
     }
-    arcs.spawn(ev);
+    arcs.spawn(ev, cls, sups);
     if (cls === 'block') {
       // The blocked country is the FAR end, which on this router is the
       // destination: every geo policy here is outbound, so the source is a LAN

@@ -4,8 +4,7 @@
 // Wire format is the collector's short keys: k (kind), s/d (addresses).
 
 import { cfg } from './config.js';
-import { compileRules, firstMatch, addrContext, matchRule,
-         overridesSuppression } from './rules.js';
+import { compileRules, firstMatch, firstOverride } from './rules.js';
 
 // The compiled list, cached against the ARRAY IDENTITY it was built from.
 // Config is still read per call (a couple of property lookups per event, which
@@ -45,11 +44,29 @@ function isDnsPort(port) {
  *  components it actually names -- `203.0.113.` names three octets and hides a
  *  /24; `2001:db8:` names two groups and hides a /32. This width is what a
  *  rule's specificity is compared against, so it comes from the list itself
- *  rather than from a threshold somebody picked. */
+ *  rather than from a threshold somebody picked.
+ *
+ *  Clamped to the family width, because NETVIZ_EXTRA_RESOLVERS is free text
+ *  from the environment and an over-long entry (`203.0.113.9.9.9.`) would
+ *  otherwise claim a width no address has. That direction already failed
+ *  closed -- `1n << -16n` is 0n, so nothing could beat it -- but a width wider
+ *  than the address space is a nonsense number to hand to the comparison, and
+ *  the entry is still a real prefix that really did hide something. */
 function entryBits(entry, family) {
-  if (entry.endsWith('.')) return entry.split('.').filter(Boolean).length * 8;
-  if (entry.endsWith(':')) return entry.split(':').filter(Boolean).length * 16;
-  return family === 4 ? 32 : 128;
+  const width = family === 4 ? 32 : 128;
+  if (entry.endsWith('.')) {
+    return Math.min(namedComponents(entry, '.') * 8, width);
+  }
+  if (entry.endsWith(':')) {
+    return Math.min(namedComponents(entry, ':') * 16, width);
+  }
+  return width;
+}
+
+/** How many components a prefix entry actually names. A bare `.` or `:` names
+ *  none -- see matchingEntry for why that is not a prefix at all. */
+function namedComponents(entry, sep) {
+  return entry.split(sep).filter(Boolean).length;
 }
 
 /** The resolver-list entry that hides this address, or null.
@@ -66,6 +83,12 @@ function matchingEntry(addr, list) {
     if (typeof entry !== 'string' || !entry) continue;
     const e = entry.toLowerCase();
     if (e.endsWith('.') || e.endsWith(':')) {
+      // A prefix that names no component at all -- a bare ":" -- is not a
+      // prefix, it is a typo in NETVIZ_EXTRA_RESOLVERS. Read literally it
+      // hides every `::`-form address on the feed at zero bits wide, which is
+      // both the largest possible suppression and the easiest to override:
+      // even 0.0.0.0/0 would beat it. It matches nothing instead.
+      if (namedComponents(e, e.endsWith('.') ? '.' : ':') === 0) continue;
       if (a.startsWith(e)) return e;
     } else if (a === e) {
       return e;
@@ -134,16 +157,8 @@ export function isResolverAddress(ev) {
  * classNameFor uses, so arcs.js and rawRuleIndex need no second convention.
  */
 export function overrideClassFor(ev, sups) {
-  if (!ev || !sups || !sups.length) return null;
-  const active = activeRules();
-  if (!active.rules.length) return null;
-  const ctx = addrContext(ev);
-  for (let i = 0; i < active.rules.length; i += 1) {
-    const rule = active.rules[i];
-    if (!rule.enabled || !matchRule(rule, ev, ctx)) continue;
-    if (sups.some((s) => overridesSuppression(rule, s))) return `rule${i + 1}`;
-  }
-  return null;
+  const idx = firstOverride(activeRules(), ev, sups);
+  return idx >= 0 ? `rule${idx + 1}` : null;
 }
 
 /** A country code the collector could actually place. `--` is what GeoIP

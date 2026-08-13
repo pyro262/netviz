@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseAddress, parseRule, compileRules, matchRule, firstMatch, addrContext,
-  overridesSuppression }
+  overridesSuppression, firstOverride }
   from '../../netviz/static/js/rules.js';
 
 test('parseAddress reads IPv4 as a 32-bit number', () => {
@@ -331,6 +331,60 @@ test('a disabled rule never overrides', () => {
   assert.equal(
     overridesSuppression(R('udp/53', { enabled: false }), { axis: 'port', port: 53 }),
     false);
+});
+
+test('an address rule must contain the address that was hidden, not just match the event', () => {
+  // The hole this closes. With the default end:'either', matchRule is happy
+  // when EITHER address matches -- so an ordinary /32 written about one local
+  // host claims the flow 203.0.113.5 -> 9.9.9.9 through its SOURCE, and then
+  // passes a size-only test on numbers that have nothing to do with the
+  // resolver (1 address is not more than the 1 that 9.9.9.9 hides). If the
+  // highlighted host is the site's own forwarder, that is a large permanent
+  // share of the suppressed feed restored by a rule about something else.
+  const sup = { axis: 'address', addr: '9.9.9.9', family: 4, bits: 32 };
+  assert.equal(overridesSuppression(R('203.0.113.5/32'), sup), false);
+  // Same shape with a range matcher: as specific as it needs to be, aimed
+  // somewhere else entirely.
+  assert.equal(overridesSuppression(R('203.0.113.5-203.0.113.5'), sup), false);
+  // And the rule that really does name the hidden address still overrides.
+  assert.equal(overridesSuppression(R('9.9.9.9/32'), sup), true);
+});
+
+test('containment is checked against a prefix entry too, at its own width', () => {
+  // '203.0.113.' hides like a /24. A /24 elsewhere is the right size and the
+  // wrong place; the /24 the address is actually in overrides.
+  const sup = { axis: 'address', addr: '203.0.113.9', family: 4, bits: 24 };
+  assert.equal(overridesSuppression(R('198.51.100.0/24'), sup), false);
+  assert.equal(overridesSuppression(R('198.51.100.0-198.51.100.255'), sup), false);
+  assert.equal(overridesSuppression(R('203.0.113.0/24'), sup), true);
+});
+
+test('containment holds for v6, and an unparseable suppressed address overrides nothing', () => {
+  const sup = { axis: 'address', addr: '2001:db8::1', family: 6, bits: 128 };
+  assert.equal(overridesSuppression(R('2001:db8::2/128'), sup), false);
+  assert.equal(overridesSuppression(R('2001:db8::1/128'), sup), true);
+  // A wall display must never throw on a malformed feed; failing closed keeps
+  // the suppression, which is the safe direction.
+  assert.equal(
+    overridesSuppression(R('9.9.9.9/32'), { axis: 'address', addr: 'nonsense', bits: 32 }),
+    false);
+});
+
+test('firstOverride picks the first AIMED rule, skipping the ones that merely match', () => {
+  // The same question arcs.setRules asks of an arc already in the air, so the
+  // arc and the class the rail counted cannot disagree.
+  const compiled = compileRules([
+    { match: 'DE', color: '#ff0000' },        // matches, not aimed
+    { match: 'udp/53', color: '#22d3ee' },    // aimed
+  ]);
+  const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dc: 'DE', dp: 53, pr: 17 };
+  assert.equal(firstOverride(compiled, ev, [{ axis: 'port', port: 53 }]), 1);
+  // Nothing aimed at it: -1, which is the caller's cue to stop drawing it
+  // rather than to fall back to the broad rule.
+  assert.equal(firstOverride(compileRules([{ match: 'DE', color: '#ff0000' }]),
+                             ev, [{ axis: 'port', port: 53 }]), -1);
+  assert.equal(firstOverride(compiled, ev, []), -1);
+  assert.equal(firstOverride(compiled, null, [{ axis: 'port', port: 53 }]), -1);
 });
 
 test('overridesSuppression is defensive about missing arguments', () => {
