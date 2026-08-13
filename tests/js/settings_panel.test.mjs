@@ -237,8 +237,26 @@ test('a long pending list is counted exactly and enumerated up to a limit', () =
     const text = allText(q);
     assert.ok(text.includes(String(many.length)),
               `${name}: does not carry the exact count ${many.length}`);
-    assert.match(text, /and \d+ more/,
-                 `${name}: enumerates every one of ${many.length} settings`);
+    // THE REMAINDER IS ASSERTED, not just matched. `/and \d+ more/` passes
+    // against any number at all -- an off-by-one, or the total printed where
+    // the rest belongs -- so it holds the shape of the sentence and nothing
+    // about its arithmetic, which is what the case is named for. Confirmed by
+    // making `named()` say `labels.length`: this fails, the bare match does
+    // not.
+    const m = /and (\d+) more/.exec(text);
+    assert.ok(m, `${name}: enumerates every one of ${many.length} settings`);
+    // The listed labels are counted off the sentence rather than assumed to be
+    // NAME_LIMIT, so the two halves have to agree with each other: named + more
+    // is the whole list, whatever the limit is set to.
+    const listed = many.filter((p) => text.includes(settingLabel(p))).length;
+    assert.equal(Number(m[1]), many.length - listed,
+                 `${name}: names ${listed} of ${many.length} and says `
+                 + `"${m[1]} more" -- the rest is ${many.length - listed}`);
+    // And against the shipped limit specifically, so a silent change to
+    // NAME_LIMIT is a test that has to be updated deliberately.
+    assert.equal(Number(m[1]), many.length - 6,
+                 `${name}: expected ${many.length - 6} more at the shipped `
+                 + `limit of 6, got ${m[1]}`);
     // The first few ARE still named -- a question that only counts answers
     // "how many" and not "which", and the short case is the common one.
     assert.ok(text.includes(settingLabel(many[0])),
