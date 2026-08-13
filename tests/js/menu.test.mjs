@@ -571,3 +571,56 @@ test('close() is idempotent', () => {
     assert.equal(menu.isOpen(), false);
   });
 });
+
+test('dismissedBy names the exact event that closed the menu', () => {
+  // The menu listens on `document` in the CAPTURE phase; input.js listens on
+  // the canvas in the bubble phase. So by the time input.js sees the very
+  // pointerdown that dismissed the menu, the menu has ALREADY closed and
+  // isOpen() is false -- a dismissal is indistinguishable from an ordinary
+  // press on the globe if you only ask "is the menu open".
+  //
+  // That mattered: input.js grabbed the camera on the dismissing click, and
+  // a grab is "a drag's own claim", which resets the hand-back delay from the
+  // menu's 2s to a drag's 15s. Closing the menu with a click therefore left
+  // the walk parked for 15 seconds. Identity of the event is what
+  // distinguishes the two, since no timing heuristic can.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    const outsider = dom.document.createElement('div');
+    const ev = { target: outsider };
+    dom.document.dispatch('pointerdown', ev);
+    assert.equal(menu.isOpen(), false);
+    assert.equal(menu.dismissedBy(ev), true, 'the dismissing event');
+    assert.equal(menu.dismissedBy({ target: outsider }), false,
+                 'a different event object that merely looks the same');
+    assert.equal(menu.dismissedBy(null), false);
+    assert.equal(menu.dismissedBy(undefined), false);
+  });
+});
+
+test('a fresh open forgets the previous dismissal', () => {
+  // Otherwise the event that closed the menu last time would still suppress a
+  // grab the next time somebody presses on the globe -- a dead camera, and a
+  // retained reference to a DOM event for as long as the page runs.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    const outsider = dom.document.createElement('div');
+    const ev = { target: outsider };
+    dom.document.dispatch('pointerdown', ev);
+    assert.equal(menu.dismissedBy(ev), true);
+    menu.open(0, 0, { x: 0, y: 0 });
+    assert.equal(menu.dismissedBy(ev), false, 'stale after a re-open');
+  });
+});

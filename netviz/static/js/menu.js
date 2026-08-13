@@ -197,11 +197,30 @@ function clampPosition(node, x, y) {
  */
 export function createMenu({ rig, settings, rulesPanel, onReset, root }) {
   let node = null;
+  // The pointerdown that dismissed the menu, kept only until the next open.
+  //
+  // This listener is on `document` in the CAPTURE phase and input.js's is on
+  // the canvas in the bubble phase, so input.js sees the dismissing press
+  // AFTER the menu has already closed -- `isOpen()` is false by then and a
+  // dismissal is indistinguishable from an ordinary press on the globe. It
+  // used to grab the camera on that press, and a grab is a drag's own claim,
+  // which replaced the menu's 2s hand-back with a drag's 15s: closing the
+  // menu with a click parked the walk for fifteen seconds. Event identity is
+  // the only thing that separates the two cases; no timing heuristic can.
+  let dismissEvent = null;
 
   function isOpen() { return node !== null; }
 
+  /** Was THIS event the press that dismissed the menu? Identity, not shape --
+   *  two presses in the same place are different events and only one of them
+   *  closed anything. */
+  function dismissedBy(e) { return e != null && e === dismissEvent; }
+
   function onOutside(e) {
-    if (node && e && e.target && !node.contains(e.target)) close();
+    if (node && e && e.target && !node.contains(e.target)) {
+      dismissEvent = e;
+      close();
+    }
   }
   function onKeyDown(e) {
     if (e && e.key === 'Escape') close();
@@ -282,6 +301,10 @@ export function createMenu({ rig, settings, rulesPanel, onReset, root }) {
    */
   function open(x, y, ndc) {
     if (cfg('input.lock', false)) return false;
+    // Forget the last dismissal. Held any longer it would suppress the grab on
+    // some unrelated press later on -- a dead camera -- and keep a DOM event
+    // reachable for as long as the page runs.
+    dismissEvent = null;
     close();   // the opening gesture repeated: a fresh open replaces any old one
 
     const point = rig.pointAt(ndc);
@@ -321,5 +344,5 @@ export function createMenu({ rig, settings, rulesPanel, onReset, root }) {
     return true;
   }
 
-  return { open, close, isOpen };
+  return { open, close, isOpen, dismissedBy };
 }

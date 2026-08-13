@@ -114,6 +114,25 @@ export function startInput({ canvas, rig, menu, rulesPanel }) {
   function onDown(ev) {
     if (!enabled) return;
     showCursor();
+    // The press that dismissed the menu dismisses it and nothing else. It is
+    // not a grab: clicking away from a menu is how every menu on every
+    // platform is closed, and starting a drag with the same press would turn
+    // "put that away" into "and also move the globe".
+    //
+    // It cannot be detected by asking whether the menu is open. menu.js
+    // listens on `document` in the CAPTURE phase and this listener is on the
+    // canvas in the bubble phase, so the menu has ALREADY closed by the time
+    // this runs -- `menu.isOpen()` is false here for the dismissing press and
+    // for an ordinary one alike. The menu therefore names the exact event.
+    //
+    // The bug this fixes: grabbing here called beginManual, whose whole job
+    // includes `resumeAfter = null` -- "a drag is its own claim, at the
+    // ordinary delay" -- so dismissing the menu with a click replaced the 2s
+    // menu hand-back with the 15s drag one, and the walk sat parked.
+    if (menu && menu.dismissedBy && menu.dismissedBy(ev)) {
+      rig.poke(menuResume);
+      return;
+    }
     if (pointers.size === 0) gesturePinched = false;   // fresh gesture starting
     pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
     downPos.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });

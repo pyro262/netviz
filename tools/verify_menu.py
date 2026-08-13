@@ -689,6 +689,50 @@ def run(page, canvas_center, ctx, url) -> bool:
         f"handed back after {freed_at}s "
         f"(menuResumeSeconds=2 in rendered time; 30s wall cap)")
 
+    # --------------------------------------------------------- case 17 --
+    # Closing the menu with a LEFT CLICK OUTSIDE it hands back on the menu's
+    # countdown too -- not the drag's.
+    #
+    # Case 16 closes the menu through menu.close(), which no press is involved
+    # in, so it never exercised the path a person actually uses. Clicking away
+    # is how a menu gets dismissed, and that press used to do two things: the
+    # menu's document-level capture listener closed the menu, and then the
+    # canvas's bubble-phase listener treated the SAME press as a grab. A grab
+    # is a drag's own claim (campath.beginManual clears resumeAfter), so the
+    # 2s menu hand-back silently became the 15s drag one and the wall sat
+    # parked. Reported from the wall, not caught by any test.
+    #
+    # The press is aimed well away from the menu, which opens at the canvas
+    # centre: 40px from the top-left corner is outside it at any size the
+    # clamp allows. Timed against the rig's own flag with a generous cap, for
+    # the rendered-vs-wall-clock reason case 16 records.
+    close_menu()
+    time.sleep(3.0)                       # let any earlier claim expire
+    prevented = dispatch_contextmenu(page, cx, cy)
+    time.sleep(0.2)
+    opened17 = prevented and menu_state(page)["present"]
+    page.mouse.click(40, 40)              # a real press, outside the menu
+    time.sleep(0.2)
+    closed17 = not menu_state(page)["present"]
+    t0 = time.time()
+    still_manual17 = None
+    freed17 = None
+    while time.time() - t0 < 30.0:
+        snap = page.evaluate("() => window.__netviz.rig.manual()")
+        dt = time.time() - t0
+        if dt < 0.6 and snap:
+            still_manual17 = dt
+        if not snap:
+            freed17 = dt
+            break
+        time.sleep(0.25)
+    ok &= report(
+        "17: clicking away from the menu hands back on the menu's delay",
+        opened17 and closed17 and freed17 is not None and freed17 < 20.0,
+        f"opened={opened17} closed={closed17} still manual at "
+        f"{still_manual17}s, handed back after {freed17}s "
+        f"(menu 2s vs drag 15s, both in rendered time; 30s wall cap)")
+
     # --------------------------------------------------------- case 15 --
     # Own page again, because it needs the rail actually mounted.
     ok &= run_menu_over_rail_case(ctx, url)
