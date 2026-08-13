@@ -12,7 +12,8 @@ import { createAtmosphere } from './atmosphere.js';
 import { createComposer } from './post.js';
 import { createCameraRig } from './camera.js';
 import { startInput } from './input.js';
-import { isDns, classNameFor, foreignEnd, rawRuleIndex } from './classify.js';
+import { dnsSuppression, overrideClassFor, classNameFor, foreignEnd,
+         rawRuleIndex } from './classify.js';
 import { createBurstDetector } from './burst.js';
 import { start as startRail } from './rail.js';
 import { createClassCounter, ruleKey } from './classcount.js';
@@ -259,8 +260,20 @@ async function boot() {
   const REPLAY_DRAIN_SECONDS = 5;
   const bootedAt = performance.now() / 1000;
   const link = connect((ev) => {
-    if (isDns(ev)) return;
-    const cls = classNameFor(ev);
+    // DNS is dropped UNLESS a rule is explicitly aimed at the reason it was
+    // hidden -- a port matcher naming a DNS port, or an address matcher no
+    // broader than the resolver-list entry that hid it. A rule broad enough to
+    // have been written about something else does not qualify, or one country
+    // rule would put the whole suppressed third of the feed back on the wall.
+    // The overriding rule's own class is what the arc is drawn as, so the
+    // lookup is not repeated below.
+    const sups = dnsSuppression(ev);
+    let overrideCls = null;
+    if (sups.length) {
+      overrideCls = overrideClassFor(ev, sups);
+      if (!overrideCls) return;
+    }
+    const cls = overrideCls || classNameFor(ev);
     if (cls.startsWith('rule')) {
       // cls's index counts positions in the COMPILED rule list (refusals
       // dropped); the raw list here still carries them, so an unparseable
