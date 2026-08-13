@@ -281,7 +281,18 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
           // letting them overlap. The menu is what dispatches both actions,
           // so it is the one place that knows about both panels; neither
           // panel needs to know the other exists.
-          if (item.id === 'rules' && rulesPanel) { settingsPanel?.close(); rulesPanel.open(); }
+          // ...and the tuning panel is closed through requestClose(), never
+          // close(), because it may hold changes nobody has kept: the
+          // force-close discarded them SILENTLY, which is the one case its own
+          // Close question exists to catch. requestClose asks when something is
+          // pending, closes at once when nothing is, and calls back only when
+          // the panel actually went -- so a cancel leaves the tuning panel open
+          // with its changes intact and the rules panel unopened, rather than
+          // this handler racing an answer it never waited for.
+          if (item.id === 'rules' && rulesPanel) {
+            if (settingsPanel) settingsPanel.requestClose(() => rulesPanel.open());
+            else rulesPanel.open();
+          }
           if (item.id === 'settings' && settingsPanel) { rulesPanel?.close(); settingsPanel.open(); }
           if (item.id === 'reset' && onReset) onReset();
         }));

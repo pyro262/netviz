@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   dirtyPatch, revertPatch, keepQuestion, revertQuestion, closeQuestion,
+  shuffleValue,
 } from '../../netviz/static/js/settings_panel.js';
 import { settingLabel } from '../../netviz/static/js/settings.js';
+import { tunerRows } from '../../netviz/static/js/tuner.js';
 
 test('a keep writes only the rows that were touched', () => {
   const snapshot = new Map([['a', 1], ['b', 2], ['c', 3]]);
@@ -66,6 +68,73 @@ test('a persist: false path is applied live but never kept', () => {
   // Both halves, because either alone is passed by a bug that dropped
   // everything: the excluded path is absent AND the ordinary one is present.
   assert.deepEqual(patch, { 'layers.stars': false });
+});
+
+// -------------------------------------------------------------- shuffle --
+//
+// Every one of these runs against the REAL catalogue, not a made-up row: the
+// bounds are the only thing making a random wall a readable wall, so what is
+// worth proving is that no roll of any shipped slider can leave them.
+
+const SLIDERS = tunerRows().filter((r) => r.control === 'slider');
+
+test('the catalogue really has sliders to shuffle', () => {
+  // Otherwise every loop below passes vacuously.
+  assert.ok(SLIDERS.length > 10, `only ${SLIDERS.length} slider rows`);
+});
+
+test("a shuffled value is always inside the row's own bounds", () => {
+  // A deterministic sweep rather than Math.random: an out-of-bounds roll that
+  // happens once in a thousand is a bug that reaches the wall and not the
+  // suite.
+  for (const row of SLIDERS) {
+    for (let i = 0; i <= 200; i += 1) {
+      const t = i / 200 - 1e-15;       // the top end just under 1
+      const v = shuffleValue(row, () => Math.max(0, t));
+      assert.ok(v >= row.min && v <= row.max,
+                `${row.path}: rand=${t} gave ${v}, outside [${row.min}, ${row.max}]`);
+    }
+  }
+});
+
+test('a shuffled value lands on a step boundary of its own row', () => {
+  // So the typed readout shows a number a person could write down, and the
+  // value is one the slider could have been dragged to.
+  for (const row of SLIDERS) {
+    for (let i = 0; i <= 50; i += 1) {
+      const v = shuffleValue(row, () => i / 50 - 1e-15);
+      const steps = (v - row.min) / row.step;
+      assert.ok(Math.abs(steps - Math.round(steps)) < 1e-6,
+                `${row.path}: ${v} is ${steps} steps from ${row.min}`);
+    }
+  }
+});
+
+test('rand 0 is exactly min, and rand just under 1 never passes max', () => {
+  // The two ends are where a snap-to-step goes out of bounds: `max - min` is
+  // not always a whole number of steps, so rounding the top roll lands one
+  // step past the ceiling unless the count is clamped.
+  for (const row of SLIDERS) {
+    assert.equal(shuffleValue(row, () => 0), row.min, `${row.path} floor`);
+    const top = shuffleValue(row, () => 1 - Number.EPSILON);
+    assert.ok(top <= row.max, `${row.path}: top roll ${top} > max ${row.max}`);
+    assert.ok(top > row.max - row.step - 1e-9,
+              `${row.path}: top roll ${top} is nowhere near max ${row.max}`);
+  }
+});
+
+test('a non-slider row is never given a value', () => {
+  // `appearance.background` is the one that matters: its luminance cap REFUSES
+  // rather than clamps, so a randomizer aimed at it would spend half its rolls
+  // being rejected -- and the ground color decides whether anything else on the
+  // wall is legible.
+  const others = tunerRows().filter((r) => r.control !== 'slider');
+  assert.ok(others.length > 0, 'no non-slider rows in the catalogue to check');
+  for (const row of others) {
+    assert.equal(shuffleValue(row, () => 0.5), null, `${row.path} was given a value`);
+  }
+  assert.ok(others.some((r) => r.path === 'appearance.background'),
+            'the color row is not in the catalogue any more -- check this test');
 });
 
 // ------------------------------------------------- the three confirmations --

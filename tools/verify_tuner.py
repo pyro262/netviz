@@ -24,6 +24,13 @@ promises reaches there at all:
     that answering Cancel leaves the panel open with the change still
     pending and still unstored -- the dialog is the only thing standing
     between a stray click and work nobody wrote down;
+  * that the menu's mutual exclusion between the two panels goes through
+    `requestClose()` rather than the force-close, so picking "Color rules..."
+    over unkept changes asks instead of discarding them silently, and a
+    Cancel leaves the rules panel shut and the changes pending;
+  * that Shuffle rolls every slider inside its own schema bounds, marks each
+    row dirty exactly as a drag does, asks nothing, and is undone by one
+    Revert;
   * and that the camera is held for the whole time the panel is open, then
     handed back on the MENU's short delay rather than the drag's long one.
 
@@ -80,7 +87,7 @@ HELD_SAMPLE_SECONDS = 20.0
 # to tell apart from the menu's.
 HANDBACK_TOLERANCE = 2.0
 
-# Case 8's viewport. 420 wide is the concrete failure the clamp exists for: an
+# Case 10's viewport. 420 wide is the concrete failure the clamp exists for: an
 # unclamped 380px slice leaves a 40px stage and a camera at aspect 0.055, and
 # anything at or below 380 is a zero-width stage and a blank display.
 SMALL_VIEWPORT = (420, 800)
@@ -712,8 +719,8 @@ def case7_camera_held(page, cx, cy) -> bool:
         f"{max_idle:.2f}s -- the per-frame pokes keep it near 0); {tail}")
 
 
-def case8_small_viewport(page) -> bool:
-    """8: on a small viewport the slice is clamped, and the stage stays usable.
+def case10_small_viewport(page) -> bool:
+    """10: on a small viewport the slice is clamped, and the stage stays usable.
 
     ITS OWN CASE, not folded into case 2, for one reason: it has to resize the
     viewport, and case 2's whole strength is a byte-exact comparison at the
@@ -786,7 +793,7 @@ def case8_small_viewport(page) -> bool:
     ok = (clicked and panel_is_really_open(state) and usable and aspect_ok
           and majority and matches)
     return report(
-        f"8: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
+        f"10: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
         "the stage stays usable", ok,
         f"viewport {after['vw']}px: stage {before['stage']['w']} -> "
         f"{after['stage']['w']} (slice {slice_w}, panel {panel_w}, agree={matches}), "
@@ -795,6 +802,198 @@ def case8_small_viewport(page) -> bool:
         f"{before['aspect']} -> {after['aspect']} (finite and positive={aspect_ok}), "
         f"stage keeps the majority={majority}, usable={usable}, "
         f"panelOpen={panel_is_really_open(state)}")
+
+
+def rules_panel_open(page) -> bool:
+    """The color-rules panel's own element, on the same terms as the tuning
+    panel's: in the document with a non-zero rect."""
+    return bool(page.evaluate("""() => {
+      const el = document.querySelector('.rules-panel');
+      if (!el || !document.contains(el)) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }"""))
+
+
+def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
+    """8: opening "Color rules..." over pending changes ASKS, and a Cancel
+    leaves everything where it was.
+
+    menu.js enforces mutual exclusion between the two panels by closing this
+    one before opening the other. While that call was the force-close, an
+    operator with unkept changes who picked "Color rules..." had them discarded
+    SILENTLY -- the exact case the Close question exists for, reached by a door
+    that skipped it. So the menu goes through `requestClose(onClosed)` now, and
+    both halves are asserted here because either alone is passed by a bug: a
+    Cancel that opened the rules panel anyway is worse than the silent discard
+    it replaced, and a confirm that never actually closed anything would leave
+    the menu's one job undone.
+
+    It drives `arcs.bodyOpacity`, NOT the row case 4 Kept: after a Keep the
+    kept row's live value IS its baseline, so a drag to the same target moves
+    nothing and this case would assert against a change that never happened.
+
+    The wall value, the dirty mark AND the store are all read after the Cancel:
+    "still pending" means the preview is still on the globe and still written
+    down nowhere."""
+    close_panel(page)
+    page.wait_for_timeout(250)
+    page.evaluate("() => window.__netviz.rulesPanel && window.__netviz.rulesPanel.close()")
+    page.wait_for_timeout(200)
+    if not open_menu_and_click(page, "settings", cx, cy):
+        return report("8: the menu asks before dropping pending changes for the "
+                      "rules panel", False, "could not open the tuning panel")
+    page.wait_for_timeout(400)
+
+    base = read_live(page, OPACITY)
+    store_base = read_store(page)
+    out = drag_slider(page, OPACITY, OPACITY_TARGET)
+    if out.get("error"):
+        return report("8: the menu asks before dropping pending changes for the "
+                      "rules panel", False, out["error"])
+    moved = read_live(page, OPACITY)
+
+    # Cancel first.
+    clicked = open_menu_and_click(page, "rules", cx, cy)
+    page.wait_for_timeout(300)
+    asked = confirm_state(page)
+    asked_ok = confirm_is_really_open(asked) and asked.get("yes") and asked.get("no")
+    cancelled = answer_confirm(page, False)
+    page.wait_for_timeout(400)
+    after_cancel = {
+        "rules": rules_panel_open(page),
+        "tuner": panel_is_really_open(panel_state(page)),
+        "live": read_live(page, OPACITY),
+        "dirty": page.evaluate(
+            "() => document.querySelectorAll('.tuner-row.tuner-dirty').length"),
+        "store": read_store(page),
+    }
+    safe = (clicked and asked_ok and cancelled
+            and not after_cancel["rules"] and after_cancel["tuner"]
+            and abs((after_cancel["live"] or 0) - OPACITY_TARGET) < 1e-9
+            and after_cancel["dirty"] >= 1
+            and after_cancel["store"] == store_base)
+
+    # Then through it for real.
+    clicked2 = open_menu_and_click(page, "rules", cx, cy)
+    page.wait_for_timeout(300)
+    asked2 = confirm_is_really_open(confirm_state(page))
+    answered2 = answer_confirm(page, True) if asked2 else False
+    page.wait_for_timeout(500)
+    after = {
+        "rules": rules_panel_open(page),
+        "tuner": panel_is_really_open(panel_state(page)),
+        "live": read_live(page, OPACITY),
+        "store": read_store(page),
+    }
+    through = (clicked2 and asked2 and answered2
+               and after["rules"] and not after["tuner"]
+               and abs((after["live"] or 0) - base) < 1e-9
+               and after["store"] == store_base)
+
+    page.evaluate("() => window.__netviz.rulesPanel && window.__netviz.rulesPanel.close()")
+    page.wait_for_timeout(200)
+
+    ok = safe and through and abs(moved - OPACITY_TARGET) < 1e-9 and moved != base
+    return report(
+        "8: the menu asks before dropping pending changes for the rules panel", ok,
+        f"{OPACITY} base={base} -> drag {moved}; Color rules asked={asked_ok}; after "
+        f"Cancel: rules panel open={after_cancel['rules']} (must be False), tuning "
+        f"panel open={after_cancel['tuner']}, live still {after_cancel['live']}, rows "
+        f"marked dirty={after_cancel['dirty']}, store unchanged="
+        f"{after_cancel['store'] == store_base} (safe={safe}); then confirmed: "
+        f"asked={asked2} tuner gone={not after['tuner']} rules open={after['rules']} "
+        f"live -> {after['live']} store unchanged={after['store'] == store_base}")
+
+
+def case9_shuffle(page, cx, cy) -> bool:
+    """9: Shuffle moves every slider, inside the bounds, with no dialog -- and
+    one Revert puts the whole lot back.
+
+    `shuffleValue` is proved against the real catalogue under `node --test`;
+    what only a page can show is that the BUTTON is wired to it, that every row
+    it touches is marked dirty exactly as a drag's is, that it does NOT ask
+    (Keep, Revert and Close all do, and a dialog in front of the quick button is
+    what would teach people to click through the other three), and that the
+    values that land on the wall are the ones the applier accepted.
+
+    The bounds are read from tuner.js itself rather than written here, so a
+    schema change moves the assertion with the control."""
+    close_panel(page)
+    page.wait_for_timeout(250)
+    if not open_menu_and_click(page, "settings", cx, cy):
+        return report("9: Shuffle rolls every slider inside its bounds, and "
+                      "Revert puts them back", False, "could not open the panel")
+    page.wait_for_timeout(400)
+
+    store_base = read_store(page)
+    before = page.evaluate("""async () => {
+      const t = await import('./js/tuner.js');
+      const c = await import('./js/config.js');
+      const out = {};
+      for (const r of t.tunerRows()) out[r.path] = c.cfg(r.path, null);
+      return out;
+    }""")
+    clicked = click_panel_button(page, ".tuner-shuffle")
+    page.wait_for_timeout(500)
+    dialog = confirm_is_really_open(confirm_state(page))
+    if dialog:
+        answer_confirm(page, False)
+    after = page.evaluate("""async () => {
+      const t = await import('./js/tuner.js');
+      const c = await import('./js/config.js');
+      const rows = t.tunerRows();
+      const vals = {}, bounds = {};
+      for (const r of rows) {
+        vals[r.path] = c.cfg(r.path, null);
+        if (r.control === 'slider') bounds[r.path] = {min: r.min, max: r.max, step: r.step};
+      }
+      return {
+        vals, bounds,
+        dirty: document.querySelectorAll('.tuner-row.tuner-dirty').length,
+        sliders: rows.filter((r) => r.control === 'slider').length,
+        count: (document.querySelector('.tuner-count') || {}).textContent,
+        note: (document.querySelector('.tuner-note') || {}).textContent,
+      };
+    }""")
+
+    inside = [p for p, b in after["bounds"].items()
+              if not (b["min"] - 1e-9 <= after["vals"][p] <= b["max"] + 1e-9)]
+    # Every non-slider must be untouched: the color row's luminance cap refuses
+    # rather than clamps, so a randomizer reaching it would read as broken.
+    others = [p for p in before
+              if p not in after["bounds"] and after["vals"][p] != before[p]]
+    moved = sum(1 for p in after["bounds"] if after["vals"][p] != before[p])
+
+    reverted_click, revert_dialog, revert_answered, _ = \
+        click_and_confirm(page, ".tuner-revert")
+    page.wait_for_timeout(400)
+    back = page.evaluate("""async () => {
+      const t = await import('./js/tuner.js');
+      const c = await import('./js/config.js');
+      const out = {};
+      for (const r of t.tunerRows()) out[r.path] = c.cfg(r.path, null);
+      return out;
+    }""")
+    restored = [p for p in before if back[p] != before[p]]
+    store_after = read_store(page)
+
+    ok = (clicked and not dialog and not inside and not others
+          # A shuffle that moved one slider and left 20 alone is not a shuffle.
+          # Not `== sliders`: a roll can legitimately land a row back on the
+          # value it already held.
+          and moved >= after["sliders"] - 2
+          and after["dirty"] >= after["sliders"] - 2
+          and reverted_click and revert_dialog and revert_answered
+          and not restored and store_after == store_base)
+    return report(
+        "9: Shuffle rolls every slider inside its bounds, and Revert puts them "
+        "back", ok,
+        f"clicked={clicked} asked={dialog} (must be False); {moved}/{after['sliders']} "
+        f"sliders moved, {after['dirty']} rows marked dirty, out of bounds={inside}, "
+        f"non-sliders touched={others}, note={after['note']!r}; after Revert "
+        f"(asked={revert_dialog}): rows still changed={restored}, store unchanged="
+        f"{store_after == store_base}")
 
 
 def run(page, cx, cy) -> bool:
@@ -810,10 +1009,12 @@ def run(page, cx, cy) -> bool:
     ok &= case5_revert_and_close(page, cx, cy)
     ok &= case6_cancel_is_safe(page, cx, cy)
     ok &= case7_camera_held(page, cx, cy)
+    ok &= case8_menu_mutual_exclusion(page, cx, cy)
+    ok &= case9_shuffle(page, cx, cy)
     # Last, because it resizes the viewport. It restores it, but a case that
     # moves the ground under the others is one that should have as little
     # after it as possible.
-    ok &= case8_small_viewport(page)
+    ok &= case10_small_viewport(page)
     return ok
 
 

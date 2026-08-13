@@ -74,6 +74,68 @@ export function revertPatch(snapshot, dirty) {
   return out;
 }
 
+// ------------------------------------------------------------- the shuffle --
+//
+// Shuffle sets every SLIDER row to a random value inside its own schema bounds.
+// Three decisions are worth stating, because each one is the kind that gets
+// "simplified" later:
+//
+//   * Sliders only. The one non-slider that is not a checkbox is
+//     `appearance.background`, whose luminance cap REFUSES rather than clamps --
+//     a randomizer that spent half its rolls being refused would read as a
+//     broken button, and the ground color is the one value that decides whether
+//     anything else on the wall is legible at all.
+//   * All three groups, camera pacing included. The bounds ARE the safety:
+//     `camera.distance`'s 3.3 floor is the limb-clip threshold and
+//     `arcs.*.gain`'s 0.05 floor is what stops a class going black, so no
+//     reachable roll can produce an unreadable wall. That is the whole reason
+//     the bounds live in the schema rather than in the controls.
+//   * Snapped to the row's OWN step, so a shuffled value is one the slider
+//     could have been dragged to and the typed readout shows a number a person
+//     could write down -- not 0.18300000000000002.
+//
+// Pure and injectable-random, so "always inside the bounds" is proved under
+// `node --test` against the real catalogue rather than by rolling the dice on a
+// wall and hoping.
+
+/** Decimal places in a number, exponent form included -- 1e-7 is 7, not 0. */
+function decimalsOf(x) {
+  if (!Number.isFinite(x)) return 0;
+  const s = String(x);
+  const e = s.indexOf('e');
+  if (e >= 0) {
+    return Math.max(0, decimalsOf(Number(s.slice(0, e))) - Number(s.slice(e + 1)));
+  }
+  const dot = s.indexOf('.');
+  return dot < 0 ? 0 : s.length - dot - 1;
+}
+
+/**
+ * A random value for one `tunerRows()` entry: uniform over [min, max], snapped
+ * to the row's step, counted from `min` so `rand() === 0` is exactly `min`.
+ *
+ * Returns null for anything that is not a slider -- a color or a checkbox is
+ * never given a value, and null rather than "the current one" so a caller
+ * cannot accidentally mark an untouched row dirty.
+ *
+ * The step count is CLAMPED to the last whole step inside the range, because
+ * `max - min` is not always a multiple of `step`: rounding a roll just under 1
+ * would otherwise land one step past `max`, which is the out-of-bounds case
+ * this function's test exists to catch.
+ */
+export function shuffleValue(row, rand = Math.random) {
+  if (!row || row.control !== 'slider') return null;
+  const { min, max, step } = row;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !(step > 0)) return null;
+  const span = max - min;
+  const maxSteps = Math.floor(span / step + 1e-9);
+  let n = Math.round((rand() * span) / step);
+  if (!Number.isFinite(n) || n < 0) n = 0;
+  if (n > maxSteps) n = maxSteps;
+  const places = Math.min(12, Math.max(decimalsOf(step), decimalsOf(min)));
+  return Number((min + n * step).toFixed(places));
+}
+
 // ------------------------------------------------------- the three questions --
 //
 // Each of Keep, Revert and Close ends the pending work in a way clicking again
@@ -417,6 +479,32 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     askThen(revertQuestion(paths), () => { doRevert(); setNote('Put back.'); });
   }
 
+  /** Roll every slider inside its own bounds.
+   *
+   *  It goes through `write()`, the same path a drag takes, so every row it
+   *  moves is marked dirty, its readout is set from what came BACK rather than
+   *  from what was asked for, and Revert puts the whole thing back in one
+   *  click. A second write path here would be a second set of rules about what
+   *  a changed row means.
+   *
+   *  No confirmation, deliberately, while Keep, Revert and Close all ask.
+   *  confirm.js is for actions that clicking again does not undo, and this one
+   *  is undone by the Revert button sitting immediately beside it. A dialog in
+   *  front of a button whose entire point is to be quick is also the kind
+   *  people learn to click through, which is what would make the other three
+   *  stop being read. The net is already there: with ~23 rows pending, Close
+   *  asks. */
+  function shuffle() {
+    let n = 0;
+    for (const spec of tunerRows()) {
+      if (spec.control !== 'slider') continue;
+      const v = shuffleValue(spec, Math.random);
+      if (v === null) continue;
+      if (write(spec.path, v)) n += 1;
+    }
+    setNote(`Shuffled ${n} slider${n === 1 ? '' : 's'}. "Revert" puts them back.`);
+  }
+
   function open() {
     if (node) return;
     snapshot = new Map();
@@ -439,6 +527,12 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     const head = el('div', 'tuner-head');
     head.append(el('h2', 'tuner-title', 'Tuning'));
     const actions = el('div', 'tuner-actions');
+    // Leftmost: Shuffle MAKES pending changes, so it belongs beside Revert,
+    // which is what undoes them -- and as far as possible from Close.
+    const shuffleBtn = el('button', 'tuner-shuffle', 'Shuffle');
+    shuffleBtn.title = 'Set every slider to a random value inside its own '
+                     + 'limits. Nothing is remembered; "Revert" puts it all back.';
+    shuffleBtn.addEventListener('click', shuffle);
     const revertBtn = el('button', 'tuner-revert', 'Revert');
     revertBtn.title = 'Put the settings you changed back to how they were when '
                     + 'this panel opened, or to what you last kept.';
@@ -450,12 +544,11 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     keepBtn.addEventListener('click', keep);
     const close = el('button', 'tuner-close', 'Close');
     close.title = 'Close the panel. Anything not kept goes back to how it was.';
-    // The BUTTON asks; the returned close() does not. A person clicking Close
-    // over work they have not kept is exactly who the question is for, while a
-    // programmatic close (the menu, a verifier, anything closing the panel on
-    // the display's behalf) has no one in front of it to answer.
-    close.addEventListener('click', () => closePanel({ confirm: true }));
-    actions.append(revertBtn, keepBtn, close);
+    // The BUTTON asks -- through requestClose(), which is what any PERSON's
+    // close goes through, the menu's mutual exclusion included. The returned
+    // close() is the force-close teardown paths and verifiers need.
+    close.addEventListener('click', () => requestClose());
+    actions.append(shuffleBtn, revertBtn, keepBtn, close);
     head.append(actions);
     node.append(head);
     node.append(el('div', 'tuner-count', 'No changes'));
@@ -490,17 +583,13 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
    *  after the panel is gone would be a display in a state nothing recorded
    *  and nobody could find their way back from.
    *
-   *  Which is why the Close BUTTON asks first when something is pending, and
-   *  why it does not ask when nothing is: a yes/no over an action that would
-   *  change nothing teaches that Yes does nothing, so an untouched panel closes
-   *  on one click as it always did. `closeQuestion` returns null in that case,
-   *  which is what makes "only ever asked when something is pending" a property
-   *  of the words rather than of a condition written twice. */
-  function closePanel({ confirm = false } = {}) {
+   *  This one NEVER asks. It is the force-close: the teardown path, and what a
+   *  verifier calls to put the display back between cases, neither of which has
+   *  anybody in front of it to answer a question. `requestClose()` below is the
+   *  one a person's click goes through. Putting the dialog inside here instead
+   *  would make every programmatic close blockable. */
+  function closePanel() {
     if (!node) return;
-    const pending = Object.keys(revertPatch(snapshot, dirty));
-    const question = confirm ? closeQuestion(pending) : null;
-    if (question) { askThen(question, () => closePanel()); return; }
     doRevert();
     node.remove();
     node = null;
@@ -512,5 +601,31 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     if (onClose) onClose();
   }
 
-  return { open, close: closePanel, isOpen };
+  /** A PERSON is closing the panel: ask when something is pending, close at
+   *  once when nothing is.
+   *
+   *  Two callers, and the second is the reason this exists at all. The Close
+   *  button is the obvious one. The other is menu.js, which enforces mutual
+   *  exclusion between the two panels by closing this one before opening the
+   *  color-rules panel -- and while that call was the force-close, an operator
+   *  with pending changes who picked "Color rules..." had them DISCARDED
+   *  SILENTLY, which is exactly the case the Close question was written for,
+   *  reached by a door that skipped it.
+   *
+   *  `onClosed` is how a synchronous caller sequences work behind an
+   *  asynchronous answer: the menu opens the other panel from it, so cancelling
+   *  leaves this panel open with its changes pending and the other panel shut.
+   *  It is called only when the panel actually closed, and it is called
+   *  immediately when there was nothing to ask about -- including when the
+   *  panel was not open in the first place, so a caller can treat it as "once
+   *  this panel is out of the way, do this". */
+  function requestClose(onClosed) {
+    const done = () => { if (onClosed) onClosed(); };
+    if (!node) { done(); return; }
+    const question = closeQuestion(Object.keys(revertPatch(snapshot, dirty)));
+    if (!question) { closePanel(); done(); return; }
+    askThen(question, () => { closePanel(); done(); });
+  }
+
+  return { open, close: closePanel, requestClose, isOpen };
 }
