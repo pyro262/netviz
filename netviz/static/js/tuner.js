@@ -2,11 +2,17 @@
 //
 // DATA over the schema, nothing more: no bounds, no defaults, no help text
 // live here. `settings.js` is the single source for all three, so a bound
-// moved there moves this panel's slider with it -- which is also what makes
-// the spec's unreadability guards hold by construction rather than by a
-// second check. `appearance.background` cannot be dragged past its luminance
-// cap and `arcs.*.gain` cannot reach 0, because those limits ARE the range of
-// the control.
+// moved there moves this panel's slider with it -- which is what makes the
+// spec's unreadability guards hold by construction on the SLIDERS rather than
+// by a second check: `arcs.*.gain` cannot be dragged to 0 because the schema's
+// floor of 0.05 IS the range of the control.
+//
+// That argument does NOT extend to `appearance.background`. Its control is an
+// `<input type=color>`, whose range is the whole color space, so nothing stops
+// a person picking white; the luminance cap holds because `coerce` REFUSES the
+// value and settings_panel.js's `write()` snaps the swatch back to what is
+// live. Two control kinds, two mechanisms -- do not describe the color row as
+// bounded by construction.
 //
 // Imports settings.js and nothing else -- no three, no DOM -- so which rows
 // exist is decided under `node --test` rather than by opening a browser.
