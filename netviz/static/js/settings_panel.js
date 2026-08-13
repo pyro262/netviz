@@ -120,8 +120,15 @@ function decimalsOf(x) {
  *
  * The step count is CLAMPED to the last whole step inside the range, because
  * `max - min` is not always a multiple of `step`: rounding a roll just under 1
- * would otherwise land one step past `max`, which is the out-of-bounds case
- * this function's test exists to catch.
+ * would otherwise land one step past `max`.
+ *
+ * NO SHIPPED ROW CAN REACH THAT CLAMP, and it is kept anyway. `stepFor`
+ * divides every range by 200 and rounds down to a power of ten, so on today's
+ * catalogue every span is a whole number of steps -- the line was measured to
+ * never fire, and deleting it left all 486 tests green. It is a guard against
+ * a future `stepFor`, not against a present bug, so the test that holds it
+ * feeds in a SYNTHETIC row (0..1.3 by 0.5) rather than pretending a real one
+ * exercises it. Do not write down that the catalogue proves this.
  */
 export function shuffleValue(row, rand = Math.random) {
   if (!row || row.control !== 'slider') return null;
@@ -153,9 +160,27 @@ export function shuffleValue(row, rand = Math.random) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** The pending paths as words: "the stars layer, arcs body opacity". */
-function named(paths) {
-  return paths.map(settingLabel).join(', ');
+/** How many settings a question names before it summarizes the rest.
+ *
+ *  Six, because the list exists to answer "which ones?" for the case somebody
+ *  actually has in their head -- a handful of rows they dragged -- and past
+ *  that it stops being an answer and becomes a wall of text. Shuffle is what
+ *  made this concrete: a Close after one names 23 settings in a single
+ *  615-character sentence, in a dialog whose whole argument is that people
+ *  read it. The COUNT is always exact and always first, so nothing is hidden;
+ *  only the enumeration is bounded. */
+const NAME_LIMIT = 6;
+
+/** The pending paths as words: "the stars layer, arcs body opacity".
+ *
+ *  Over the limit it truncates and says so ("..., and 17 more"), rather than
+ *  either printing everything or silently listing the first few as though they
+ *  were all of them. */
+function named(paths, limit = NAME_LIMIT) {
+  const labels = paths.map(settingLabel);
+  if (labels.length <= limit) return labels.join(', ');
+  const rest = labels.length - limit;
+  return `${labels.slice(0, limit).join(', ')}, and ${rest} more`;
 }
 
 /** Keep: remember the pending settings on this screen. */
@@ -493,16 +518,30 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
    *  front of a button whose entire point is to be quick is also the kind
    *  people learn to click through, which is what would make the other three
    *  stop being read. The net is already there: with ~23 rows pending, Close
-   *  asks. */
+   *  asks.
+   *
+   *  A REFUSED ROW IS NAMED, never counted out silently. `write()` puts the
+   *  refusal reason in the note line, and a final "Shuffled N sliders" would
+   *  paint straight over it while the count reported successes only -- the
+   *  "control that silently does nothing" shape this project treats as worse
+   *  than a missing control. No slider can reach it today (every numeric path
+   *  clamps; only `appearance.background` refuses, and Shuffle does not touch
+   *  it), so this is latent rather than live -- which is exactly when it is
+   *  cheap to get right. */
   function shuffle() {
     let n = 0;
+    const refused = [];
     for (const spec of tunerRows()) {
       if (spec.control !== 'slider') continue;
       const v = shuffleValue(spec, Math.random);
       if (v === null) continue;
       if (write(spec.path, v)) n += 1;
+      else refused.push(spec.label);
     }
-    setNote(`Shuffled ${n} slider${n === 1 ? '' : 's'}. "Revert" puts them back.`);
+    const done = `Shuffled ${n} slider${n === 1 ? '' : 's'}. "Revert" puts them back.`;
+    setNote(refused.length
+      ? `${done} Refused: ${refused.join(', ')}.`
+      : done);
   }
 
   function open() {
@@ -613,7 +652,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
    *  reached by a door that skipped it.
    *
    *  `onClosed` is how a synchronous caller sequences work behind an
-   *  asynchronous answer: the menu opens the other panel from it, so cancelling
+   *  asynchronous answer: the menu opens the other panel from it, so canceling
    *  leaves this panel open with its changes pending and the other panel shut.
    *  It is called only when the panel actually closed, and it is called
    *  immediately when there was nothing to ask about -- including when the

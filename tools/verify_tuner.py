@@ -537,7 +537,7 @@ def case6_cancel_is_safe(page, cx, cy) -> bool:
 
     Cancel is the default answer in confirm.js precisely so a stray second
     click destroys nothing, and this is the case that proves the tuning panel
-    actually gets that: after cancelling a Close, the panel must still be open,
+    actually gets that: after canceling a Close, the panel must still be open,
     the change must still be pending on the wall, the row must still be marked,
     and nothing must have reached localStorage. A dialog whose Cancel closed
     the panel anyway -- or whose Yes was wired to both buttons -- would pass
@@ -569,7 +569,7 @@ def case6_cancel_is_safe(page, cx, cy) -> bool:
     # confirm.js draws a Yes. And it names the pending row in words.
     names_row = "body opacity" in (asked.get("text") or "").lower()
 
-    cancelled = answer_confirm(page, False)
+    canceled = answer_confirm(page, False)
     page.wait_for_timeout(400)
     after_cancel = {
         "panel": panel_is_really_open(panel_state(page)),
@@ -594,7 +594,7 @@ def case6_cancel_is_safe(page, cx, cy) -> bool:
                     and abs(after_close - base) < 1e-9
                     and store_after == store_base)
 
-    ok = (asked_ok and names_row and cancelled and safe and confirmed_ok
+    ok = (asked_ok and names_row and canceled and safe and confirmed_ok
           and abs(moved - OPACITY_TARGET) < 1e-9 and moved != base)
     return report(
         "6: the close question is real, and Cancel is safe", ok,
@@ -755,6 +755,24 @@ def case10_small_viewport(page) -> bool:
             panel: el ? el.getBoundingClientRect().width : null,
             aspect: window.__netviz.camera.aspect,
             vw: window.innerWidth,
+            // Every header button's rect against the panel's own, because at
+            // this width the actions group is wider than the content box: the
+            // group is 228.5px and the panel is 189px. `.tuner-head`'s
+            // flex-wrap does not save it -- that drops the group as a UNIT,
+            // which does nothing once the group alone does not fit -- and
+            // `.tuner-panel` sets `overflow-y: auto`, so `overflow-x` computes
+            // to auto and Close simply scrolls off the right edge. A control
+            // that is off the panel is a control that does not exist, which is
+            // the same failure that moved these three buttons out of the
+            // footer in the first place.
+            buttons: el ? [...el.querySelectorAll('.tuner-actions button')].map((b) => {
+              const r = b.getBoundingClientRect(), p = el.getBoundingClientRect();
+              return {
+                label: b.textContent, right: r.right, bottom: r.bottom,
+                inside: r.right <= p.right + 0.5 && r.left >= p.left - 0.5
+                        && r.width > 0 && r.height > 0,
+              };
+            }) : [],
           };
         }""")
 
@@ -790,8 +808,13 @@ def case10_small_viewport(page) -> bool:
     # Panel and slice still agree, which is the single-source property case 2
     # proves at 2560 and this one re-proves under the clamp.
     matches = panel_w is not None and abs(slice_w - panel_w) < 1.0
+    # Every header button horizontally inside the panel. `.tuner-actions` wraps
+    # for this: at 420px the group cannot fit on one line, so it has to break
+    # into rows rather than push Close off the edge behind a scrollbar.
+    outside = [b["label"] for b in after["buttons"] if not b["inside"]]
+    buttons_ok = len(after["buttons"]) == 4 and not outside
     ok = (clicked and panel_is_really_open(state) and usable and aspect_ok
-          and majority and matches)
+          and majority and matches and buttons_ok)
     return report(
         f"10: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
         "the stage stays usable", ok,
@@ -801,6 +824,7 @@ def case10_small_viewport(page) -> bool:
         f"{after['canvas']['w']}x{after['canvas']['h']}, camera aspect "
         f"{before['aspect']} -> {after['aspect']} (finite and positive={aspect_ok}), "
         f"stage keeps the majority={majority}, usable={usable}, "
+        f"{len(after['buttons'])} header buttons, off the panel={outside or 'none'}, "
         f"panelOpen={panel_is_really_open(state)}")
 
 
@@ -858,7 +882,7 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
     page.wait_for_timeout(300)
     asked = confirm_state(page)
     asked_ok = confirm_is_really_open(asked) and asked.get("yes") and asked.get("no")
-    cancelled = answer_confirm(page, False)
+    canceled = answer_confirm(page, False)
     page.wait_for_timeout(400)
     after_cancel = {
         "rules": rules_panel_open(page),
@@ -868,7 +892,7 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
             "() => document.querySelectorAll('.tuner-row.tuner-dirty').length"),
         "store": read_store(page),
     }
-    safe = (clicked and asked_ok and cancelled
+    safe = (clicked and asked_ok and canceled
             and not after_cancel["rules"] and after_cancel["tuner"]
             and abs((after_cancel["live"] or 0) - OPACITY_TARGET) < 1e-9
             and after_cancel["dirty"] >= 1

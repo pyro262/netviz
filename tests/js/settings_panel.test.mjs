@@ -111,10 +111,32 @@ test('a shuffled value lands on a step boundary of its own row', () => {
 });
 
 test('rand 0 is exactly min, and rand just under 1 never passes max', () => {
-  // The two ends are where a snap-to-step goes out of bounds: `max - min` is
-  // not always a whole number of steps, so rounding the top roll lands one
-  // step past the ceiling unless the count is clamped.
-  for (const row of SLIDERS) {
+  // The two ends are where a snap-to-step goes out of bounds.
+  //
+  // THE SYNTHETIC ROW IS THE POINT OF THIS TEST, and the shipped rows are the
+  // weaker half. `stepFor` divides every range by 200 and rounds down to a
+  // power of ten, so on the real catalogue `max - min` is always a whole
+  // number of steps and the clamp in `shuffleValue` NEVER FIRES: the reviewer
+  // deleted it and all 486 tests still passed, while three comments claimed
+  // the case was proved. A guard that passes everything looks identical to a
+  // clean tree.
+  //
+  // 0..1.3 by 0.5 is a range that is NOT a whole number of steps -- 2.6 of
+  // them. Unclamped, a roll just under 1 rounds UP to 3 steps and returns
+  // 1.5, past `max`; clamped it returns 1.0.
+  //
+  // The fraction has to be STRICTLY above 0.5, and two earlier attempts at
+  // this row are worth recording because both looked right and proved
+  // nothing. 0..1 by 0.3 is 3.33 steps and rounds DOWN to 3 -> 0.9, inside
+  // the bound. 0..1 by 0.4 is 2.5 steps, which looks like the boundary case
+  // -- but the roll is `1 - EPSILON`, so the count is 2.4999999999999996 and
+  // rounds DOWN to 2 -> 0.8. Only a fraction above 0.5 rounds up far enough
+  // to leave the range. Confirmed red with the clamp deleted and green with
+  // it restored; keep this row if `stepFor` is ever changed, and keep it
+  // especially if it is not.
+  const ODD = { control: 'slider', path: '(synthetic 0..1.3 by 0.5)',
+                min: 0, max: 1.3, step: 0.5 };
+  for (const row of [...SLIDERS, ODD]) {
     assert.equal(shuffleValue(row, () => 0), row.min, `${row.path} floor`);
     const top = shuffleValue(row, () => 1 - Number.EPSILON);
     assert.ok(top <= row.max, `${row.path}: top roll ${top} > max ${row.max}`);
@@ -200,6 +222,32 @@ for (const [name, build] of QUESTIONS) {
     assert.ok(q.confirmLabel && q.cancelLabel, `${name} leaves a button unlabeled`);
   });
 }
+
+test('a long pending list is counted exactly and enumerated up to a limit', () => {
+  // Shuffle is what made this concrete: a Close after one has 23 settings
+  // pending, and naming every one of them put a 615-character sentence in a
+  // dialog whose entire argument is that people read it. The COUNT stays exact
+  // -- nothing is hidden, and "23" is the number that tells somebody what they
+  // are about to lose -- while the enumeration stops and says how much it left
+  // out.
+  const many = tunerRows().filter((r) => r.control === 'slider').map((r) => r.path);
+  assert.ok(many.length > 10, `only ${many.length} paths to test with`);
+  for (const [name, build] of QUESTIONS) {
+    const q = build(many);
+    const text = allText(q);
+    assert.ok(text.includes(String(many.length)),
+              `${name}: does not carry the exact count ${many.length}`);
+    assert.match(text, /and \d+ more/,
+                 `${name}: enumerates every one of ${many.length} settings`);
+    // The first few ARE still named -- a question that only counts answers
+    // "how many" and not "which", and the short case is the common one.
+    assert.ok(text.includes(settingLabel(many[0])),
+              `${name}: names none of the pending settings`);
+    for (const line of [...(q.will || []), ...(q.wont || [])]) {
+      assert.ok(line.length < 320, `${name}: a ${line.length}-character bullet`);
+    }
+  }
+});
 
 test('the close question is only ever built when something is pending', () => {
   // Null, not an acknowledgement: closing an untouched panel has nothing to
