@@ -75,6 +75,11 @@ HELD_SAMPLE_SECONDS = 20.0
 # to tell apart from the menu's.
 HANDBACK_TOLERANCE = 2.0
 
+# Case 7's viewport. 420 wide is the concrete failure the clamp exists for: an
+# unclamped 380px slice leaves a 40px stage and a camera at aspect 0.055, and
+# anything at or below 380 is a zero-width stage and a blank display.
+SMALL_VIEWPORT = (420, 800)
+
 RESULTS: list[tuple[str, bool, str]] = []
 
 
@@ -520,6 +525,91 @@ def case6_camera_held(page, cx, cy) -> bool:
         f"{max_idle:.2f}s -- the per-frame pokes keep it near 0); {tail}")
 
 
+def case7_small_viewport(page) -> bool:
+    """7: on a small viewport the slice is clamped, and the stage stays usable.
+
+    ITS OWN CASE, not folded into case 2, for one reason: it has to resize the
+    viewport, and case 2's whole strength is a byte-exact comparison at the
+    boot size. A case that changed the viewport underneath it would either
+    pollute those numbers or need a restore whose failure mode is another
+    case's silent flake. It runs last and puts the viewport back.
+
+    The failure it exists for: the panel's width was pixels with nothing
+    bounding it, so `body.tuner #stage { left: 380px }` took 380px of WHATEVER
+    the viewport happened to be. At 420px wide the stage is 40px and the camera
+    runs at aspect 0.055; at 380px or narrower the stage is zero-width and the
+    display is blank until the panel is closed. The right rail cannot do this
+    to itself because 26% is self-limiting. `--tuner-width: min(380px, 45vw)`
+    is what bounds it, and because that one property feeds both the panel's
+    `width` and the stage's `left`, the panel stays exactly as wide as the
+    slice at every viewport -- which is what this case asserts, rather than
+    asserting the clamp's arithmetic."""
+    close_panel(page)
+    page.wait_for_timeout(300)
+    original = page.viewport_size
+    page.set_viewport_size({"width": SMALL_VIEWPORT[0], "height": SMALL_VIEWPORT[1]})
+    page.wait_for_timeout(600)
+
+    def measure():
+        return page.evaluate("""() => {
+          const c = window.__netviz.renderer.domElement;
+          const s = document.querySelector('#stage').getBoundingClientRect();
+          const el = document.querySelector('.tuner-panel');
+          return {
+            canvas: {w: c.width, h: c.height},
+            stage: {x: s.x, w: s.width, h: s.height},
+            panel: el ? el.getBoundingClientRect().width : null,
+            aspect: window.__netviz.camera.aspect,
+            vw: window.innerWidth,
+          };
+        }""")
+
+    try:
+        before = measure()
+        rect = page.evaluate("""() => {
+          const r = document.querySelector('canvas').getBoundingClientRect();
+          return {cx: r.left + r.width / 2, cy: r.top + r.height / 2};
+        }""")
+        clicked = open_menu_and_click(page, "settings", rect["cx"], rect["cy"])
+        page.wait_for_timeout(600)
+        state = panel_state(page)
+        after = measure()
+    finally:
+        close_panel(page)
+        if original:
+            page.set_viewport_size(original)
+        page.wait_for_timeout(600)
+
+    panel_w = after["panel"]
+    slice_w = before["stage"]["w"] - after["stage"]["w"]
+    usable = (after["stage"]["w"] > 0 and after["canvas"]["w"] > 0
+              and after["canvas"]["h"] > 0)
+    # A finite, positive aspect is the difference between a squeezed globe and
+    # a blank display: at stage width 0 this is 0 or NaN and nothing renders.
+    aspect_ok = (isinstance(after["aspect"], (int, float))
+                 and after["aspect"] == after["aspect"]   # not NaN
+                 and after["aspect"] > 0)
+    # The globe keeps the majority of a small viewport. This is the property
+    # the clamp is FOR -- 45vw is one way to satisfy it, and the case must not
+    # be a restatement of the number in the CSS.
+    majority = after["stage"]["w"] > after["vw"] / 2
+    # Panel and slice still agree, which is the single-source property case 2
+    # proves at 2560 and this one re-proves under the clamp.
+    matches = panel_w is not None and abs(slice_w - panel_w) < 1.0
+    ok = (clicked and panel_is_really_open(state) and usable and aspect_ok
+          and majority and matches)
+    return report(
+        f"7: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
+        "the stage stays usable", ok,
+        f"viewport {after['vw']}px: stage {before['stage']['w']} -> "
+        f"{after['stage']['w']} (slice {slice_w}, panel {panel_w}, agree={matches}), "
+        f"canvas {before['canvas']['w']}x{before['canvas']['h']} -> "
+        f"{after['canvas']['w']}x{after['canvas']['h']}, camera aspect "
+        f"{before['aspect']} -> {after['aspect']} (finite and positive={aspect_ok}), "
+        f"stage keeps the majority={majority}, usable={usable}, "
+        f"panelOpen={panel_is_really_open(state)}")
+
+
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= case1_panel_in_dom(page, cx, cy)
@@ -532,6 +622,10 @@ def run(page, cx, cy) -> bool:
     ok &= case4_keep_writes_only_touched(page)
     ok &= case5_revert_and_close(page, cx, cy)
     ok &= case6_camera_held(page, cx, cy)
+    # Last, because it resizes the viewport. It restores it, but a case that
+    # moves the ground under the others is one that should have as little
+    # after it as possible.
+    ok &= case7_small_viewport(page)
     return ok
 
 

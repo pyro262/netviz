@@ -24,8 +24,19 @@
            a gap. Fixed pixels, unlike the right rail's 26%: the panel's rows
            are label + slider + typed number, which have a real minimum legible
            width, so a percentage would be unreadable at 1280 and wasteful at
-           4K. */
-        --tuner-width: 380px;
+           4K.
+
+           CLAMPED, and the clamp is load-bearing -- do not remove it as
+           redundant. Pixels do not know how big the viewport is, so an
+           unclamped 380px slice is 380px of WHATEVER is there: at a 420px
+           window the stage is 40px and the camera runs at aspect 0.055, and at
+           380px or narrower the stage is zero-width and the display is BLANK
+           until the panel is closed. The right rail cannot do that to itself
+           because 26% is self-limiting. Below the clamp the panel is cramped,
+           which is the trade taken deliberately: a cramped panel beside a
+           globe beats a blank wall. verify_tuner.py case 7 is the proof, at
+           420x800. */
+        --tuner-width: min(380px, 45vw);
       }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0916; }
       /* The canvas sizes itself to #stage, not to the window, so the optional
@@ -326,7 +337,10 @@
          it. It was an overlay until the display it runs on said otherwise; see
          js/settings_panel.js for what narrowing costs and why it wins anyway.
          No `max-width`: a panel wider than the slice #stage gives up is a panel
-         back over the globe.
+         back over the globe. What replaced it is the `min()` inside
+         --tuner-width itself, so the panel and the slice are still ONE number
+         and are bounded together -- a max-width here would bound only the
+         panel and leave the stage giving up a slice nothing sits in.
          Mounted on body, so its z-index competes with #rail directly rather
          than being trapped in #stage's stacking context. */
       .tuner-panel {
