@@ -308,6 +308,50 @@
       .rules-reason { flex: 1 0 100%; color: #e0a020; opacity: .9; padding-left: 2px; }
       .rules-add { margin-top: 8px; }
       .rules-foot { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+
+      /* The tuning panel. A LEFT-EDGE OVERLAY: it must never narrow #stage,
+         because the globe would then render at a different apparent size
+         from the one being tuned. Mounted on body, so its z-index competes
+         with #rail directly rather than being trapped in #stage's stacking
+         context. */
+      .tuner-panel {
+        position: fixed; top: 0; left: 0; bottom: 0; width: 380px;
+        max-width: 92vw; z-index: 6; overflow-y: auto;
+        background: #12101fee; color: #d8d4ea;
+        border-right: 1px solid #ffffff1a;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        padding: 0.9rem 1rem 1.2rem;
+      }
+      .tuner-head { display: flex; align-items: center; justify-content: space-between; }
+      .tuner-title { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
+                     margin: 0; color: #dda825; }
+      .tuner-lead { color: #9c96b8; margin: 0.5rem 0 0.9rem; }
+      .tuner-group { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+                     color: #9c96b8; margin: 1rem 0 0.4rem;
+                     border-bottom: 1px solid #ffffff14; padding-bottom: 0.2rem; }
+      .tuner-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.18rem 0; }
+      /* min-width: 0 on the flex children, or an <input>'s min-content width
+         (from its `size` attribute, ~177px) refuses to shrink and pushes the
+         row onto two lines. Same trap the rules panel hit. */
+      .tuner-label { flex: 1 1 40%; min-width: 0; }
+      .tuner-range { flex: 1 1 35%; min-width: 0; }
+      .tuner-number { flex: 0 0 5.2rem; min-width: 0; }
+      .tuner-color { flex: 0 0 2.2rem; height: 1.3rem; padding: 0; border: 0;
+                     background: none; }
+      .tuner-hex { flex: 0 0 5.2rem; color: #9c96b8; }
+      .tuner-dirty .tuner-label { color: #dda825; }
+      .tuner-dirty .tuner-label::after { content: ' *'; }
+      .tuner-foot { display: flex; align-items: center; gap: 0.5rem;
+                    margin-top: 1rem; padding-top: 0.6rem;
+                    border-top: 1px solid #ffffff14; }
+      .tuner-count { flex: 1 1 auto; color: #9c96b8; }
+      .tuner-note { color: #dda825; margin-top: 0.5rem; min-height: 1.2em; }
+      .tuner-panel input, .tuner-panel button {
+        font: inherit; color: inherit; background: #ffffff10;
+        border: 1px solid #ffffff22; border-radius: 3px; padding: 0.1rem 0.35rem;
+      }
+      .tuner-panel button { cursor: pointer; }
+      .tuner-panel button:disabled { opacity: 0.4; cursor: default; }
     </style>
     <script type="importmap">
       {
