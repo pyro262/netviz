@@ -194,12 +194,26 @@ def ripple_color_case(page) -> bool:
     the arc is plasmaAt(0.30) and RIPPLE.flow was plasmaAt(0.34).
     """
     result = page.evaluate("""async () => {
-      const {arcs, ripples} = window.__netviz;
+      const {arcs, ripples, settings} = window.__netviz;
       const want = arcs.classColor('flow').getHex();
       // Somewhere the synthetic feed does not land on, so the two-minute
       // per-cell cooldown cannot swallow the ring being measured.
       const ev = {k: 'flow', s: '203.0.113.9', d: '198.51.100.7',
                   sll: [-40, 150], dll: [-45, 160], b: 1000};
+      // arcs.spawn RATE-CAPS flows: once traffic.flowsPerSecond have been
+      // drawn in the current second it returns without drawing, silently.
+      // Against a live wall at ~57 events/sec that cap is saturated
+      // continuously, so this case's own arc was discarded before it existed
+      // and the case reported "no ripple" for something never drawn -- a test
+      // failure that looks like a rendering bug and is neither. Measured:
+      // 3/4 against the live wall, 4/4 standalone, same commit.
+      //
+      // RETRIED rather than raising the cap: the cap is a shipped setting and
+      // the rest of this run must see its real value, and settings exposes no
+      // getter to put back what it was. The window resets every second, so a
+      // retry lands within a second or two even on a saturated feed. Repeated
+      // arcs to one destination still produce ONE ring -- the cooldown is per
+      // cell per class -- and that first ring is the one being measured.
       arcs.spawn(ev, 'flow');
       const t0 = performance.now();
       // The page's own render loop drives update(); just wait for the head
@@ -207,21 +221,28 @@ def ripple_color_case(page) -> bool:
       // own arcs throughout, so the ring is identified by WHERE it landed,
       // not by being the most recent one -- the first cut of this case read
       // a highlight-class ring from the feed and reported its color.
+      let retries = 0;
       while (performance.now() - t0 < 30000) {
         await new Promise((r) => setTimeout(r, 100));
+        // Re-spawn for the first few seconds in case the cap swallowed the
+        // one above. Stops once the arc's own life (4s) has had time to run,
+        // so a genuinely broken ripple path still fails rather than being
+        // papered over by a stream of retries.
+        if (performance.now() - t0 < 6000) { arcs.spawn(ev, 'flow'); retries += 1; }
         const r = ripples.lastRipple();
         if (r && Math.abs(r.lat - ev.dll[0]) < 0.01 && Math.abs(r.lon - ev.dll[1]) < 0.01) {
-          return {want, got: r.color, waited: performance.now() - t0};
+          return {want, got: r.color, waited: performance.now() - t0, retries};
         }
       }
-      return {want, got: null, waited: performance.now() - t0};
+      return {want, got: null, waited: performance.now() - t0, retries};
     }""")
     got, want = result["got"], result["want"]
     return report(
         "4: a ripple takes its arc's color",
         got is not None and got == want,
         f"ring #{got:06x} vs arc #{want:06x}" if got is not None
-        else "no ripple was drawn within 20s")
+        else f"no ripple within {result['waited']/1000:.0f}s "
+             f"({result['retries']} spawn attempts)")
 
 
 def main() -> int:

@@ -56,10 +56,22 @@ fi
 echo "serving $got at $URL"
 
 say "live verifiers against the rebuilt container"
-for v in verify_rules_editor verify_menu verify_walk verify_settings; do
+for v in verify_rules_editor verify_menu verify_settings; do
   echo "--- $v"
   python3 "tools/$v.py" --url "$URL"
 done
+
+# verify_walk runs STANDALONE, on its own synthetic collector, and pointing it
+# at the live deployment is a mistake this script made once. What it measures
+# is camera arithmetic -- the walk's span and the shape of its rate ramp --
+# which needs no real traffic. A live feed actively harms it: arcs.spawn
+# rate-caps flows at traffic.flowsPerSecond, so on a busy wall the ripple case
+# has its own arc silently discarded before it is ever drawn and reports "no
+# ripple" for an arc that never existed. Measured: 3/4 against the live wall,
+# 4/4 standalone, same commit.
+say "verify_walk (standalone -- its own collector, no live feed)"
+echo "--- verify_walk"
+python3 tools/verify_walk.py
 
 say "your turn"
 cat <<EOF
