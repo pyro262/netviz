@@ -10,6 +10,7 @@
 // discipline as campath.js, orbit.js and rules.js.
 
 import { compileRules } from './rules.js';
+import { entry } from './settings.js';
 
 export const KEY = 'netviz.settings.v1';
 
@@ -101,7 +102,13 @@ export function withPersistence(settings, storage) {
       const out = settings.apply(patch);
       const keep = {};
       for (const path of out.applied || []) {
-        if (Object.prototype.hasOwnProperty.call(patch, path)) keep[path] = patch[path];
+        if (!Object.prototype.hasOwnProperty.call(patch, path)) continue;
+        // A setting the collector owns must not be frozen into one display's
+        // localStorage: it would keep serving an answer the collector has
+        // since changed. Declared per path in the schema so this stays one
+        // word per setting rather than a list maintained in a second place.
+        if (entry(path) && entry(path).persist === false) continue;
+        keep[path] = patch[path];
       }
       if (Object.keys(keep).length) {
         const saved = savePatch(storage, keep);

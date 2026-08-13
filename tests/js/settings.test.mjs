@@ -6,6 +6,7 @@ import {
   relativeLuminance,
 } from '../../netviz/static/js/settings.js';
 import { cfg } from '../../netviz/static/js/config.js';
+import { withPersistence } from '../../netviz/static/js/rulestore.js';
 
 test('every declared path exists in config.js', () => {
   // The schema is a description of config.js, not a second copy of it. A path
@@ -337,4 +338,56 @@ test('bloomScale keeps its zero', () => {
     assert.equal(entry(p).min, 0);
     assert.equal(coerce(p, 0).value, 0);
   }
+});
+
+test('traffic.extraResolvers declares persist: false', () => {
+  // config.js CONCATENATES the collector's NETVIZ_EXTRA_RESOLVERS onto the
+  // base list at boot, and the stored patch is applied over it -- so a
+  // persisted value would freeze whatever the collector was serving the day
+  // it was written, and that display would never see a later change.
+  assert.equal(entry('traffic.extraResolvers').persist, false);
+});
+
+test('a persist: false path applies but is not stored', () => {
+  const written = [];
+  const storage = {
+    getItem: () => null,
+    setItem: (k, v) => written.push([k, v]),
+    removeItem: () => {},
+  };
+  const fake = { apply: (patch) => ({ applied: Object.keys(patch), rejected: [] }) };
+  const wrapped = withPersistence(fake, storage);
+  const out = wrapped.apply({ 'traffic.extraResolvers': ['203.0.113.53'] });
+  assert.deepEqual(out.applied, ['traffic.extraResolvers']);
+  assert.equal(written.length, 0, 'nothing should have been written to storage');
+});
+
+test('an ordinary path still persists', () => {
+  // The guard must be narrow: this is what proves persist: false is opt-in
+  // rather than a switch that quietly turned persistence off for everything.
+  const written = [];
+  const storage = {
+    getItem: () => null,
+    setItem: (k, v) => written.push([k, v]),
+    removeItem: () => {},
+  };
+  const fake = { apply: (patch) => ({ applied: Object.keys(patch), rejected: [] }) };
+  const wrapped = withPersistence(fake, storage);
+  wrapped.apply({ 'layers.stars': false });
+  assert.equal(written.length, 1);
+  assert.match(written[0][1], /layers\.stars/);
+});
+
+test('a mixed patch persists only the persistable half', () => {
+  const written = [];
+  const storage = {
+    getItem: () => null,
+    setItem: (k, v) => written.push([k, v]),
+    removeItem: () => {},
+  };
+  const fake = { apply: (patch) => ({ applied: Object.keys(patch), rejected: [] }) };
+  const wrapped = withPersistence(fake, storage);
+  wrapped.apply({ 'layers.stars': false, 'traffic.extraResolvers': ['203.0.113.53'] });
+  assert.equal(written.length, 1);
+  assert.doesNotMatch(written[0][1], /extraResolvers/);
 });
