@@ -66,6 +66,13 @@ OPACITY_TARGET = 0.6
 # off the nominal 2 would fail against working code.
 HANDBACK_CAP_SECONDS = 30.0
 HELD_SAMPLE_SECONDS = 20.0
+# How far over `input.menuResumeSeconds` the measured hand-back may land, in
+# RENDERED seconds. Generous: the countdown is sampled every 250ms of wall
+# clock, so the reading overshoots by up to one poll's worth of rendered time,
+# and the setting itself is small (2s). Wide enough not to be flaky, and still
+# far under `input.resumeSeconds` (15) -- which is the value this factor exists
+# to tell apart from the menu's.
+HANDBACK_TOLERANCE = 2.0
 
 RESULTS: list[tuple[str, bool, str]] = []
 
@@ -420,14 +427,39 @@ def case6_camera_held(page, cx, cy) -> bool:
             break
         time.sleep(0.25)
 
-    ok = held_ok and freed_wall is not None and still_held_early
+    # The delay is READ FROM THE PAGE, not hardcoded, and the RENDERED figure is
+    # what is asserted. Printing `freed_rendered` while asserting only "released
+    # before the wall-clock cap" makes the case blind to the failure it exists
+    # for: at the ~3x headless slowdown anything up to ~10 rendered seconds
+    # still lands inside a 30s cap, so a panel whose close fell through to the
+    # ordinary drag delay (input.resumeSeconds, 15) would report success while
+    # the wall handed itself back several times slower than it claims. The 15s
+    # case does exceed the wall cap on THIS machine, which is worse than not
+    # catching it: at a 2x slowdown it is 30s, exactly on the boundary, and a
+    # verifier that passes or fails on how loaded the host happens to be is the
+    # flaky shape this repo has been bitten by before.
+    menu_resume = page.evaluate("""async () => {
+      const m = await import('./js/config.js');
+      return m.cfg('input.menuResumeSeconds', null);
+    }""")
+    budget = (menu_resume * HANDBACK_TOLERANCE) if menu_resume else None
+    within = (freed_rendered is not None and budget is not None
+              and freed_rendered <= budget)
+    ok = held_ok and freed_wall is not None and still_held_early and within
     if freed_wall is None:
-        tail = (f"after close: NEVER handed back within "
-                f"{HANDBACK_CAP_SECONDS:.0f}s of wall clock")
+        # Two different failures, and the reader needs to know which: the camera
+        # never came back at all, or it came back on a delay so much longer than
+        # the menu's that it did not finish inside the cap -- the drag delay
+        # falling through is exactly that, and is the likelier of the two.
+        tail = (f"after close: not handed back within the {HANDBACK_CAP_SECONDS:.0f}s "
+                f"wall-clock cap ({last_idle:.2f}s rendered elapsed by then) -- either "
+                f"the camera was never released, or it is on a delay far longer than "
+                f"menuResumeSeconds ({menu_resume}s)")
     else:
         tail = (f"after close: still held at <0.6s={still_held_early}, handed back "
-                f"after {freed_rendered:.2f}s rendered ({freed_wall:.2f}s wall) "
-                f"[menuResumeSeconds=2, in rendered time]")
+                f"after {freed_rendered:.2f}s rendered ({freed_wall:.2f}s wall), "
+                f"within {HANDBACK_TOLERANCE:g}x menuResumeSeconds "
+                f"({menu_resume}s -> budget {budget}s rendered)={within}")
     return report(
         "6: the camera is held while the panel is open, handed back after", ok,
         f"{samples} samples over {HELD_SAMPLE_SECONDS:.0f}s with the panel open, "
