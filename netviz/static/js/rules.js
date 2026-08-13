@@ -203,6 +203,87 @@ function matchesPort(m, port, proto) {
   return port === m.port;
 }
 
+/** How many addresses a matcher covers, as a BigInt; null if it is not an
+ *  address matcher.
+ *
+ *  A subnet and a range reduce to the same number, which is why the
+ *  specificity test below needs no separate case for each. */
+function matcherSize(m) {
+  if (m.kind === 'cidr') {
+    return 1n << BigInt((m.family === 4 ? 32 : 128) - m.bits);
+  }
+  if (m.kind === 'range') return m.hi - m.lo + 1n;
+  return null;
+}
+
+/**
+ * Is this rule aimed at the reason an event was suppressed?
+ *
+ * DNS is hidden from the display because it is 20-30% of the feed and nearly
+ * all of it geolocates to one country centroid. A rule may ask for it back,
+ * but only by naming what it is unhiding: a rule broad enough to have been
+ * written about something else (a country, 0.0.0.0/0) would restore that whole
+ * third of the feed as a side effect nobody asked for.
+ *
+ * "Aimed at" means the same axis AND at least as specific:
+ *   - port axis: the rule is a port matcher naming that exact port.
+ *   - address axis: the rule is a subnet or range that CONTAINS the suppressed
+ *     address and covers no MORE addresses than the resolver-list entry that
+ *     hid the event. That entry's width is `sup.bits` -- a whole address hides
+ *     like a /32 or /128, a prefix hides like the components it names.
+ *
+ * WHAT THE CALLER HAS ESTABLISHED, AND WHAT IT HAS NOT. The caller has run
+ * matchRule, so the rule claims the EVENT -- but with the default
+ * `end: 'either'` that can be true through the end that was never suppressed.
+ * `203.0.113.5/32` written about one local host matches the flow
+ * `203.0.113.5 -> 9.9.9.9` on its source, and 1 address is not more than the
+ * 1 that `9.9.9.9` hides, so a size-only test would let an ordinary /32 put
+ * that host's traffic to every resolver on the list back on the wall. So the
+ * containment test here is against `sup.addr` -- the address that was actually
+ * hidden -- not against the event, and it is not a duplicate of matchRule's.
+ * The port axis has no equivalent hole: `m.port === sup.port` is the same
+ * question whichever end carried it.
+ */
+export function overridesSuppression(rule, sup) {
+  if (!rule || !rule.enabled || !sup) return false;
+  const m = rule.match;
+  if (sup.axis === 'port') return m.kind === 'port' && m.port === sup.port;
+  if (sup.axis !== 'address') return false;
+  const size = matcherSize(m);
+  if (size === null) return false;
+  // Containment implies the family test a bare size comparison needed on its
+  // own -- matchesAddr refuses a family mismatch, so a v6 /64 (far more
+  // addresses than the whole v4 space) cannot claim a v4 suppression.
+  const hidden = parseAddress(sup.addr);
+  if (!hidden || !matchesAddr(m, hidden)) return false;
+  const entrySize = 1n << BigInt((hidden.family === 4 ? 32 : 128) - sup.bits);
+  return size <= entrySize;
+}
+
+/**
+ * Index of the first ENABLED rule aimed at any of these suppressions, or -1.
+ *
+ * The first OVERRIDING rule owns the class, not the first rule that merely
+ * matches: for suppressed traffic the eligible set is exactly the rules aimed
+ * at the suppression, and a broad rule sitting above them was written about
+ * something else, so it neither authorizes the arc nor lends it a color.
+ *
+ * Lives here rather than in classify.js because arcs.setRules has to ask the
+ * same question against a list classify cannot see yet -- apply.js writes
+ * CONFIG only after every handler in a patch returns. One implementation, so
+ * the arc in the air and the arc about to spawn cannot answer differently.
+ */
+export function firstOverride(compiled, ev, sups) {
+  if (!compiled || !compiled.rules.length || !ev || !sups || !sups.length) return -1;
+  const ctx = addrContext(ev);
+  for (let i = 0; i < compiled.rules.length; i += 1) {
+    const rule = compiled.rules[i];
+    if (!rule.enabled || !matchRule(rule, ev, ctx)) continue;
+    if (sups.some((s) => overridesSuppression(rule, s))) return i;
+  }
+  return -1;
+}
+
 /** Does this rule claim this event? `ctx` comes from addrContext(ev). */
 export function matchRule(rule, ev, ctx) {
   const m = rule.match;

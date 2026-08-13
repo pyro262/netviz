@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { plasmaAt } from './palette.js';
 import { classNameFor, foreignEnd } from './classify.js';
-import { compileRules, firstMatch } from './rules.js';
+import { compileRules, firstMatch, firstOverride } from './rules.js';
 import { densityGain } from './density.js';
 import { latLonToVec3 } from './globe.js';
 import { cfg } from './config.js';
@@ -232,11 +232,26 @@ export function createArcs(radius, capacity = 220, onLand = null) {
     return oldest;
   }
 
-  function spawn(ev) {
+  /**
+   * Draw an arc for this event.
+   *
+   * `cls` and `sups` are the caller's already-resolved answer for a SUPPRESSED
+   * event. DNS is hidden unless a rule is aimed at the reason it was hidden,
+   * and that rule -- not the first rule that merely matches -- is the one that
+   * owns the color. Recomputing the class here with classNameFor would ask the
+   * weaker question and hand the arc to whatever broad rule sits above:
+   * with `[{match:'DE'}, {match:'udp/53'}]` a DNS flow to Germany was
+   * authorized and counted as rule 2 and then drawn in rule 1's color.
+   *
+   * Both are omitted for ordinary traffic, which resolves its class here
+   * exactly as it always has. `sups` is retained on the slot so setRules can
+   * re-ask the same narrow question later -- see there.
+   */
+  function spawn(ev, cls, sups) {
     // The collector drops events it cannot geolocate, so a missing sll is
     // defensive only -- but a wall display must never throw in a frame loop.
     if (!ev || !ev.sll || !ev.dll) return;
-    const className = classNameFor(ev);
+    const className = cls || classNameFor(ev);
     const spec = CLASS[className] || CLASS.flow;
 
     // Rate-cap flows only. A dropped flow costs nothing -- the next one is
@@ -270,6 +285,10 @@ export function createArcs(radius, capacity = 220, onLand = null) {
     // list -- see the comment there. The pool is ~220 slots; the cost of
     // holding one extra object reference per slot is negligible.
     slot.ev = ev;
+    // Empty for ordinary traffic. Non-empty means this arc exists only
+    // because a rule overrode a suppression, which is a different question
+    // from "which rule matches" and has to be re-asked as itself.
+    slot.sups = sups && sups.length ? sups : null;
     // The country to flash: the FAR end, not the source. Every geo block on
     // this router is outbound, so `sc` is "--" and `sll` is home -- reading the
     // source meant flashCountry was called with "--" on every real block and
@@ -446,6 +465,28 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       // not happen post-spawn, but a wall must never throw) keeps its
       // current class rather than being guessed at.
       if (!slot.active || slot.cls === 'block' || !slot.ev) continue;
+      // An arc that is only on screen because a rule overrode its suppression
+      // is re-matched with the SAME narrow question it was spawned under. Two
+      // ways the plain firstMatch is wrong for it: a broad rule above the
+      // overriding one would take the color (the spawn-path bug, arriving
+      // through the other door), and deleting the overriding rule would leave
+      // a DNS arc drawn as an ordinary flow -- authorized by nothing, which is
+      // the state the suppression exists to prevent. No override left means it
+      // should not be on the wall, so it is retired rather than recolored.
+      if (slot.sups) {
+        const oidx = firstOverride(compiled, slot.ev, slot.sups);
+        if (oidx < 0) {
+          slot.active = false;
+          slot.mesh.visible = false;
+          continue;
+        }
+        const ospec = CLASS[`rule${oidx + 1}`] || CLASS.flow;
+        slot.cls = `rule${oidx + 1}`;
+        slot.spec = ospec;
+        slot.mat.uniforms.color.value.copy(ospec.color);
+        slot.mesh.userData.bloomScale = ospec.bloomScale;
+        continue;
+      }
       const idx = firstMatch(compiled, slot.ev);
       const name = idx >= 0 ? `rule${idx + 1}` : 'flow';
       const spec = CLASS[name] || CLASS.flow;

@@ -6,6 +6,7 @@ import {
   relativeLuminance,
 } from '../../netviz/static/js/settings.js';
 import { cfg } from '../../netviz/static/js/config.js';
+import { withPersistence } from '../../netviz/static/js/rulestore.js';
 
 test('every declared path exists in config.js', () => {
   // The schema is a description of config.js, not a second copy of it. A path
@@ -274,16 +275,26 @@ test('a malformed color is still refused for shape, not luminance', () => {
   assert.equal(c.why, 'not a #rgb or #rrggbb color');
 });
 
-test('maxLuminance is opt-in, not a default on all colors', () => {
-  // Arc colors like arcs.flow.colorAt are drawn ON the ground rather than
-  // being the ground, so brightness is the point there, not a hazard. Only
-  // appearance.background (the ground itself) has a cap. The opt-in behavior
-  // (uncapped colors accepted) is enforced by coerce's guard:
-  // `if (typeof e.maxLuminance === 'number')` — a missing field skips the check.
-  // A positive test of an uncapped entry would require a synthetic entry,
-  // which would require exporting entry() or coerce() internals not currently
-  // public. This assertion proves the cap exists where it should.
-  assert.equal(typeof entry('appearance.background').maxLuminance, 'number');
+test('maxLuminance is opt-in: a color entry without one accepts any hex', () => {
+  // The previous version of this test asserted that the CAPPED entry has a
+  // cap, which proves nothing about the opt-in path and would still pass if
+  // the guard in coerce were inverted. SCHEMA is exported, so the uncapped
+  // path is reachable: add an entry, drive a bright value through the real
+  // coerce, and remove it again in a finally so no other test sees it.
+  SCHEMA['appearance.__uncappedTestColor'] = {
+    type: 'color', strategy: 'uniform',
+    help: 'Test-only entry, added and removed inside one test.',
+  };
+  try {
+    const c = coerce('appearance.__uncappedTestColor', '#ffffff');
+    assert.equal(c.ok, true, `an uncapped color entry should accept any hex: ${c.why}`);
+    assert.equal(c.value, '#ffffff');
+  } finally {
+    delete SCHEMA['appearance.__uncappedTestColor'];
+  }
+  // And the capped one still refuses the same value, so the two paths are
+  // distinguished by the entry rather than by the value.
+  assert.equal(coerce('appearance.background', '#ffffff').ok, false);
 });
 
 test('a shipped color default is inside its own luminance cap', () => {
@@ -337,4 +348,56 @@ test('bloomScale keeps its zero', () => {
     assert.equal(entry(p).min, 0);
     assert.equal(coerce(p, 0).value, 0);
   }
+});
+
+test('traffic.extraResolvers declares persist: false', () => {
+  // config.js CONCATENATES the collector's NETVIZ_EXTRA_RESOLVERS onto the
+  // base list at boot, and the stored patch is applied over it -- so a
+  // persisted value would freeze whatever the collector was serving the day
+  // it was written, and that display would never see a later change.
+  assert.equal(entry('traffic.extraResolvers').persist, false);
+});
+
+test('a persist: false path applies but is not stored', () => {
+  const written = [];
+  const storage = {
+    getItem: () => null,
+    setItem: (k, v) => written.push([k, v]),
+    removeItem: () => {},
+  };
+  const fake = { apply: (patch) => ({ applied: Object.keys(patch), rejected: [] }) };
+  const wrapped = withPersistence(fake, storage);
+  const out = wrapped.apply({ 'traffic.extraResolvers': ['203.0.113.53'] });
+  assert.deepEqual(out.applied, ['traffic.extraResolvers']);
+  assert.equal(written.length, 0, 'nothing should have been written to storage');
+});
+
+test('an ordinary path still persists', () => {
+  // The guard must be narrow: this is what proves persist: false is opt-in
+  // rather than a switch that quietly turned persistence off for everything.
+  const written = [];
+  const storage = {
+    getItem: () => null,
+    setItem: (k, v) => written.push([k, v]),
+    removeItem: () => {},
+  };
+  const fake = { apply: (patch) => ({ applied: Object.keys(patch), rejected: [] }) };
+  const wrapped = withPersistence(fake, storage);
+  wrapped.apply({ 'layers.stars': false });
+  assert.equal(written.length, 1);
+  assert.match(written[0][1], /layers\.stars/);
+});
+
+test('a mixed patch persists only the persistable half', () => {
+  const written = [];
+  const storage = {
+    getItem: () => null,
+    setItem: (k, v) => written.push([k, v]),
+    removeItem: () => {},
+  };
+  const fake = { apply: (patch) => ({ applied: Object.keys(patch), rejected: [] }) };
+  const wrapped = withPersistence(fake, storage);
+  wrapped.apply({ 'layers.stars': false, 'traffic.extraResolvers': ['203.0.113.53'] });
+  assert.equal(written.length, 1);
+  assert.doesNotMatch(written[0][1], /extraResolvers/);
 });

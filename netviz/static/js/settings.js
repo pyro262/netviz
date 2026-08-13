@@ -178,10 +178,18 @@ export const SCHEMA = {
         + '1.1.1.1.',
   },
   'traffic.extraResolvers': {
-    type: 'list', of: 'string', strategy: 'uniform',
+    // NOT PERSISTED. config.js concatenates the collector's
+    // NETVIZ_EXTRA_RESOLVERS onto this list at boot and the stored patch is
+    // applied over it, so a saved value would be the MERGED list frozen at the
+    // moment it was written -- and that display would then ignore every later
+    // change to the collector's list, with nothing on screen saying why. It
+    // applies live like any other setting; it simply starts from the
+    // collector's current answer on every load.
+    type: 'list', of: 'string', persist: false, strategy: 'uniform',
     help: 'Your own additions -- an upstream your resolver forwards to, a '
         + 'provider resolver, anything the built-in list misses. Additive, and '
-        + 'the collector can add to it from NETVIZ_EXTRA_RESOLVERS.',
+        + 'the collector can add to it from NETVIZ_EXTRA_RESOLVERS. Applies '
+        + 'live but is not remembered, because the collector owns the list.',
   },
 
   // ---------------------------------------------------------------- arcs --
