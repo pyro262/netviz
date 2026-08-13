@@ -374,7 +374,14 @@ async function boot() {
       // rail.js resize as well made mounting cost TWO resizes against
       // unmounting's one -- and a resize rebuilds the composer's render
       // targets, which is the whole reason the executor collapses them to one.
-      railHandle = startRail(classCounts);
+      // The legend's swatches come from the live arc specs, so the key on the
+      // rail cannot drift from the arcs on the globe -- including after a
+      // recolor through settings, which is why this is a function and not two
+      // strings read once at mount.
+      railHandle = startRail(classCounts, () => ({
+        block: `#${arcs.classColor('block').getHexString()}`,
+        flow: `#${arcs.classColor('flow').getHexString()}`,
+      }));
     },
     unmount() {
       if (!railHandle) return;

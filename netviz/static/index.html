@@ -169,6 +169,10 @@
       body.degraded .update-mark.on { opacity: 0.16; }
       #rail .rail-swatch { display:inline-block; width:8px; height:8px; border-radius:2px;
                            margin-right:6px; vertical-align:middle; }
+      /* A muted row dims its TEXT, never its swatch. The swatch is a sample of
+         a color that is on the globe right now, and a sample shown at 45%
+         opacity is a different color -- the one thing a key must not be. */
+      .rail-row.muted .rail-swatch { opacity: 1; }
       .rail-spark { display: block; width: 100%; height: 1.4vh; overflow: visible; }
       .rail-spark polyline {
         fill: none; stroke: #ed795399; stroke-width: 1;

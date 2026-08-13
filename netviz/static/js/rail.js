@@ -148,7 +148,7 @@ export function rulePanel(rules, counter, nowMs, maxRules) {
   return { title: 'COLOR RULES', note: 'SINCE LOAD', rows };
 }
 
-export function panels(snapshot, extra) {
+export function panels(snapshot, extra, colors) {
   const s = snapshot || {};
   const blocks = s.blocks || {};
   const netflow = s.netflow || {};
@@ -189,18 +189,39 @@ export function panels(snapshot, extra) {
     health.push({ label: 'FEEDS', value: '—', muted: true });
   }
 
+  // The legend for the two built-in arc classes. A COLOR RULE already carries
+  // its own swatch in rulePanel(), so amber and violet were the only colors on
+  // the wall with nothing anywhere saying what they meant -- and they are the
+  // two that matter most, being the alarm layer and everything else.
+  //
+  // The colors are HANDED IN, never known here: they are tuned constants that
+  // have moved several times, they can be changed live through settings, and
+  // arcs.js cannot be imported into this file at all (it imports three, and
+  // everything above start() is unit-tested without one). A literal here would
+  // keep claiming amber after a recolor, and a key that disagrees with the
+  // display is worse than no key.
+  //
+  // Each sits ABOVE the rows it explains: the reader meets the color before
+  // the numbers drawn in it.
+  const legendRow = (color, text) =>
+    (color ? [{ label: text, value: '', swatch: color, muted: true }] : []);
+
   const out = [
     {
       title: 'GEO BLOCKS',
       note: '24H',
       big: formatCount(blocks.total),
-      rows: blockRows,
+      rows: [
+        ...legendRow(colors && colors.block, 'amber arcs — geo-blocked'),
+        ...blockRows,
+      ],
     },
     {
       title: 'NETFLOW',
       big: formatCount(netflow.flows_per_min),
       bigNote: 'FLOWS/MIN',
       rows: [
+        ...legendRow(colors && colors.flow, 'violet arcs — all other traffic'),
         { label: 'INGEST LAG', value: formatLag(netflow.lag_seconds) },
         { label: 'RECORDS', value: formatCount(ipfix.records) },
         { label: 'NO TEMPLATE', value: formatCount(ipfix.no_template) },
@@ -285,15 +306,28 @@ function paint(root, data, clock, version) {
     for (const row of panel.rows) {
       const line = el('div', `rail-row${row.bar !== undefined ? ' bars' : ''}`
                              + (row.muted ? ' muted' : ''));
-      line.append(el('span', 'rail-label', row.label));
-      const value = el('span', 'rail-value', row.value);
-      if (row.ok === false) value.classList.add('bad');
-      line.append(value);
+      // The swatch goes INSIDE the label, not beside it. `.rail-row` is a
+      // two-column grid, so prepending the dot as a third child put it in
+      // column one, pushed the label into column two, and wrapped the value
+      // onto a second line -- which is what every COLOR RULES row had been
+      // doing since swatches were added, and what the legend rows did the
+      // moment they arrived. Nesting keeps the grid at two columns, so the
+      // dot travels with the text it names and the value stays on the right
+      // where every other row has it.
+      const label = el('span', 'rail-label');
       if (row.swatch) {
         const dot = el('span', 'rail-swatch');
         dot.style.background = row.swatch;
-        line.prepend(dot);
+        label.append(dot);
       }
+      // A span rather than a text node: `el()` is the one way this file makes
+      // DOM, and the fake the unit tests run against implements createElement
+      // and not createTextNode.
+      label.append(el('span', 'rail-label-text', row.label));
+      line.append(label);
+      const value = el('span', 'rail-value', row.value);
+      if (row.ok === false) value.classList.add('bad');
+      line.append(value);
       if (row.bar !== undefined) {
         const track = el('span', 'rail-bar');
         const fill = el('span', 'rail-bar-fill');
@@ -327,7 +361,16 @@ function paint(root, data, clock, version) {
  * this returns, `body.rail` is set and the rail is painted, so a caller that
  * measures #stage next sees the narrowed box rather than the full viewport.
  */
-export function start(counter) {
+/**
+ * @param counter the renderer's own class counter, for the COLOR RULES panel.
+ * @param classColors optional `() => ({block, flow})` of CSS colors, called on
+ *   every paint. A function rather than a value because the arc colors are
+ *   live settings: `arcs.flow.colorAt` recolors the arcs already on screen, and
+ *   a legend captured once at mount would go on claiming the old color. The
+ *   rail cannot read them itself -- arcs.js imports three, and everything above
+ *   start() is unit-tested without it.
+ */
+export function start(counter, classColors) {
   const root = document.getElementById('rail');
   if (!root) return null;
   document.body.classList.add('rail');
@@ -346,7 +389,17 @@ export function start(counter) {
     const extra = counter
       ? rulePanel(cfg('arcs.rules', []), counter, Date.now(), cfg('rail.maxRules', 5))
       : null;
-    paint(root, panels(snapshot, extra), formatClock(new Date()), version);
+    // Read per paint, never cached: an arc recolor through settings has to
+    // move the key with it.
+    let colors = null;
+    try {
+      colors = classColors ? classColors() : null;
+    } catch (err) {
+      // A legend is the least important thing on the rail. It must never cost
+      // the numbers their paint.
+      colors = null;
+    }
+    paint(root, panels(snapshot, extra, colors), formatClock(new Date()), version);
   };
 
   const poll = async () => {

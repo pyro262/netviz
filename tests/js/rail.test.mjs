@@ -325,3 +325,38 @@ test('versionLabel shows nothing rather than guessing', () => {
   assert.equal(versionLabel({ version: '' }), '');
   assert.equal(versionLabel({ version: 42 }), '');
 });
+
+test('the legend names the two built-in arc classes', () => {
+  // "What am I looking at" is the question the wall cannot answer on its own.
+  // The rail already carries a swatch per COLOR RULE; the two built-in
+  // classes had none, so amber and violet were the only colors on the display
+  // with nothing anywhere saying what they meant.
+  const p = panels(SNAPSHOT, null, { block: '#f0b000', flow: '#9112a1' });
+  const blocks = p.find((x) => x.title === 'GEO BLOCKS');
+  const netflow = p.find((x) => x.title === 'NETFLOW');
+  assert.equal(blocks.rows[0].swatch, '#f0b000');
+  assert.match(blocks.rows[0].label, /amber/i);
+  assert.equal(netflow.rows[0].swatch, '#9112a1');
+  assert.match(netflow.rows[0].label, /violet/i);
+  // The legend sits ABOVE the data it explains, not under it.
+  assert.equal(blocks.rows[1].label, 'CN');
+});
+
+test('the legend swatch is the color it was handed, never a literal', () => {
+  // The arc colors are tuned constants that have already moved several times,
+  // and arcs.js cannot be imported here (it imports three), so the rail is
+  // GIVEN the live color rather than knowing one. A hardcoded swatch would
+  // keep claiming amber after somebody recolored the class through settings,
+  // which is worse than no legend: the wall and its key would disagree.
+  const p = panels(SNAPSHOT, null, { block: '#00ff00', flow: '#0000ff' });
+  assert.equal(p.find((x) => x.title === 'GEO BLOCKS').rows[0].swatch, '#00ff00');
+  assert.equal(p.find((x) => x.title === 'NETFLOW').rows[0].swatch, '#0000ff');
+});
+
+test('no colors means no legend, and every other row is untouched', () => {
+  // start() has one caller today, but panels() is called with two arguments
+  // throughout this suite and a legend must not appear from nowhere.
+  const p = panels(SNAPSHOT);
+  assert.equal(p.find((x) => x.title === 'GEO BLOCKS').rows[0].label, 'CN');
+  assert.equal(p.find((x) => x.title === 'NETFLOW').rows[0].label, 'INGEST LAG');
+});
