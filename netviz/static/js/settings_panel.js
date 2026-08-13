@@ -112,6 +112,12 @@ export function createSettingsPanel({ preview, storage, root, onClose } = {}) {
     const out = preview.apply({ [path]: value });
     if (out.rejected && out.rejected.length) {
       setNote(`${path}: ${out.rejected[0].why}`);
+      // A rejection never reaches the wall, so the control must snap back to
+      // what is actually live rather than keep the refused value on screen --
+      // otherwise the swatch/box disagrees with its own readout AND with the
+      // globe, and since the path was never marked dirty, neither Revert nor
+      // Close would ever put it right.
+      syncRow(path);
       return false;
     }
     setNote('');
