@@ -15,7 +15,7 @@
 //     very thing it exists to measure.
 //   * The display must not cover the globe. That constraint wins. The overlay
 //     looked harmless at 2560x1440, where the globe spans x 771-1789 (a 509px
-//     radius about centre x=1280, measured with `__netviz.project()` over a
+//     radius about center x=1280, measured with `__netviz.project()` over a
 //     0.5deg grid) and 380px at the left edge is empty sky -- but at 1280x720
 //     the globe spans roughly x 386-894 and a 380px panel reaches its edge.
 //     A rail is right at both sizes; an overlay is right only at one.
@@ -197,7 +197,8 @@ export function randomizeScopeLine(scope = randomizeScope()) {
  * already derived and did not protect it, because a CHARACTERIZATION is a
  * separate claim from a count: it is the half that goes stale the first time a
  * row is held for a new reason. So it is derived too, and the vocabulary is the
- * row's own on-screen `label` rather than `settingLabel()`'s humanised path --
+ * row's own on-screen `label` rather than the wording `settingLabel()` derives
+ * from the schema path --
  * the tooltip is pointing at rows a person can see, and "Walk speed cap" is
  * what is printed beside the one it means where "camera walk degrees per
  * second" is the schema talking.

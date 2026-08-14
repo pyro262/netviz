@@ -535,7 +535,7 @@ test('the shape test PREVENTS the call, it does not merely survive it', () => {
 // and a scrollbar alone is no answer on a wall nobody is standing at. These
 // hold the arithmetic that decides how many rows are drawn instead.
 
-import { fitRuleCap } from '../../netviz/static/js/rail.js';
+import { fitRuleCap, ruleBoxMetrics } from '../../netviz/static/js/rail.js';
 
 // One row 30px, 200px of other panels, 40px of panel chrome. 600 - 200 - 40 is
 // 360px of room, so 12 rows fit.
@@ -579,14 +579,84 @@ test('an unmeasurable rail falls back to the setting, not to a guess', () => {
                             total: 20, maxRules: 7 }), 7);
 });
 
-test('the fit is stable: feeding its own answer back changes nothing', () => {
-  // The oscillation guard, as a property rather than as a comment. `other` and
-  // `chrome` do not depend on how many rows are drawn, so one repaint reaches
-  // the answer and the next draw agrees -- a shrink-then-grow loop over these
-  // same numbers would flip between two values for ever.
+test('the fit is idempotent under a lowered maxRules', () => {
+  // Named for what it actually proves. It does NOT prove the oscillation is
+  // gone -- that needs the measurements to be re-derived from the new row
+  // count, which is a DOM fact this cannot see; the simulation below is what
+  // covers it. Left in because a cap that moved when re-applied to itself
+  // would be a bug on its own.
   const first = fitRuleCap({ ...BOX, total: 20, maxRules: 20 });
   assert.equal(fitRuleCap({ ...BOX, total: 20, maxRules: first }), first);
   assert.equal(fitRuleCap({ ...BOX, total: first, maxRules: first }), first);
+});
+
+test('re-measuring after each fit settles, and does not oscillate', () => {
+  // THE OSCILLATION PROPERTY, driven properly: a fake rail that RE-DERIVES
+  // `other` and `chrome` from the rows it just drew, the way measure() does
+  // against a real DOM, iterated the way successive draws would. The previous
+  // version of this test fed the cap back into unchanged measurements, which
+  // any monotone function passes.
+  const ROW = 30, CHROME = 40, OTHER = 200, AVAIL = 600, TOTAL = 20;
+  const drawnRows = (cap) => Math.min(cap, TOTAL) + (TOTAL > cap ? 1 : 0);
+  const measureAfter = (cap) => {
+    const rows = Array(drawnRows(cap)).fill(ROW);
+    const box = CHROME + rows.reduce((a, b) => a + b, 0);
+    return { available: AVAIL, other: OTHER, ...ruleBoxMetrics(box, rows) };
+  };
+  const seen = [];
+  let cap = 20;
+  for (let i = 0; i < 10; i += 1) {
+    cap = fitRuleCap({ ...measureAfter(cap), total: TOTAL, maxRules: 20 });
+    seen.push(cap);
+  }
+  // Settles on the first step and never moves again. A shrink/grow loop over
+  // these same numbers alternates, which is what this refuses.
+  assert.equal(new Set(seen).size, 1, `cap oscillated: ${seen.join(',')}`);
+  // And it settled somewhere the content actually fits.
+  const fitsIn = CHROME + drawnRows(seen[0]) * ROW + OTHER;
+  assert.ok(fitsIn <= AVAIL, `settled at ${seen[0]}, needing ${fitsIn} of ${AVAIL}`);
+});
+
+// ------------------------------------------- rule rows are NOT equal height --
+
+test('a fired rule row is measured, not assumed equal to an idle one', () => {
+  // Measured live at 2560x1440: a rule with a sparkline is 77px, an idle one
+  // 41.4px -- the svg lands as a third child of a two-column grid because
+  // rulePanel gives a rule row a `spark` and no `bar`.
+  //
+  // THIS IS THE TEST THAT FAILS AGAINST `rows[0]`. Ranked by traffic, row 0 is
+  // the tallest, and `boxHeight - n * rows[0]` is 585 - 12 x 77 = -339: the
+  // fitter subtracted a negative chrome and handed itself 339px of room that
+  // does not exist.
+  const rows = [77, ...Array(11).fill(41.4)];
+  const m = ruleBoxMetrics(585, rows);
+  assert.equal(m.rowHeight, 77, 'the worst row is what the divisor must be');
+  assert.ok(Math.abs(m.chrome - 52.6) < 0.01, `chrome ${m.chrome}, expected 52.6`);
+  assert.ok(m.chrome >= 0, 'chrome can never be negative');
+});
+
+test('the wrong divisor really would overflow, and the right one does not', () => {
+  // The same numbers carried through to the decision, so the fix is held at
+  // the level that matters rather than only at the arithmetic.
+  const rows = [77, ...Array(11).fill(41.4)];
+  const boxHeight = 585;
+  const common = { available: 1440, other: 900, total: 20, maxRules: 20 };
+  const good = fitRuleCap({ ...common, ...ruleBoxMetrics(boxHeight, rows) });
+  const bad = fitRuleCap({
+    ...common, rowHeight: rows[0], chrome: boxHeight - rows.length * rows[0],
+  });
+  assert.ok(good < bad, `fixed cap ${good} is not below the buggy ${bad}`);
+  // The fixed cap leaves the drawn panel inside the room it was given.
+  const drawn = Math.min(good, common.total) + (common.total > good ? 1 : 0);
+  const used = common.other + ruleBoxMetrics(boxHeight, rows).chrome + drawn * 77;
+  assert.ok(used <= common.available, `fitted panel needs ${used} of 1440`);
+});
+
+test('ruleBoxMetrics refuses what it cannot measure', () => {
+  assert.equal(ruleBoxMetrics(500, []), null);
+  assert.equal(ruleBoxMetrics(500, [0, 0]), null);
+  assert.equal(ruleBoxMetrics(0, [30]), null);
+  assert.equal(ruleBoxMetrics(500, null), null);
 });
 
 test('a bad maxRules cannot blank the panel', () => {

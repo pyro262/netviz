@@ -41,7 +41,7 @@
       html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0916; }
       /* The canvas sizes itself to #stage, not to the window, so the optional
          rails can take a slice of the viewport without the globe rendering
-         off-centre. With both off, #stage IS the viewport. */
+         off-center. With both off, #stage IS the viewport. */
       #stage { position: fixed; inset: 0; }
       body.rail #stage { right: 26%; }
       body.tuner #stage { left: var(--tuner-width); }
@@ -392,32 +392,29 @@
                     flex-wrap: wrap; gap: 0.4rem; }
       .tuner-title { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
                      margin: 0; color: #dda825; flex: 1 1 auto; }
-      /* The actions group. THE COMMENT THAT USED TO BE HERE CLAIMED A PROOF
-         THAT NEVER HAPPENED, and the correction is worth more than the rule.
-         It said the group's own `flex-wrap` was what stopped Keep and Close
-         hanging off the right edge at 189px, "confirmed to fail against this
-         rule deleted", citing case 10 -- which is the hover case; the small
-         viewport is case 11. Neither could have shown it, because this whole
-         rule had been dropped by the CSS parser (a stray `*/` upstream, fixed
-         2026-08-13) for its entire life, so every measurement behind that
-         paragraph was taken with no rule applied at all.
+      /* The actions group. It is NOT a guard against an overflow, whatever an
+         earlier version of this comment claimed: re-run with the rule deleted,
+         verify_tuner.py case 11 is green and nothing hangs off the panel.
+         Without it the four buttons are inline-blocks in a plain block div, so
+         they wrap as inline content on their own and the div's min-content
+         width is the widest single button either way -- there is nothing here
+         to overflow.
 
-         RE-RUN PROPERLY ON THIS BRANCH, rule deleted, case 11 green: 12/12,
-         `off the panel=none`. It does not prevent an overflow and never did.
-         Without the rule the four buttons are inline-blocks in a plain block
-         div, so they wrap as inline content on their own and the div's
-         min-content width is the widest single button either way -- there is
-         nothing here to overflow.
-
-         What the rule actually buys, measured at 420px (panel 189px) with and
+         What it actually buys, measured at 420px (panel 189px) with and
          without: the 0.35rem gaps (without it the buttons touch -- Randomize
-         ends at x=94 and Revert starts at 94), right alignment of the wrapped
-         second row (Keep at x=75 with, x=16 without), and cross-axis
-         centering. At 2560px both fit one row and only the gaps differ.
-         It is kept for those three, which is a design decision rather than a
-         guard -- worth writing down honestly, because a rule documented as
-         load-bearing is one nobody dares touch for the wrong reason. Deleting
-         it degrades the header's appearance and breaks nothing. */
+         ends at x=94 and Revert starts at 94) and right alignment of the
+         wrapped second row (Keep at x=75 with, x=16 without). At 2560px both
+         fit one row and only the gaps differ. Kept for those two, as a design
+         decision and not a guard -- a rule documented as load-bearing is one
+         nobody dares touch for the wrong reason.
+
+         The full history, including how this rule spent its whole life being
+         dropped by the CSS parser, is in CLAUDE.md. It is written up THERE and
+         not here on purpose: telling that story needs the comment terminator
+         as a literal, and writing one inside a comment ends the comment. That
+         is not hypothetical -- the commit that fixed it reintroduced it in the
+         paragraph describing the fix, and tests/test_static_css.py exists
+         because of that. */
       .tuner-actions { display: flex; align-items: center; gap: 0.35rem;
                        flex: 0 1 auto; min-width: 0; flex-wrap: wrap;
                        justify-content: flex-end; }

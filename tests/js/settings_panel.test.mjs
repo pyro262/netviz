@@ -368,7 +368,7 @@ test('the tooltip names the held rows, and names ALL of them', () => {
   assert.match(tip, new RegExp(`other ${scope.heldCount} are left alone`));
 });
 
-test('the tooltip uses the on-screen labels, not humanised schema paths', () => {
+test('the tooltip uses the on-screen labels, not schema paths', () => {
   // The tooltip points at rows a person can see: "Walk speed cap" is printed
   // beside the one it means, where settingLabel gives "camera walk degrees per
   // second" -- the schema talking to itself.

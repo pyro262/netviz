@@ -216,6 +216,48 @@ export function rulePanel(rules, counter, nowMs, maxRules) {
 }
 
 /**
+ * The rule panel's chrome and its WORST row height, from the rows as rendered.
+ *
+ * RULE ROWS ARE NOT ALL THE SAME HEIGHT, and assuming they were made the first
+ * cut of the fitter wrong in the ordinary case rather than in a corner. A rule
+ * that has fired in the last hour carries a sparkline; `rulePanel` gives it a
+ * `spark` and no `bar`, so `paint` does not add the `bars` class and the svg
+ * lands as a third child of a two-column grid -- an implicit second grid row.
+ * Measured live at 2560x1440: **a fired row is 77px against an idle row's
+ * 41.4px**, and the "+N more" row is shorter again.
+ *
+ * Taking `rows[0]` as the height and `boxHeight - n * rows[0]` as the chrome
+ * therefore did two wrong things at once, and they compounded rather than
+ * cancelling: rows are ranked by traffic, so `rows[0]` is the TALLEST row, and
+ * multiplying it by every row made the chrome NEGATIVE (585 - 12 x 77 = -339),
+ * which the fitter then subtracted -- handing itself 339px of room that does
+ * not exist. Measured with one firing rule among 20: the rail still overflowed
+ * by **271px** with the fitter running. And because every draw re-derives the
+ * same answer from the same measurements, the residue never converges away; it
+ * lands permanently on the scrollbar, which is what this whole change exists to
+ * avoid.
+ *
+ * So: sum the REAL rects for the chrome, and take the MAX for the row height.
+ * Max rather than mean, because the fitter's error has a right direction --
+ * assuming every row is as tall as the tallest leaves the rail short of a row
+ * sometimes, where assuming the average puts it over the bottom of the screen.
+ *
+ * Returns null when there is nothing measurable, and the caller then leaves the
+ * cap alone.
+ */
+export function ruleBoxMetrics(boxHeight, rowHeights) {
+  const rows = (Array.isArray(rowHeights) ? rowHeights : []).filter((h) => h > 0);
+  if (!rows.length || !(boxHeight > 0)) return null;
+  const used = rows.reduce((a, b) => a + b, 0);
+  return {
+    rowHeight: Math.max(...rows),
+    // Floored at 0: a sub-pixel rounding of the rects against the box must not
+    // hand the fitter negative chrome, which is the failure above in miniature.
+    chrome: Math.max(0, boxHeight - used),
+  };
+}
+
+/**
  * How many rule rows actually FIT, given what the rail measured about itself.
  *
  * THE PROBLEM, MEASURED BEFORE IT WAS BUILT. `rail.maxRules` is bounded 1..20
@@ -544,12 +586,16 @@ export function start(counter, classColors) {
     const rows = box.querySelectorAll('.rail-row');
     if (!rows.length) return null;
     const boxH = box.getBoundingClientRect().height;
-    const rowHeight = rows[0].getBoundingClientRect().height;
+    // Every row's real rect. Rule rows differ in height by nearly 2x depending
+    // on whether the rule has fired -- see ruleBoxMetrics, which is where the
+    // arithmetic lives so it can be proved without a browser.
+    const metrics = ruleBoxMetrics(
+      boxH, [...rows].map((r) => r.getBoundingClientRect().height));
+    if (!metrics) return null;
     return {
       available: root.clientHeight,
       other: root.scrollHeight - boxH,
-      chrome: boxH - rows.length * rowHeight,
-      rowHeight,
+      ...metrics,
     };
   };
 
@@ -587,7 +633,13 @@ export function start(counter, classColors) {
     const total = (Array.isArray(rules) ? rules : [])
       .filter((r) => r && r.enabled !== false).length;
     const fitted = fitRuleCap({ ...m, total, maxRules: cap });
-    if (fitted !== cap) draw(fitted);
+    // Compared against what was RENDERED, not against the cap that was asked
+    // for. `rulePanel` draws `min(cap, total)` rule rows, so in the default
+    // case -- maxRules 5 against the one to three rules most sites run -- a
+    // fitting cap of `total` differs from `cap` while describing the exact
+    // same panel, and comparing to `cap` repainted identical DOM on every
+    // poll for the life of the page.
+    if (fitted !== Math.min(cap, Math.max(1, total))) draw(fitted);
   };
 
   const poll = async () => {
