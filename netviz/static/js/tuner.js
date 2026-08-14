@@ -114,6 +114,21 @@ export const GROUPS = [
     ],
   },
   {
+    // The weather layer, kept out of Appearance because it is the one group
+    // whose rows do nothing at all on a display that has no field -- a
+    // collector without the dependency, or one that has never reached NOAA.
+    // Grouped, a person dragging them and seeing nothing has one heading that
+    // explains why rather than four rows scattered among ones that do work.
+    id: 'clouds',
+    label: 'Clouds',
+    rows: [
+      { path: 'clouds.opacity', label: 'Cloud opacity', randomize: true },
+      { path: 'clouds.threshold', label: 'Cloud threshold', randomize: true },
+      { path: 'clouds.nightDim', label: 'Cloud night brightness', randomize: true },
+      { path: 'clouds.tint', label: 'Cloud color', randomize: false },
+    ],
+  },
+  {
     id: 'arcs',
     label: 'Arcs',
     rows: [

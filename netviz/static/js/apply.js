@@ -102,9 +102,12 @@ export const ARC_REBUILD_KEYS = ['tube', 'lift', 'maxRise'];
 function layerHandlers(names) {
   const out = {};
   for (const name of names) {
-    out[`layers.${name}`] = name === 'stars'
-      ? (v, ctx) => ctx.stars.setVisible(v)
-      : (v, ctx) => ctx.globe.setLayer(name, v);
+    if (name === 'stars') out[`layers.${name}`] = (v, ctx) => ctx.stars.setVisible(v);
+    // The clouds are their own object, not one of the globe's baked layers:
+    // the field arrives over the network long after the globe is built.
+    else if (name === 'clouds') {
+      out[`layers.${name}`] = (v, ctx) => ctx.clouds && ctx.clouds.setVisible(v);
+    } else out[`layers.${name}`] = (v, ctx) => ctx.globe.setLayer(name, v);
   }
   return out;
 }
@@ -181,7 +184,7 @@ export const HANDLERS = {
 
   ...layerHandlers(['cityLights', 'coastline', 'bordersWatched', 'bordersWorld',
                     'admin1', 'stars', 'aurora', 'atmosphere', 'ripples',
-                    'countryFlash']),
+                    'countryFlash', 'clouds']),
 
   'ripples.cooldownSeconds': (v, ctx) => ctx.ripples.setCooldown(v),
 
@@ -193,6 +196,14 @@ export const HANDLERS = {
   'appearance.starBrightness': (v, ctx) => ctx.stars.setBrightness(v),
   'appearance.starDayGain': (v, ctx) => ctx.stars.setDayGain(v),
   'appearance.starRampMinutes': (v, ctx) => ctx.stars.setRampMinutes(v),
+
+  // Every cloud row is a no-op when the layer never mounted -- no field
+  // fetched, or a collector without one -- rather than a thrown handler that
+  // would take the whole settings apply with it.
+  'clouds.opacity': (v, ctx) => ctx.clouds && ctx.clouds.setUniform('opacity', v),
+  'clouds.threshold': (v, ctx) => ctx.clouds && ctx.clouds.setUniform('threshold', v),
+  'clouds.nightDim': (v, ctx) => ctx.clouds && ctx.clouds.setUniform('nightDim', v),
+  'clouds.tint': (v, ctx) => ctx.clouds && ctx.clouds.setUniform('tint', v),
 
   'rail.enabled': (v, ctx) => {
     if (v && !ctx.rail.mounted()) ctx.rail.mount();

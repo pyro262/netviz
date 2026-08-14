@@ -398,3 +398,89 @@ class TestRevalidation:
 
         assert resp.headers["Cache-Control"] == "no-store"
         assert "ETag" not in resp.headers
+
+
+# --- the cloud layer ----------------------------------------------------------
+
+class _FakeClouds:
+    """Stands in for CloudCache: the two calls static_files makes of it."""
+
+    def __init__(self, png=None, valid=None, stale=False):
+        self._png, self._valid, self._stale = png, valid, stale
+
+    def read(self):
+        return self._png
+
+    def state(self, now):
+        return {"valid": self._valid, "age": None if self._valid is None else now - self._valid,
+                "stale": self._stale, "ttl": 10800.0}
+
+
+def test_clouds_png_404s_without_a_cache(root):
+    # "This build has no cloud layer" is not "the sky is clear", the same
+    # distinction /aurora.json draws.
+    handler = make_process_request(root)
+    conn = _FakeConnection()
+    handler(conn, _FakeRequest("/clouds.png"))
+    assert conn.responded[0] == 404
+
+
+def test_clouds_png_404s_when_nothing_has_been_fetched_yet(root):
+    handler = make_process_request(root, clouds=_FakeClouds(png=None))
+    conn = _FakeConnection()
+    handler(conn, _FakeRequest("/clouds.png"))
+    assert conn.responded[0] == 404
+
+
+def test_clouds_png_is_served_with_a_validator(root):
+    png = b"\x89PNG\r\n\x1a\n-pretend"
+    handler = make_process_request(root, clouds=_FakeClouds(png=png, valid=900.0),
+                                   clock=lambda: 1000.0)
+    r = handler(_FakeConnection(), _FakeRequest("/clouds.png"))
+    assert r.status_code == 200
+    assert r.body == png
+    assert r.headers["Content-Type"] == "image/png"
+    # no-cache, not no-store: the field changes hourly and the kiosk must not
+    # re-download 644 KB on every reload -- the same reasoning as the static
+    # assets. A validator is what makes that safe.
+    assert r.headers["Cache-Control"] == "no-cache"
+    assert r.headers["ETag"]
+
+
+def test_clouds_png_revalidates_to_304(root):
+    png = b"\x89PNG\r\n\x1a\n-pretend"
+    clouds = _FakeClouds(png=png, valid=900.0)
+    handler = make_process_request(root, clouds=clouds, clock=lambda: 1000.0)
+    first = handler(_FakeConnection(), _FakeRequest("/clouds.png"))
+    etag = first.headers["ETag"]
+    again = handler(_FakeConnection(), _FakeRequest("/clouds.png", {"If-None-Match": etag}))
+    assert again.status_code == 304
+    assert again.body == b""
+
+
+def test_clouds_etag_changes_when_the_field_does(root):
+    a = make_process_request(root, clouds=_FakeClouds(png=b"one", valid=1.0),
+                             clock=lambda: 2.0)
+    b = make_process_request(root, clouds=_FakeClouds(png=b"two", valid=1.0),
+                             clock=lambda: 2.0)
+    ea = a(_FakeConnection(), _FakeRequest("/clouds.png")).headers["ETag"]
+    eb = b(_FakeConnection(), _FakeRequest("/clouds.png")).headers["ETag"]
+    assert ea != eb
+
+
+def test_clouds_json_carries_the_age(root):
+    handler = make_process_request(root, clouds=_FakeClouds(png=b"x", valid=900.0),
+                                   clock=lambda: 1000.0)
+    r = handler(_FakeConnection(), _FakeRequest("/clouds.json"))
+    body = json.loads(r.body)
+    assert body["valid"] == 900.0 and body["age"] == 100.0 and body["stale"] is False
+    # Live state, never cached -- a stale /clouds.json would defeat the fade
+    # it exists to trigger.
+    assert r.headers["Cache-Control"] == "no-store"
+
+
+def test_clouds_json_404s_without_a_cache(root):
+    handler = make_process_request(root)
+    conn = _FakeConnection()
+    handler(conn, _FakeRequest("/clouds.json"))
+    assert conn.responded[0] == 404

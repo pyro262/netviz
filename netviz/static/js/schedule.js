@@ -57,3 +57,30 @@ export function auroraFromReading({ enabled = true, kp = null, stale = false } =
   const s = Math.min(1, 0.25 + kp / 7);
   return { visible: true, edgeLat, strength: stale ? s * 0.4 : s };
 }
+
+/**
+ * How strongly to draw a cloud field of a given age -- 1 current, 0 unusable.
+ *
+ * The globe's other live layer, the aurora, can simply stop when its reading
+ * goes stale, because an aurora is an event: absent is a truthful answer.
+ * Clouds are not. There is always weather, so a field that stops being drawn
+ * says "clear skies everywhere", which is never true and is exactly what
+ * somebody reading the wall would take from it. Fading across the last quarter
+ * of the field's life is the honest middle: the weather visibly loses
+ * confidence before it goes, instead of the planet clearing in one frame.
+ *
+ * NO AGE AT ALL IS 0, NOT 1. `null` is what /clouds.json reports before the
+ * first successful fetch, and reading it as "brand new" would draw whatever
+ * happened to be in the texture -- or nothing, confidently.
+ *
+ * @param age seconds since the field's coverage time, or null when never fetched
+ * @param ttl how long the collector considers a field trustworthy
+ */
+export function cloudFade(age, ttl) {
+  if (!(ttl > 0)) return 0;
+  if (age === null || age === undefined || !(age >= 0)) return 0;
+  const start = ttl * 0.75;
+  if (age <= start) return 1;
+  if (age >= ttl) return 0;
+  return 1 - (age - start) / (ttl - start);
+}

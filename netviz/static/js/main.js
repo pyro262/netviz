@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { BACKGROUND } from './palette.js';
 import { createGlobe, latLonToVec3 } from './globe.js';
 import { sunDirection } from './sun.js';
+import { createClouds } from './clouds.js';
 import { createArcs } from './arcs.js';
 import { cfg, CONFIG, loadServerConfig } from './config.js';
 import { createRipples } from './ripples.js';
@@ -36,6 +37,9 @@ const sunVec = new THREE.Vector3();
 // Set in boot(); the sun updater runs before it exists on the very first call.
 let aurora = null;
 const sunLocal = new THREE.Vector3();
+// Set at mount, and null when the layer was off at boot -- the field arrives
+// over the network, so unlike the baked layers this one is not part of globe.
+let clouds = null;
 
 // The globe group may rotate, so the sun vector has to be expressed in the
 // group's local frame -- otherwise the terminator rides along with the
@@ -48,6 +52,7 @@ function updateSun(globe, camera) {
   globe.material.uniforms.sunDir.value.copy(sunLocal);
   if (globe.cityPoints) globe.cityPoints.material.uniforms.sunDir.value.copy(sunLocal);
   if (aurora) aurora.update(0, sunLocal);   // sun only; time advances in the loop
+  if (clouds) clouds.update(sunLocal);      // lit by the same terminator
 }
 
 // How often the kiosk asks whether a new build has been deployed. Cheap: the
@@ -206,6 +211,16 @@ async function boot() {
     // The handle, not the mesh: aurora.setVisible owns the decision, because
     // apply() recomputes mesh.visible from Kp on every poll.
     globe.registerLayer('aurora', aurora);
+  }
+
+  // In globe.group like the aurora: the field is fixed to the Earth's surface,
+  // so it has to turn with it rather than hanging in front of the camera.
+  if (cfg('layers.clouds', true)) {
+    clouds = createClouds(GLOBE_RADIUS);
+    globe.group.add(clouds.mesh);
+    // The handle, not the mesh: clouds.setVisible refuses to show a shell with
+    // no field in it, which mesh.visible alone cannot know.
+    globe.registerLayer('clouds', clouds);
   }
 
   // A disabled ripple layer still needs a spawn() to call, so the arc landing
@@ -460,7 +475,7 @@ async function boot() {
   // input, with input's slot in ctx filled in last.
   const ctx = {
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
-    scene, input: null, polling, resize, rail, classCounts,
+    scene, input: null, polling, resize, rail, classCounts, clouds,
   };
   // TWO appliers, on purpose. `preview` is the raw executor: the tuning panel
   // drives it while somebody drags a slider, so the wall changes and NOTHING
@@ -571,7 +586,7 @@ async function boot() {
   // exists so tools/shoot.py can assert the scene has live arcs rather than
   // leaving "looks about right" as the only check.
   window.__netviz = {
-    arcs, globe, ripples, aurora, renderer, camera, scene, rig, stars, input,
+    arcs, globe, ripples, aurora, clouds, renderer, camera, scene, rig, stars, input,
     settings, menu, rulesPanel, settingsPanel,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */

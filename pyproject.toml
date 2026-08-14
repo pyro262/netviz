@@ -10,6 +10,13 @@ dependencies = [
     "websockets>=13.0",
     "influxdb-client>=1.44",
     "geoip2>=4.8",
+    # The hourly cloud mosaic: NOAA publishes it as netCDF-4, which is HDF5.
+    # Both are optional at runtime -- netviz.clouds catches the ImportError and
+    # the layer simply never appears -- but they ship by default, because a
+    # feature that silently does nothing on a fresh clone is worse than a
+    # slightly larger image.
+    "h5py>=3.10",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

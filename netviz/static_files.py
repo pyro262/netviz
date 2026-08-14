@@ -83,6 +83,7 @@ def make_process_request(
     stats: Any = None,
     display_config: Any = None,
     release: Any = None,
+    clouds: Any = None,
 ) -> Callable[[Any, Any], Optional[Response]]:
     """`health` is the collector's Health object, or None.
 
@@ -141,6 +142,42 @@ def make_process_request(
             if kp_cache is None:
                 return connection.respond(404, "not found\n")
             return _json(method, kp_cache.state(clock()))
+
+        # How old the cloud field is. Live state, so no-store: a cached answer
+        # would defeat the fade-out it exists to trigger.
+        if raw == "/clouds.json":
+            if clouds is None:
+                return connection.respond(404, "not found\n")
+            return _json(method, clouds.state(clock()))
+
+        # The cloud field itself, hourly and ~640 KB.
+        #
+        # 404 both when this build has no cloud layer and when nothing has been
+        # fetched yet, which the renderer treats identically: no texture, no
+        # shell. "No clouds anywhere on Earth" is not a state worth drawing.
+        #
+        # `no-cache` with a validator, like the static assets and for the same
+        # reason -- the field changes once an hour, so a kiosk that re-downloads
+        # it on every reload is spending 640 KB to be told what it already had.
+        # The validator is over the BYTES rather than a file stat: the cache may
+        # rewrite the same field to the same path, and a mtime-based tag would
+        # then claim a change that is not there.
+        if raw == "/clouds.png":
+            png = clouds.read() if clouds is not None else None
+            if not png:
+                return connection.respond(404, "not found\n")
+            etag = '"' + hashlib.sha256(png).hexdigest()[:20] + '"'
+            if request.headers.get("If-None-Match") == etag:
+                return Response(304, "Not Modified", Headers({
+                    "ETag": etag,
+                    "Cache-Control": "no-cache",
+                }), b"")
+            return Response(200, "OK", Headers({
+                "Content-Type": "image/png",
+                "Content-Length": str(len(png)),
+                "Cache-Control": "no-cache",
+                "ETag": etag,
+            }), b"" if method == "HEAD" else png)
 
         # Display settings the collector owns rather than the tracked
         # config.js: the highlighted networks, whose address prefixes describe

@@ -256,6 +256,22 @@ export const CONFIG = {
     atmosphere: true,
     ripples: true,         // expanding ring where an arc lands
     countryFlash: true,    // the blocked country's outline lights up
+    clouds: true,          // NOAA's hourly global cloud mosaic, if served
+  },
+
+  // Real cloud cover. Drawn only when the collector has actually fetched a
+  // field -- see js/clouds.js and netviz/clouds.py.
+  clouds: {
+    // Low on purpose. The arcs are the display; the weather is the room they
+    // happen in, and at 1.0 the planet is a white marble with lines over it.
+    opacity: 0.42,
+    // The infrared field's noise floor over open ocean sits below this.
+    threshold: 0.42,
+    // Not 0: clouds that vanish exactly at the terminator look like half the
+    // layer failed to load.
+    nightDim: 0.30,
+    // Near-white, cast violet so the layer belongs to the plasma scheme.
+    tint: '#d9d7f0',
   },
 
   ripples: {

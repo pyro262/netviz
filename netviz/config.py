@@ -76,6 +76,15 @@ class Config:
     # IPFIX templates survive a restart here; without it every restart drops
     # data records until the router's next template set.
     template_path: str = os.environ.get("NETVIZ_TEMPLATES", "/state/templates.json")
+    # The hourly global cloud mosaic, cached beside the templates and for the
+    # same reason: a restart must not cost a 7 MB download and leave the globe
+    # bare until the next publication.
+    state_dir: str = os.environ.get("NETVIZ_STATE_DIR", "/state")
+    cloud_path: str = os.environ.get("NETVIZ_CLOUDS_PATH", "/state/clouds.png")
+    # Off with NETVIZ_CLOUDS=0. The fetch is ~7 MB an hour from AWS Open Data,
+    # which is a cost a deployment is entitled to decline; with it off nothing
+    # is requested, /clouds.png 404s and the renderer draws no shell.
+    clouds_enabled: bool = os.environ.get("NETVIZ_CLOUDS", "1").strip() not in ("0", "false", "no")
     influx_url: str = os.environ.get("INFLUX_URL", "http://influxdb:8086")
     influx_org: str = os.environ.get("INFLUX_ORG", "home")
     influx_bucket: str = os.environ.get("INFLUX_BUCKET", "netviz")

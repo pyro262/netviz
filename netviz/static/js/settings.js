@@ -435,6 +435,9 @@ export const SCHEMA = {
       + 'which reads as "the line ended" rather than "something arrived".'],
     ['countryFlash', "The blocked country's outline lights up for 2s when a "
       + 'block lands in it.'],
+    ['clouds', 'Real cloud cover, from NOAA\u2019s hourly global mosaic of every '
+      + 'geostationary weather satellite. Off, or with no field fetched, the '
+      + 'globe shows its baked surface alone \u2014 there is no invented weather.'],
   ]),
 
   'ripples.cooldownSeconds': {
@@ -506,6 +509,31 @@ export const SCHEMA = {
     help: 'The day ramp is ramped rather than switched, over this many minutes '
         + 'from sunrise and again from sunset, so the change lands while the '
         + 'sky on the globe is already moving.',
+  },
+
+  // -------------------------------------------------------------- clouds --
+  'clouds.opacity': {
+    type: 'number', min: 0, max: 1, strategy: 'uniform',
+    help: 'How strongly the cloud field is drawn. This is the row that decides '
+        + 'whether the layer is weather behind the arcs or a fog in front of '
+        + 'them; the arcs are the point, so it is deliberately low by default.',
+  },
+  'clouds.threshold': {
+    type: 'number', min: 0, max: 1, strategy: 'uniform',
+    help: 'Infrared brightness below which there is no cloud drawn at all. The '
+        + 'field has a noise floor over open ocean, and drawing it linearly '
+        + 'puts a grey haze over the whole planet that reads as a dirty lens.',
+  },
+  'clouds.nightDim': {
+    type: 'number', min: 0, max: 1, strategy: 'uniform',
+    help: 'How much of the daylight brightness survives on the night side. At '
+        + '0 the clouds vanish at the terminator, which is truthful and looks '
+        + 'like half the layer failed to load.',
+  },
+  'clouds.tint': {
+    type: 'color', strategy: 'uniform',
+    help: 'The cloud color. Near-white with a violet cast, so the layer belongs '
+        + 'to the plasma scheme instead of looking like a photograph pasted on.',
   },
 
   // ---------------------------------------------------------------- rail --

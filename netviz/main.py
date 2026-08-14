@@ -15,6 +15,7 @@ import websockets
 
 from . import __version__
 from .aurora import KpCache, fetch_kp, next_poll_delay
+from . import clouds as clouds_mod
 from .config import Config
 from .enrich import Enricher, load_centroids
 from .events import Event
@@ -239,6 +240,35 @@ async def aurora_poller(cache: "KpCache") -> None:
         await asyncio.sleep(next_poll_delay(time.time()))
 
 
+async def cloud_poller(cache: "clouds_mod.CloudCache", cfg: Config) -> None:
+    """Refresh the global cloud mosaic, once per publication.
+
+    GMGSI is hourly and each granule appears roughly half an hour after the
+    hour it covers, so the delay is aligned just after that rather than every
+    3600s from whenever the collector started -- the same argument as the
+    aurora poller, with a longer tail because the publication itself is late.
+
+    Blocking urllib and a 7 MB download, so it runs in a thread: a slow S3 must
+    not stall the event loop any more than a slow NOAA may.
+
+    Disabled outright when `NETVIZ_CLOUDS=0`, and silent when the optional
+    parsing dependencies are absent -- a collector with no h5py serves no
+    /clouds.png and the renderer draws no shell, which is the same path as a
+    fetch that has never succeeded.
+    """
+    if not cfg.clouds_enabled:
+        log.info("clouds: disabled")
+        return
+    while True:
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(clouds_mod.refresh, cache, cfg.state_dir),
+                timeout=300.0)
+        except (asyncio.TimeoutError, Exception) as err:   # noqa: BLE001
+            log.warning("clouds: poll failed: %s", err)
+        await asyncio.sleep(clouds_mod.next_poll_delay(time.time()))
+
+
 async def alerter(health: Health, geoip_alert: Optional[RatioAlert] = None,
                    enricher: Optional[Enricher] = None) -> None:
     while True:
@@ -410,8 +440,10 @@ async def run(cfg: Config, synthetic: bool) -> None:
 
     loop = asyncio.get_running_loop()
     kp_cache = KpCache()
+    cloud_cache = clouds_mod.CloudCache(cfg.cloud_path)
     tasks = [asyncio.create_task(alerter(health, geoip_alert, enricher)),
-             asyncio.create_task(aurora_poller(kp_cache))]
+             asyncio.create_task(aurora_poller(kp_cache)),
+             asyncio.create_task(cloud_poller(cloud_cache, cfg))]
 
     if synthetic:
         # No store, no flusher in synthetic mode, so "influx" is not a feed
@@ -450,7 +482,7 @@ async def run(cfg: Config, synthetic: bool) -> None:
                                     process_request=make_process_request(
                                         static_root, health=health,
                                         kp_cache=kp_cache, stats=stats,
-                                        release=release,
+                                        release=release, clouds=cloud_cache,
                                         # Built by Config so there is one
                                         # whitelist, not two. Hand-rolling the
                                         # dict here is how the home position
