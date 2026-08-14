@@ -467,8 +467,18 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
       ],
     })""")
 
+    # HOW MANY RULE ROWS ARE VISIBLE IS NOT A CONSTANT, and asserting one was
+    # the second way this case failed on a rail that was working. `fitRuleCap`
+    # drops rows to whatever the rail has room for, and the room depends on the
+    # panels ABOVE it -- GEO BLOCKS 24H grows a row per blocked country as the
+    # day goes on. Measured hours apart on the same build: that panel went 223px
+    # -> 389px, free space 315px -> 102px, and the fit legitimately went from
+    # two rule rows to one. So the assertion is the CONTRACT, not a count: the
+    # rendered panel agrees with what `fitRuleCap` decides on the rail's own
+    # live measurements, the overflow line names exactly the remainder, and
+    # every visible row carries traffic.
     def snapshot():
-        return page.evaluate("""() => {
+        return page.evaluate("""async () => {
           const secs = [...document.querySelectorAll('.rail-panel')];
           const sec = secs.find((s) => {
             const h = s.querySelector('.rail-panel-title');
@@ -480,36 +490,66 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
             value: r.querySelector('.rail-value').textContent,
             muted: r.classList.contains('muted'),
           }));
-          return {found: true, rows};
+          // The same numbers rail.js's own measure() reads, handed to the same
+          // pure function it hands them to. Imported from the served page, so a
+          // change to the arithmetic moves the expectation with it.
+          const { fitRuleCap, ruleBoxMetrics, railContentHeight } =
+            await import('/js/rail.js');
+          const root = document.getElementById('rail');
+          const box = root.querySelector('.rail-panel-rules');
+          const st = getComputedStyle(root);
+          const rowRects = [...box.querySelectorAll('.rail-row')]
+            .map((r) => r.getBoundingClientRect().height);
+          const boxH = box.getBoundingClientRect().height;
+          const content = railContentHeight({
+            childHeights: [...root.children].map((e) => e.getBoundingClientRect().height),
+            gap: parseFloat(st.rowGap),
+            padding: parseFloat(st.paddingTop) + parseFloat(st.paddingBottom),
+          });
+          const total = 3;
+          const expected = fitRuleCap({
+            available: root.clientHeight, other: content - boxH,
+            ...ruleBoxMetrics(boxH, rowRects), total, maxRules: 2,
+          });
+          return {found: true, rows, expected, total,
+                  free: Math.round(root.clientHeight - content),
+                  overflows: root.scrollHeight > root.clientHeight};
         }""")
 
-    # The row count alone (3 = 2 real + overflow) is true from the very first
-    # redraw, before any traffic at all -- rulePanel lists every enabled rule
-    # regardless of hits, just ranked by an hour that starts at zero. That
-    # would make this case pass even if the counting pipeline were totally
-    # broken, so the real condition waited for is BOTH visible rows showing
-    # a non-zero rate, which only real matched traffic can produce.
+    # A row count alone is true from the very first redraw, before any traffic
+    # at all -- rulePanel lists every enabled rule regardless of hits, just
+    # ranked by an hour that starts at zero. That would pass even if the
+    # counting pipeline were totally broken, so what is waited for is every
+    # VISIBLE row showing a non-zero rate, which only matched traffic produces.
     def nonzero_rate(row):
         return row["value"] != "0.0/min"
 
+    def settled(snap):
+        rows = snap.get("rows", [])
+        shown = snap.get("expected", 0)
+        return (snap.get("found") and shown and len(rows) == shown + 1
+                and all(nonzero_rate(r) for r in rows[:shown]))
+
     t0 = time.time()
     snap = snapshot()
-    while time.time() - t0 < RULE_TRAFFIC_CAP_SECONDS:
-        rows = snap.get("rows", [])
-        if (snap.get("found") and len(rows) == 3
-                and all(nonzero_rate(r) for r in rows[:2])):
-            break
+    while time.time() - t0 < RULE_TRAFFIC_CAP_SECONDS and not settled(snap):
         time.sleep(1.0)
         snap = snapshot()
 
     rows = snap.get("rows", [])
+    shown = snap.get("expected", 0)
     overflow = rows[-1] if rows else None
-    ok = (snap.get("found") and len(rows) == 3
-          and all(not r["muted"] and nonzero_rate(r) for r in rows[:2])
-          and overflow is not None and overflow["muted"] and overflow["label"] == "+1 more")
+    ok = (settled(snap)
+          and all(not r["muted"] for r in rows[:shown])
+          and overflow is not None and overflow["muted"]
+          and overflow["label"] == f"+{snap['total'] - shown} more"
+          # The fit's whole purpose: whatever it decided, the rail fits on screen.
+          and not snap.get("overflows"))
     ok2 = report(
         "7: the rail lists the rule", ok,
-        f"waited {time.time() - t0:.1f}s, rows={rows}")
+        f"waited {time.time() - t0:.1f}s, fitted {shown} of {snap.get('total')} "
+        f"with {snap.get('free')}px free, overflowing={snap.get('overflows')}, "
+        f"rows={rows}")
     # restore, for hygiene against anything run afterward in the same page
     page.evaluate("() => window.__netviz.settings.apply({'rail.enabled': false})")
     return ok2
