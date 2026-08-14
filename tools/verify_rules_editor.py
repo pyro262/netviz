@@ -438,18 +438,32 @@ def reset_case(page, cx, cy) -> bool:
 def rail_lists_rule_case(page, cx, cy) -> bool:
     """7: the rail lists the rule.
 
-    Applies `rail.enabled` and a `rail.maxRules` of 2, installs three rules
-    matched against countries the synthetic feed actually emits
-    (`AMBIENT_COUNTRIES` in `netviz/synthetic.py`), waits for real traffic
-    to land on all three, and asserts the rail shows exactly two real rows
-    plus a `+1 more` overflow line -- proving the rank-by-last-hour path,
-    not just that three rules produce three DOM rows."""
+    Applies `rail.enabled` and a `rail.maxRules` of 2, installs three rules,
+    waits for real traffic to land on them, and asserts the rail shows
+    exactly two real rows plus a `+1 more` overflow line -- proving the
+    rank-by-last-hour path, not just that three rules produce three DOM rows.
+
+    THE RULES PARTITION THE ADDRESS SPACE, THEY DO NOT NAME COUNTRIES, and
+    that is what makes this case runnable at all against the deployment the
+    release gate points it at. It matched DE/GB/JP from the synthetic feed's
+    `AMBIENT_COUNTRIES` until 2026-08-14, where every country is equally
+    likely and all three rules fire within seconds. A live feed is not
+    uniform: 30s of the real one carried US 547, DE 160, CZ 26, SE 22, ZA 14,
+    RU 4 and **no GB or JP at all**, so the second visible row sat at
+    `0.0/min` until the 45s cap and the case failed on a rail that was
+    working perfectly. It is the same trap as pointing `verify_walk` at the
+    live wall -- see the note in `tools/verify_release.sh`.
+
+    Three CIDRs that between them cover every IPv4 address cannot depend on
+    who the router is talking to. `128.0.0.0/1` goes LAST because position is
+    precedence and it contains the `192.168/16` home end of every event --
+    first in the list it would claim the lot and starve the other two."""
     page.evaluate("""() => window.__netviz.settings.apply({
       'rail.enabled': true, 'rail.maxRules': 2,
       'arcs.rules': [
-        {match: 'DE', color: '#ff0000', name: 'r-de', enabled: true},
-        {match: 'GB', color: '#00ff00', name: 'r-gb', enabled: true},
-        {match: 'JP', color: '#0000ff', name: 'r-jp', enabled: true},
+        {match: '0.0.0.0/2', color: '#ff0000', name: 'r-low', enabled: true},
+        {match: '64.0.0.0/2', color: '#00ff00', name: 'r-mid', enabled: true},
+        {match: '128.0.0.0/1', color: '#0000ff', name: 'r-high', enabled: true},
       ],
     })""")
 
