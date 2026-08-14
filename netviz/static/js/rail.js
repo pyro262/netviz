@@ -58,14 +58,23 @@ const REGION_NAMES = (() => {
 })();
 
 /** The country's name for a two-letter code, or null when it cannot be named.
- *  Never throws. */
-export function countryName(cc) {
-  if (!REGION_NAMES) return null;
+ *  Never throws.
+ *
+ *  `names` is injectable for one reason: the contract is double-held -- the
+ *  shape test refuses `--` and the `try` would catch the throw anyway -- so
+ *  deleting the shape test changes NOTHING observable about the return value,
+ *  which is this project's own definition of a guard nobody can trust. What
+ *  the shape test actually promises is that `.of()` is **never called** with a
+ *  code that cannot be one, and the only way to assert that is to hand in a
+ *  formatter that counts its calls. Same seam, and the same reason, as
+ *  `randomizeValue(row, rand)`. */
+export function countryName(cc, names = REGION_NAMES) {
+  if (!names) return null;
   if (typeof cc !== 'string' || !/^[A-Za-z]{2}$/.test(cc)) return null;
   const code = cc.toUpperCase();
   let name;
   try {
-    name = REGION_NAMES.of(code);
+    name = names.of(code);
   } catch {
     return null;
   }

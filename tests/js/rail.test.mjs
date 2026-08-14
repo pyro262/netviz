@@ -485,3 +485,43 @@ test('the painted row really carries the name as a title attribute', async () =>
     globalThis.fetch = realFetch;
   }
 });
+
+test('the shape test PREVENTS the call, it does not merely survive it', () => {
+  // Why this test is not "countryName('--') is null" again: that contract is
+  // double-held. The shape test refuses `--`, and the try/catch would return
+  // null for the same input if the shape test were deleted -- confirmed by
+  // deleting it and watching all 497 tests stay green. A guard whose removal
+  // changes nothing observable is a guard nobody can trust, which is exactly
+  // the failure this repo already recorded for a pre-push hook that scanned
+  // an empty range.
+  //
+  // So assert the CLAIM rather than the outcome: `.of()` is never reached for
+  // a code that cannot be one. The stub throws unconditionally, so with the
+  // shape test deleted the catch still returns null and a return-value
+  // assertion would pass -- only the call COUNT tells the two apart.
+  const calls = [];
+  const throwing = {
+    of(code) {
+      calls.push(code);
+      throw new RangeError(`Invalid region code: ${code}`);
+    },
+  };
+  try {
+    for (const bad of ['--', '', 'A', 'ABC', '- ', '1']) {
+      assert.equal(countryName(bad, throwing), null, `named ${JSON.stringify(bad)}`);
+    }
+    assert.deepEqual(calls, [],
+                     `.of() was called for ${JSON.stringify(calls)} -- the shape `
+                     + 'test is not preventing the call');
+    // ...and the seam is real: a code that PASSES the shape test does reach
+    // the formatter. Without this half the test would pass against a
+    // countryName that never calls .of() at all.
+    assert.equal(countryName('CN', throwing), null, 'a throwing formatter must yield null');
+    assert.deepEqual(calls, ['CN']);
+  } finally {
+    // Nothing global was patched -- the stub is a parameter, not a monkey
+    // patch -- so there is nothing to restore, and that is the point of the
+    // seam: a failure here cannot leak into the rest of the file.
+    calls.length = 0;
+  }
+});

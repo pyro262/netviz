@@ -458,7 +458,7 @@
          own affordance for one is the right one. */
       .tuner-panel input[type="color"],
       .tuner-panel input[type="checkbox"] { cursor: pointer; }
-      .tuner-panel input[type="color"]:hover { border-color: #ffffff3d; }
+      .tuner-panel input[type="color"]:hover:not(:disabled) { border-color: #ffffff3d; }
 
       .rules-panel button, .rules-panel select,
       .rules-panel input[type="color"] { cursor: pointer; }
@@ -472,7 +472,7 @@
          toward the refusal color the panel already uses for a bad row rather
          than to the alarm amber. */
       .rules-panel .rules-delete:hover:not(:disabled) { border-color: #7201a8; }
-      .rules-panel input[type="color"]:hover { border-color: #3d3560; }
+      .rules-panel input[type="color"]:hover:not(:disabled) { border-color: #3d3560; }
 
       .confirm-foot button:hover:not(:disabled) {
         background: #17142b; border-color: #3d3560;

@@ -172,17 +172,22 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
  *  Six, because the list exists to answer "which ones?" for the case somebody
  *  actually has in their head -- a handful of rows they dragged -- and past
  *  that it stops being an answer and becomes a wall of text. Randomize is what
- *  made this concrete: a Close after one names 17 settings in a single
- *  sentence hundreds of characters long, in a dialog whose whole argument is that people
- *  read it. The COUNT is always exact and always first, so nothing is hidden;
+ *  made this concrete: a Close after one names every pending setting in a
+ *  single sentence -- 615 characters at the 23 rows it moved before the look
+ *  rule landed, and still hundreds at today's 17 -- in a dialog whose whole
+ *  argument is that people read it. The COUNT is always exact and always first, so nothing is hidden;
  *  only the enumeration is bounded. */
 const NAME_LIMIT = 6;
 
 /** The pending paths as words: "the stars layer, arcs body opacity".
  *
- *  Over the limit it truncates and says so ("..., and 17 more"), rather than
- *  either printing everything or silently listing the first few as though they
- *  were all of them. */
+ *  Over the limit it truncates and says so, rather than either printing
+ *  everything or silently listing the first few as though they were all of
+ *  them. The remainder is always `paths.length - limit`, so a full Randomize --
+ *  17 rows at the time of writing, 23 before the look rule narrowed the set --
+ *  reads "..., and 11 more". The figure moves with the set, which is why it is
+ *  derived here and stated with its date rather than written down as a
+ *  constant somebody would later reason from. */
 function named(paths, limit = NAME_LIMIT) {
   const labels = paths.map(settingLabel);
   if (labels.length <= limit) return labels.join(', ');
