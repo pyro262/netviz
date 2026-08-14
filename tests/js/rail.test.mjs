@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   formatCount, formatLag, formatPercent, formatAge, formatClock, panels, sparkPoints, versionLabel,
+  countryName,
 } from '../../netviz/static/js/rail.js';
 
 test('formatCount stays exact until a wall stops being able to read it', () => {
@@ -359,4 +360,128 @@ test('no colors means no legend, and every other row is untouched', () => {
   const p = panels(SNAPSHOT);
   assert.equal(p.find((x) => x.title === 'GEO BLOCKS').rows[0].label, 'CN');
   assert.equal(p.find((x) => x.title === 'NETFLOW').rows[0].label, 'INGEST LAG');
+});
+
+// -------------------------------------------------------- country names --
+//
+// The GEO BLOCKS rows are two-letter codes, and a code is not a country to
+// everybody who walks up to the wall. The name comes from `Intl.DisplayNames`,
+// so no table ships and none can drift -- the rail can show ANY country that
+// gets blocked, not only the watched ones.
+
+test('a country code is named from the platform, with no table shipped', () => {
+  assert.equal(countryName('CN'), 'China');
+  assert.equal(countryName('RU'), 'Russia');
+  assert.equal(countryName('KP'), 'North Korea');
+  // Lower case is accepted too: the code comes off a wire format, not a
+  // constant, and refusing on case would be a tooltip that vanishes for a
+  // reason nobody could see.
+  assert.equal(countryName('cn'), 'China');
+});
+
+test('the unplaceable code returns null AND does not throw', () => {
+  // THE REASON THIS FUNCTION EXISTS. `--` is what foreign_country() yields
+  // when neither end places, so it reaches the rail in normal operation --
+  // and `Intl.DisplayNames.of('--')` throws a RangeError. Unguarded that
+  // throw lands inside paint() and blanks the WHOLE RAIL, replacing every
+  // live number with nothing, which is why both halves are asserted: it must
+  // return null, and it must not throw on the way.
+  assert.doesNotThrow(() => countryName('--'));
+  assert.equal(countryName('--'), null);
+  // The other shapes .of() refuses outright, for the same reason.
+  for (const bad of ['', 'A', 'ABC', '1', '- ', null, undefined, 42]) {
+    assert.doesNotThrow(() => countryName(bad), `threw on ${JSON.stringify(bad)}`);
+    assert.equal(countryName(bad), null, `named ${JSON.stringify(bad)}`);
+  }
+});
+
+test('a code with no name is treated as having no name', () => {
+  // `ZZ` does NOT throw -- it returns "Unknown Region", which is noise over a
+  // code that already says the same thing. No tooltip beats a useless one.
+  assert.equal(countryName('ZZ'), null);
+});
+
+test('panels names the block rows and leaves the others alone', () => {
+  const p = panels(SNAPSHOT, null, { block: '#00ff00', flow: '#0000ff' });
+  const blocks = p.find((x) => x.title === 'GEO BLOCKS');
+  const cn = blocks.rows.find((r) => r.label === 'CN');
+  assert.equal(cn.title, 'China');
+  // The legend row above them explains a color, not a country.
+  assert.equal(blocks.rows[0].title, undefined);
+  for (const row of p.find((x) => x.title === 'NETFLOW').rows) {
+    assert.equal(row.title, undefined, `${row.label} was given a country name`);
+  }
+});
+
+test('the NONE placeholder and an unnameable code carry no tooltip', () => {
+  // Absent, not null: paint() tests the key, and a row whose title is an empty
+  // string would set an empty `title` attribute -- a tooltip that opens and
+  // says nothing, which reads as broken rather than as absent.
+  const empty = panels({ blocks: { total: 0, top: [] } });
+  const none = empty.find((x) => x.title === 'GEO BLOCKS').rows[0];
+  assert.equal(none.label, 'NONE');
+  assert.ok(!('title' in none), 'the NONE placeholder was given a tooltip');
+
+  const unplaced = panels({ blocks: { total: 5, top: [{ cc: '--', n: 5 }] } });
+  const row = unplaced.find((x) => x.title === 'GEO BLOCKS').rows[0];
+  assert.equal(row.label, '--');
+  assert.ok(!('title' in row), 'the unplaceable code was given a tooltip');
+});
+
+test('the painted row really carries the name as a title attribute', async () => {
+  // panels() deciding the name proves nothing about it REACHING the DOM, and
+  // that last hop is the whole feature. This mounts the rail against a fetch
+  // that answers with a real snapshot and reads the row element back.
+  //
+  // It also checks the DOM fake tolerates a plain `title` assignment -- the
+  // same class of trap as the label span above, where the fake implements
+  // createElement and not createTextNode.
+  const dom = fakeDom();
+  const realDoc = globalThis.document;
+  const realSetInterval = globalThis.setInterval;
+  const realClearInterval = globalThis.clearInterval;
+  const realFetch = globalThis.fetch;
+  globalThis.document = dom.document;
+  globalThis.setInterval = () => 1;
+  globalThis.clearInterval = () => {};
+  globalThis.fetch = async () => ({ ok: true, json: async () => SNAPSHOT });
+  let handle = null;
+  try {
+    handle = start();
+    // start() fires the first poll without awaiting it; two microtask turns
+    // is enough for fetch + json + the redraw it ends with.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const rows = [];
+    const walk = (node) => {
+      if (String(node.className || '').startsWith('rail-row')) rows.push(node);
+      for (const c of node.children || []) walk(c);
+    };
+    walk(dom.rail);
+    const textOf = (node) => {
+      if (node.textContent) return node.textContent;
+      for (const c of node.children || []) {
+        const t = textOf(c);
+        if (t) return t;
+      }
+      return '';
+    };
+    const cn = rows.find((r) => textOf(r) === 'CN');
+    assert.ok(cn, `no CN row painted (${rows.length} rows)`);
+    assert.equal(cn.title, 'China');
+    // And the row that cannot be named carries no title at all, on the
+    // element rather than in the model -- an empty `title` attribute is a
+    // tooltip that opens and says nothing.
+    const legend = rows.find((r) => textOf(r) === 'INGEST LAG');
+    assert.ok(legend, 'no INGEST LAG row painted');
+    assert.equal(legend.title, undefined);
+  } finally {
+    if (handle) handle.stop();
+    globalThis.document = realDoc;
+    globalThis.setInterval = realSetInterval;
+    globalThis.clearInterval = realClearInterval;
+    globalThis.fetch = realFetch;
+  }
 });

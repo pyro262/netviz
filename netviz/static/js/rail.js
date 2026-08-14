@@ -22,6 +22,60 @@ import { ruleKey } from './classcount.js';
 // rail mounted after that setting moved must use the current value.
 const pollMs = () => cfg('polling.railSeconds', 10) * 1000;
 
+/**
+ * The GEO BLOCKS rows are two-letter codes, and a code is not a country to
+ * everyone who walks up to the wall. `Intl.DisplayNames` is what names them.
+ *
+ * NO TABLE SHIPS, and none can drift. The rail can show ANY country that gets
+ * blocked, not only the watched ones, so a hand-kept list of the watched set
+ * would be wrong for exactly the case a name is most wanted -- a code nobody
+ * in the room recognizes.
+ *
+ * THE GUARD IS LOAD-BEARING; it is not defensive clutter. `.of()` THROWS a
+ * RangeError on anything that is not a well-formed region code, and `--` is a
+ * code this pipeline genuinely produces: it is what `foreign_country()` yields
+ * when neither end places, and it is documented as "not a country". Unguarded,
+ * that throw does not spoil a tooltip -- it lands inside `paint()` and takes
+ * the WHOLE RAIL down, replacing every live number with nothing.
+ *
+ * Measured on this Node: `.of('--')`, `.of('')` and `.of('ABC')` all throw;
+ * `.of('ZZ')` returns "Unknown Region" without throwing. So the shape is:
+ * only attempt a plausible two-letter code, wrap it anyway, and return null
+ * rather than a guess. "Unknown Region" is treated as no name at all -- it is
+ * noise over a code that already says the same thing, and the caller shows no
+ * tooltip rather than an empty or useless one.
+ *
+ * The formatter is built once, and its own construction is wrapped too: an
+ * engine without `Intl.DisplayNames` must cost the rail its names, not its
+ * numbers.
+ */
+const REGION_NAMES = (() => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' });
+  } catch {
+    return null;
+  }
+})();
+
+/** The country's name for a two-letter code, or null when it cannot be named.
+ *  Never throws. */
+export function countryName(cc) {
+  if (!REGION_NAMES) return null;
+  if (typeof cc !== 'string' || !/^[A-Za-z]{2}$/.test(cc)) return null;
+  const code = cc.toUpperCase();
+  let name;
+  try {
+    name = REGION_NAMES.of(code);
+  } catch {
+    return null;
+  }
+  // `of()` hands back the code itself for some unassigned regions and the
+  // literal "Unknown Region" for others. Neither is a name; both would put a
+  // tooltip on a row that says nothing the label did not.
+  if (!name || name === code || /unknown region/i.test(name)) return null;
+  return name;
+}
+
 /** Thousands separators up to 9999, then k/M. A wall display is read at three
  *  metres: "1.6M" lands, "1614382" does not. */
 export function formatCount(n) {
@@ -166,12 +220,21 @@ export function panels(snapshot, extra, colors) {
   // They are scaled independently on purpose -- a country's shape over the
   // hour is worth reading whether or not it leads the day, and scaling the
   // lines to the day's leader would flatten every other row to nothing.
-  const blockRows = top.map((r) => ({
-    label: r.cc,
-    value: formatCount(r.n),
-    bar: peak > 0 ? (r.n || 0) / peak : 0,
-    spark: sparkPoints(r.spark),
-  }));
+  const blockRows = top.map((r) => {
+    const row = {
+      label: r.cc,
+      value: formatCount(r.n),
+      bar: peak > 0 ? (r.n || 0) / peak : 0,
+      spark: sparkPoints(r.spark),
+    };
+    // `title` is the row's hover text, and it is ABSENT rather than null when
+    // the code cannot be named -- the painter tests for the key, so an
+    // unnameable code (`--`, which this pipeline really produces) gets no
+    // tooltip at all rather than an empty one that reads as a broken hint.
+    const name = countryName(r.cc);
+    if (name) row.title = name;
+    return row;
+  });
   if (!blockRows.length) {
     blockRows.push({ label: 'NONE', value: '—', bar: 0, muted: true });
   }
@@ -306,6 +369,11 @@ function paint(root, data, clock, version) {
     for (const row of panel.rows) {
       const line = el('div', `rail-row${row.bar !== undefined ? ' bars' : ''}`
                              + (row.muted ? ' muted' : ''));
+      // The country name behind a two-letter code, on the whole row rather
+      // than on the label span: the bar and the count belong to that country
+      // too, and a tooltip that only appears over two characters of text is
+      // one nobody finds.
+      if (row.title) line.title = row.title;
       // The swatch goes INSIDE the label, not beside it. `.rail-row` is a
       // two-column grid, so prepending the dot as a third child put it in
       // column one, pushed the label into column two, and wrapped the value
