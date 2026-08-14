@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   dirtyPatch, revertPatch, keepQuestion, revertQuestion, closeQuestion,
-  randomizeValue,
+  randomizeValue, randomizeScopeLine, RANDOM_MARK,
 } from '../../netviz/static/js/settings_panel.js';
 import { settingLabel } from '../../netviz/static/js/settings.js';
-import { tunerRows } from '../../netviz/static/js/tuner.js';
+import { tunerRows, isRandomized, randomizeScope } from '../../netviz/static/js/tuner.js';
 
 test('a keep writes only the rows that were touched', () => {
   const snapshot = new Map([['a', 1], ['b', 2], ['c', 3]]);
@@ -306,4 +306,45 @@ test('the close question points at Keep as the way not to lose the work', () => 
   const q = closeQuestion(ONE);
   assert.match(q.note, /Keep/);
   assert.match(q.wont.join(' '), /already kept/i);
+});
+
+// ------------------------------------------- what the panel SAYS Randomize does --
+//
+// The behavior was already right; these hold the panel to saying so. The
+// project's own precedent is the color-rules MATCH legend (0.4.5): a control
+// with no affordance of its own has to answer "what will this do" without being
+// asked, and a tooltip on a wall display never gets asked.
+
+test('the printed count is the number of rows Randomize actually moves', () => {
+  // THE ASSERTION THIS SECTION EXISTS FOR. A sentence naming a number is a
+  // claim about behavior, and more rows are about to be added to this panel --
+  // so the number is derived and this ties it back to the flag. A hardcoded
+  // count passes on the day it is typed and lies afterwards, with nothing red.
+  const rolled = tunerRows().filter(isRandomized).length;
+  const line = randomizeScopeLine();
+  assert.match(line, new RegExp(`only the ${rolled} settings`));
+  assert.match(line, new RegExp(`other ${tunerRows().length - rolled} `));
+});
+
+test('the scope line says it in plain language, and names the mark', () => {
+  const line = randomizeScopeLine();
+  // "how the display looks" is what a person can act on. The mark has to be IN
+  // the sentence, or the marks on the rows are decoration nothing explains.
+  assert.match(line, /how the display looks/);
+  assert.ok(line.includes(RANDOM_MARK), 'the scope line does not show the mark');
+  // Not the alarm hue, and not jargon: no schema paths, no flag names.
+  assert.doesNotMatch(line, /randomize:|slider|flag|tunerRows/);
+});
+
+test('the scope line follows a change to the table', () => {
+  // Fed a smaller partition rather than mutating GROUPS: this proves the COPY
+  // reads its numbers from the scope it is handed, which is the half of the
+  // staleness guard that lives in this file.
+  const line = randomizeScopeLine({ count: 3, heldCount: 21 });
+  assert.match(line, /only the 3 settings/);
+  assert.match(line, /other 21 /);
+});
+
+test('the default scope line and the shipped partition agree', () => {
+  assert.equal(randomizeScopeLine(), randomizeScopeLine(randomizeScope()));
 });

@@ -1129,6 +1129,114 @@ def case9_randomize(page, cx, cy) -> bool:
         f"{store_after == store_base}")
 
 
+def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
+    """12: the panel SAYS what Randomize touches, and the marks agree with it.
+
+    Case 9 proves the behavior -- 17 look rows roll, 6 pacing rows do not. This
+    one proves the display admits to it, which is a separate claim: the scope
+    lived only in the button's `title` until now, and a wall display is not
+    hovered. Same call the color-rules MATCH legend made in 0.4.5.
+
+    THE SECOND ASSERTION IS THE ONE WORTH HAVING. Text on a panel is a claim
+    about behavior, and a claim with nothing holding it to the code goes stale
+    the first time a row is added -- which is exactly what is about to happen to
+    this panel. So the marked rows are compared to the rows Randomize ACTUALLY
+    dirties, row by row and by index rather than by count: a mark on the wrong
+    row keeps the total right and is still a display lying about which settings
+    a button will change. Proved red first by marking a held row.
+
+    The layout half is measured rather than eyeballed: the marks must not push
+    a row onto a second line, so a marked row's height and its label's left
+    edge are compared against a held row's."""
+    close_panel(page)
+    page.wait_for_timeout(250)
+    if not open_menu_and_click(page, "settings", cx, cy):
+        return report("12: the panel states Randomize's scope", False,
+                      "could not open the panel")
+    page.wait_for_timeout(400)
+
+    said = page.evaluate("""async () => {
+      const t = await import('./js/tuner.js');
+      const rows = [...document.querySelectorAll('.tuner-row')];
+      const scope = t.randomizeScope();
+      const el = document.querySelector('.tuner-scope');
+      const marked = rows.map((r) => {
+        const m = r.querySelector('.tuner-mark');
+        return !!(m && m.textContent.trim());
+      });
+      // The layout cost of the mark, measured as a straight A/B on the live
+      // panel rather than by comparing marked rows against held ones. Several
+      // labels already wrap at 380px for reasons that have nothing to do with
+      // this glyph -- measured, row heights are 31px and 42px with the marks
+      // removed entirely -- so "all rows are the same height" is the wrong
+      // question and fails on a working mark. The right one is whether
+      // BLANKING every mark changes any row's geometry.
+      const geom = () => rows.map((r) => {
+        const box = r.getBoundingClientRect();
+        const lab = r.querySelector('.tuner-label').getBoundingClientRect();
+        return [Math.round(box.height), Math.round(lab.left)];
+      });
+      const withMarks = geom();
+      const texts = rows.map((r) => r.querySelector('.tuner-mark').textContent);
+      rows.forEach((r) => { r.querySelector('.tuner-mark').textContent = ''; });
+      const blanked = geom();
+      rows.forEach((r, i) => { r.querySelector('.tuner-mark').textContent = texts[i]; });
+      const mk = rows.find((r, i) => marked[i]);
+      const swatch = mk
+        ? getComputedStyle(mk.querySelector('.tuner-mark')).color : null;
+      return {
+        text: el ? el.textContent : null,
+        // What the pure layer says, so the case follows the judgement rather
+        // than carrying a second copy of it.
+        expected: scope.count,
+        expectedHeld: scope.heldCount,
+        flagged: t.tunerRows().map((r) => t.isRandomized(r)),
+        marked,
+        markCount: marked.filter(Boolean).length,
+        withMarks, blanked, swatch,
+      };
+    }""")
+
+    text = said["text"] or ""
+    # The visible copy has to carry the scope in words AND the derived count --
+    # a number with no sentence around it is not an explanation, and a sentence
+    # with a hardcoded number is the staleness this exists to stop.
+    states_it = ("how the display looks" in text
+                 and f"only the {said['expected']} settings" in text
+                 and f"other {said['expectedHeld']}" in text
+                 and "•" in text)
+
+    clicked = click_panel_button(page, ".tuner-randomize")
+    page.wait_for_timeout(500)
+    moved = page.evaluate("""() => [...document.querySelectorAll('.tuner-row')]
+      .map((r) => r.classList.contains('tuner-dirty'))""")
+
+    # Row by row, not count against count.
+    agrees = moved == said["marked"] and said["marked"] == said["flagged"]
+    # Every row identical in height and label position with the marks present
+    # and with them blanked: the mark costs exactly zero layout, so it cannot be
+    # what pushes a row onto a second line.
+    free = said["withMarks"] == said["blanked"]
+    # Not the alarm amber: #dda825 means "blocked" everywhere else here.
+    not_amber = said["swatch"] not in (None, "rgb(221, 168, 37)")
+
+    click_and_confirm(page, ".tuner-revert")
+    page.wait_for_timeout(300)
+
+    ok = bool(states_it and clicked and agrees and free and not_amber)
+    diff = [i for i, (a, b) in enumerate(zip(said["withMarks"], said["blanked"]))
+            if a != b]
+    return report(
+        "12: the panel states Randomize's scope, and the marks match what it "
+        "moves", ok,
+        f"text={text!r}; states it={states_it}; marked={said['markCount']} rows, "
+        f"randomize moved={sum(1 for m in moved if m)}, per-row agreement="
+        f"{agrees}; geometry unchanged with the marks blanked={free} "
+        f"(rows that moved={diff or 'none'}, heights seen="
+        f"{sorted({h for h, _ in said['withMarks']})}); "
+        f"mark color={said['swatch']} (alarm amber avoided={not_amber})")
+
+
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= case1_panel_in_dom(page, cx, cy)
@@ -1144,6 +1252,7 @@ def run(page, cx, cy) -> bool:
     ok &= case7_camera_held(page, cx, cy)
     ok &= case8_menu_mutual_exclusion(page, cx, cy)
     ok &= case9_randomize(page, cx, cy)
+    ok &= case12_randomize_scope_is_stated(page, cx, cy)
     # Last, because it resizes the viewport. It restores it, but a case that
     # moves the ground under the others is one that should have as little
     # after it as possible.

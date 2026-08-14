@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUPS, tunerRows, stepFor } from '../../netviz/static/js/tuner.js';
+import {
+  GROUPS, tunerRows, stepFor, isRandomized, randomizeScope,
+} from '../../netviz/static/js/tuner.js';
 import { entry, defaultOf } from '../../netviz/static/js/settings.js';
 
 /** The control a path will be drawn with, read the way tuner.js reads it --
@@ -152,4 +154,52 @@ test('a non-slider row is never in the randomized set', () => {
     if (row.control === 'slider') continue;
     assert.equal(row.randomize, false, `${row.path} claims to be randomizable`);
   }
+});
+
+// ---------------------------------------------- the scope the panel PRINTS --
+//
+// The panel states, in visible copy, how many settings Randomize touches and
+// marks each of those rows. These hold that claim to the flag, because the
+// specific failure ahead is a NEW ROW: more settings are going to be added to
+// this panel, and a count that was true when it was typed is the way a display
+// starts telling the room something false with nothing failing.
+
+test('isRandomized is the flag AND the control, not either alone', () => {
+  // Three readers ask this question -- the randomizer's loop, the row mark and
+  // the printed count -- and they ask it through this one function so they
+  // cannot answer differently. A flag-only version would mark the color row.
+  for (const row of tunerRows()) {
+    assert.equal(isRandomized(row), row.control === 'slider' && row.randomize,
+                 `${row.path} disagrees with the shipped predicate`);
+  }
+  assert.equal(isRandomized({ control: 'color', randomize: true }), false);
+  assert.equal(isRandomized(null), false);
+});
+
+test('randomizeScope partitions every row, and rolled matches the flag', () => {
+  const rows = tunerRows();
+  const scope = randomizeScope(rows);
+  assert.equal(scope.count, rows.filter(isRandomized).length);
+  assert.equal(scope.heldCount, rows.length - scope.count);
+  // A partition, not two filters that might overlap or drop a row: the copy
+  // says "the other N", and that is only true if the two sides are all of them.
+  assert.equal(scope.rolled.length + scope.held.length, rows.length);
+  assert.deepEqual([...scope.rolled, ...scope.held].map((r) => r.path).sort(),
+                   rows.map((r) => r.path).sort());
+  // Today's numbers, stated so a change is deliberate rather than unnoticed.
+  assert.equal(scope.count, 17);
+  assert.equal(scope.heldCount, 7);
+});
+
+test('the scope moves with the table rather than being written down', () => {
+  // The staleness guard itself: hide a randomizable row and the count must
+  // follow it down. A hardcoded 17 passes every test above and fails this one.
+  const group = GROUPS.find((g) => g.id === 'arcs');
+  const removed = group.rows.pop();
+  try {
+    assert.equal(randomizeScope().count, 16);
+  } finally {
+    group.rows.push(removed);
+  }
+  assert.equal(randomizeScope().count, 17, 'the table was not put back');
 });

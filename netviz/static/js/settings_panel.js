@@ -37,7 +37,7 @@
 // Persisting all 24 would freeze two dozen values at today's config.js
 // numbers, after which the display silently stops tracking any later change
 // to them -- the exact failure `traffic.extraResolvers` was just fixed for.
-import { tunerRows } from './tuner.js';
+import { tunerRows, isRandomized, randomizeScope } from './tuner.js';
 import { defaultOf, entry, settingLabel } from './settings.js';
 import { savePatch } from './rulestore.js';
 
@@ -148,6 +148,42 @@ export function randomizeValue(row, rand = Math.random) {
   if (n > maxSteps) n = maxSteps;
   const places = Math.min(12, Math.max(decimalsOf(step), decimalsOf(min)));
   return Number((min + n * step).toFixed(places));
+}
+
+/**
+ * The mark that says "Randomize may roll this row", drawn in every row's label
+ * gutter and printed inside the sentence that explains it.
+ *
+ * ONE CONSTANT, used in both places. The explanation only works if the glyph in
+ * the sentence is the glyph on the rows, and two literals -- one in the copy,
+ * one in a stylesheet's `content` -- is the ordinary way that stops being true.
+ * That is also why the mark is a real DOM node rather than a CSS `::before`:
+ * the element can be counted, so the verifier can hold the number of marks to
+ * the number of rows Randomize actually moves.
+ */
+export const RANDOM_MARK = '•';
+
+/**
+ * What the panel prints about Randomize's scope, in visible copy.
+ *
+ * NOT A TOOLTIP, and that is the whole point of this function existing. The
+ * button's `title` still carries the longer version, but a wall display is not
+ * hovered -- nobody is standing at it with a pointer -- so the answer to "what
+ * will this do" has to be on the panel. Same call the color-rules panel's
+ * MATCH legend made in 0.4.5, for the same reason: a control whose scope is
+ * invisible until you hover has no scope as far as the room is concerned.
+ *
+ * Both numbers come from `randomizeScope()` rather than from this file, so the
+ * sentence cannot go stale as rows are added -- see the note there. Written in
+ * plain language on purpose: "the settings that change how the display looks"
+ * is what a person can act on, where "the rows whose `randomize` flag is set"
+ * is this file talking to itself.
+ */
+export function randomizeScopeLine(scope = randomizeScope()) {
+  const { count, heldCount } = scope;
+  return `Randomize changes only the ${count} settings that affect how the `
+       + `display looks -- the rows marked ${RANDOM_MARK} below. It leaves the `
+       + `other ${heldCount} as they are, including the camera's timings.`;
 }
 
 // ------------------------------------------------------- the three questions --
@@ -388,7 +424,21 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
   function renderRow(spec) {
     const row = el('div', 'tuner-row');
     row.title = spec.help;
-    const label = el('div', 'tuner-label', spec.label);
+    const label = el('div', 'tuner-label');
+    // The mark goes INSIDE the label, never beside it. `.tuner-row` is a flex
+    // row whose widths are already tight (~347px of content at 380px), so a
+    // sixth flex child would take a slot from the slider and is the way a row
+    // ends up on two lines -- the failure `min-width: 0` on the text inputs
+    // exists to prevent, arrived at from the other side. An inline span inside
+    // the label takes no slot at all, and its 0.8em gutter is reserved on EVERY
+    // row (the span is emitted empty for the rest) so the labels stay aligned
+    // and marking a row shifts nothing.
+    const mark = el('span', 'tuner-mark', isRandomized(spec) ? RANDOM_MARK : '');
+    if (isRandomized(spec)) {
+      row.classList.add('tuner-can-random');
+      mark.title = 'Randomize can change this setting.';
+    }
+    label.append(mark, document.createTextNode(spec.label));
     row.append(label);
 
     const refs = { row };
@@ -551,7 +601,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     let n = 0;
     const refused = [];
     for (const spec of tunerRows()) {
-      if (spec.control !== 'slider' || !spec.randomize) continue;
+      if (!isRandomized(spec)) continue;
       const v = randomizeValue(spec, Math.random);
       if (v === null) continue;
       if (write(spec.path, v)) n += 1;
@@ -588,9 +638,15 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     // Leftmost: Randomize MAKES pending changes, so it belongs beside Revert,
     // which is what undoes them -- and as far as possible from Close.
     const randomBtn = el('button', 'tuner-randomize', 'Randomize');
+    // The tooltip keeps the LONGER version. The scope itself is printed under
+    // the header instead of living only here -- a wall display is not hovered.
     randomBtn.title = 'Give every setting that changes how the display LOOKS a '
-                    + 'random value inside its own limits. The camera pacing is '
-                    + 'left alone. Nothing is remembered; "Revert" puts it all back.';
+                    + 'random value inside its own limits -- the rows marked '
+                    + `${RANDOM_MARK}. The camera's timings and the background `
+                    + 'color are left alone, because changing them does not '
+                    + 'change what is on the wall right now. Every value stays '
+                    + 'inside its own limits, nothing is remembered, and '
+                    + '"Revert" puts it all back in one click.';
     randomBtn.addEventListener('click', randomize);
     const revertBtn = el('button', 'tuner-revert', 'Revert');
     revertBtn.title = 'Put the settings you changed back to how they were when '
@@ -616,6 +672,14 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     node.append(el('p', 'tuner-lead',
       'Changes show on the wall immediately and are forgotten on the next '
       + 'reload. "Keep" remembers them on this screen only.'));
+
+    // The scope of Randomize, in visible copy directly under the button that
+    // does it -- and the one explanation of what the row marks mean. It is a
+    // second paragraph rather than a third sentence in the first: the two say
+    // different things (what the panel does with your changes, what one button
+    // touches), and the mark's key has to be findable at a glance rather than
+    // read out of a block.
+    node.append(el('p', 'tuner-lead tuner-scope', randomizeScopeLine()));
 
     const body = el('div', 'tuner-body');
     let seen = null;

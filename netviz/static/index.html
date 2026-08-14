@@ -389,7 +389,8 @@
          panel is a control that does not exist: exactly the failure that moved
          these buttons out of the footer. Case 10 asserts every header button's
          rect is inside the panel's, and was confirmed to fail against this
-         rule deleted. */
+         rule deleted.
+
          `flex: 0 1 auto` with `min-width: 0` is the other half, and wrapping
          without it changes NOTHING -- measured, still ['Keep', 'Close'] off
          the panel. `flex-shrink: 0` means the group keeps its max-content
@@ -400,6 +401,20 @@
                        flex: 0 1 auto; min-width: 0; flex-wrap: wrap;
                        justify-content: flex-end; }
       .tuner-lead { color: #9c96b8; margin: 0.5rem 0 0.9rem; }
+      .tuner-scope { margin-top: -0.5rem; }
+      /* The "Randomize can roll this row" mark. THREE constraints decided it:
+         it must not compete with the labels or the values, it must not use the
+         alarm amber (#dda825 means "blocked" everywhere else on this display,
+         and the dirty marker beside it already spends that hue), and it must
+         not push a row onto a second line.
+         Hence a violet-grey a step BELOW the muted text (#9c96b8) rather than a
+         hue of its own -- the same "a lift, not a new color" rule the hover
+         states follow, run downward. And hence a fixed-width inline gutter
+         emitted on EVERY row, empty on the ones Randomize leaves: the reserved
+         0.8em is what keeps the labels aligned in one column and makes the mark
+         cost exactly zero layout, marked or not. Measured at 380px: row height
+         and label left edge identical with the marks in and out. */
+      .tuner-mark { display: inline-block; width: 1.1em; color: #6f6893; }
       .tuner-group { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
                      color: #9c96b8; margin: 1rem 0 0.4rem;
                      border-bottom: 1px solid #ffffff14; padding-bottom: 0.2rem; }

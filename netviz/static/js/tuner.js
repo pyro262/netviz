@@ -149,6 +149,41 @@ export function stepFor(e) {
   return 10 ** Math.floor(Math.log10(raw));
 }
 
+/**
+ * THE ONE PREDICATE for "Randomize may touch this row".
+ *
+ * Exported and used by all three readers -- the randomizer's own loop, the
+ * per-row marker the panel draws, and the sentence that states the scope -- so
+ * the button, the marks on screen and the printed count cannot answer the
+ * question differently. Three copies of `control === 'slider' && randomize`
+ * would drift the moment one of them was "simplified", and the drift would show
+ * as a display that marks a row it does not move: worse than no mark at all,
+ * since a wrong mark is still believed.
+ */
+export function isRandomized(row) {
+  return !!row && row.control === 'slider' && row.randomize === true;
+}
+
+/**
+ * The partition the panel's copy is written from: which rows Randomize rolls
+ * and which it leaves.
+ *
+ * DERIVED, never written down. The count in the lead paragraph is the number of
+ * rows carrying the flag, computed here, so adding a row to the panel moves the
+ * sentence with it -- and more rows are expected. A hardcoded "17" is the exact
+ * failure this guards: a claim on the wall that was true when it was typed and
+ * is quietly false a release later, with nothing failing.
+ *
+ * `held` is every OTHER row, not "the sliders that are excluded": the color row
+ * is left alone too, and a person reading "the other 7 are left as they are"
+ * counts what is in front of them, which is rows.
+ */
+export function randomizeScope(rows = tunerRows()) {
+  const rolled = rows.filter(isRandomized);
+  const held = rows.filter((r) => !isRandomized(r));
+  return { rolled, held, count: rolled.length, heldCount: held.length };
+}
+
 /** Every row the panel draws, flattened, in display order. */
 export function tunerRows() {
   const out = [];
