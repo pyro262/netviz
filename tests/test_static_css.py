@@ -137,10 +137,58 @@ def test_known_selectors_survive_a_comment_strip(selector):
     parse: the failure being guarded against is a rule VANISHING, and a
     dependency-free check that fails loudly for the right reason beats a
     parser this repo would have to vendor.
+
+    WHAT IT DOES NOT CLAIM, so nobody reads more into it than is there. The
+    match is unanchored, so `.tuner-actions` would be satisfied by
+    `.tuner-actions-x`; and a rule killed by an unbalanced `{` still has its
+    selector text sitting in the file, so this would not notice. Both are
+    outside the failure this was written for -- a comment eating a rule -- and
+    the balance walk above covers the case that has actually happened twice.
     """
     css = strip_comments(style_block())
     assert selector in css, (
         f"{selector} is not in index.html's stylesheet once comments are "
-        f"stripped. Either the rule was deleted, or a comment ran away and "
-        f"swallowed it."
+        f"stripped. Three ways to get here, and they need different answers: "
+        f"a comment ran away and swallowed the rule (check whether the "
+        f"comment-balance tests above also failed -- they name the line); the "
+        f"rule was deleted by accident; or it was RENAMED on purpose, in which "
+        f"case the fix is to update REQUIRED_SELECTORS in this file to the new "
+        f"name. This list is hand-maintained precisely so a rename is a "
+        f"deliberate edit rather than a silent one."
+    )
+
+
+def rule_body(css: str, selector: str) -> str:
+    """The declaration block of the first rule whose prelude is exactly
+    `selector`. Comments are stripped first, so a commented-out rule is not
+    found -- which is the right answer for every caller here."""
+    stripped = strip_comments(css)
+    pattern = re.compile(
+        r"(?:^|[};])\s*" + re.escape(selector) + r"\s*\{([^}]*)\}", re.S)
+    m = pattern.search(stripped)
+    assert m, f"no rule with the exact selector {selector}"
+    return m.group(1)
+
+
+def test_rail_panel_declares_no_gap():
+    """The rail fitter's second silent invariant, asserted rather than described.
+
+    `rail.js`'s `ruleBoxMetrics` computes the rule panel's chrome as
+    `boxHeight - sum(row rects)`, and that is independent of how many rows are
+    drawn ONLY because `.rail-panel` stacks its rows with no `gap` -- each row's
+    padding sits inside its own rect. Add a `gap` and the chrome shrinks as rows
+    are dropped, which puts back exactly the shrink-then-grow feedback loop the
+    fitter's direct arithmetic was written to avoid.
+
+    Nothing in the JS can see this, and the unit suite has no CSS, so this is
+    the only place the dependency can be held. Stated as a test rather than only
+    as a comment because a stated invariant with a test beats a stated one.
+    """
+    body = rule_body(style_block(), ".rail-panel")
+    assert not re.search(r"(^|[;\s])(row-)?gap\s*:", body), (
+        "`.rail-panel` declares a gap. rail.js's ruleBoxMetrics assumes the "
+        "panel's chrome does not change with the row count, which is only true "
+        "while the rows stack with no gap between them -- adding one makes the "
+        "rule-row fit oscillate between two caps on successive polls. If the "
+        "gap is wanted, ruleBoxMetrics has to subtract `(n - 1) * gap` too."
     )

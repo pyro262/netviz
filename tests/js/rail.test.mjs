@@ -590,16 +590,63 @@ test('the fit is idempotent under a lowered maxRules', () => {
   assert.equal(fitRuleCap({ ...BOX, total: first, maxRules: first }), first);
 });
 
+test('lowering the cap only ever drops the SHORT rows', () => {
+  // INVARIANT 1 OF THE FITTER, asserted rather than only described. A rule that
+  // has fired carries a sparkline and is nearly twice the height of an idle
+  // one, so `ruleBoxMetrics`'s `max` only stays put across a re-measure while
+  // the busy rules are the ones kept. That holds because `rulePanel` ranks by
+  // the last hour descending -- and this asserts the PROPERTY (the rows kept at
+  // a lower cap are a prefix of those kept at a higher one) rather than the
+  // sort call, so a re-ranking that preserves it stays legal while a reversal
+  // fails. Reverse the sort and the fit alternates between two caps on every
+  // poll: dropping a tall row lowers the max, which frees room, which puts it
+  // back.
+  const c = createClassCounter();
+  const rules = [];
+  for (let i = 0; i < 6; i += 1) {
+    const r = { match: `203.0.113.${i}/32`, color: '#111111', name: `r${i}` };
+    rules.push(r);
+    // r0 busiest, r5 silent -- so list order is the REVERSE of the ranking and
+    // a missing sort cannot pass this by accident.
+    for (let n = 0; n < (5 - i) * 3; n += 1) c.add(ruleKey(r), 1000);
+  }
+  const kept = (cap) => rulePanel(rules, c, 1000, cap).rows
+    .filter((row) => !row.muted).map((row) => row.label);
+  const wide = kept(6);
+  // Busiest first: the ranking is the reverse of the list order.
+  assert.deepEqual(wide, ['r0', 'r1', 'r2', 'r3', 'r4', 'r5']);
+  for (let cap = 1; cap < 6; cap += 1) {
+    assert.deepEqual(kept(cap), wide.slice(0, cap),
+                     `cap ${cap} did not keep the top ${cap} rows`);
+  }
+  // And the silent rules -- the short rows -- are exactly the ones let go.
+  assert.ok(!kept(3).includes('r5'), 'a silent rule outranked a busy one');
+});
+
 test('re-measuring after each fit settles, and does not oscillate', () => {
   // THE OSCILLATION PROPERTY, driven properly: a fake rail that RE-DERIVES
   // `other` and `chrome` from the rows it just drew, the way measure() does
   // against a real DOM, iterated the way successive draws would. The previous
   // version of this test fed the cap back into unchanged measurements, which
   // any monotone function passes.
-  const ROW = 30, CHROME = 40, OTHER = 200, AVAIL = 600, TOTAL = 20;
-  const drawnRows = (cap) => Math.min(cap, TOTAL) + (TOTAL > cap ? 1 : 0);
+  //
+  // MIXED HEIGHTS, not `Array(n).fill(ROW)`. With uniform rows the old and new
+  // arithmetic produce identical numbers, so a uniform simulation would pass
+  // unchanged against the buggy divisor while reading as though it covered
+  // heterogeneity. These are the measured shapes: a fired rule 77px, an idle
+  // one 41.4px, the "+N more" line shorter again -- laid out the way the panel
+  // really orders them, tall rows first.
+  const TALL = 77, SHORT = 41.4, MORE = 30;
+  const BUSY = 4;                       // rules that have fired in the hour
+  const CHROME = 40, OTHER = 200, AVAIL = 600, TOTAL = 20;
+  const drawnRows = (cap) => {
+    const n = Math.min(cap, TOTAL);
+    const rows = Array.from({ length: n }, (_, i) => (i < BUSY ? TALL : SHORT));
+    if (TOTAL > cap) rows.push(MORE);
+    return rows;
+  };
   const measureAfter = (cap) => {
-    const rows = Array(drawnRows(cap)).fill(ROW);
+    const rows = drawnRows(cap);
     const box = CHROME + rows.reduce((a, b) => a + b, 0);
     return { available: AVAIL, other: OTHER, ...ruleBoxMetrics(box, rows) };
   };
@@ -613,7 +660,8 @@ test('re-measuring after each fit settles, and does not oscillate', () => {
   // these same numbers alternates, which is what this refuses.
   assert.equal(new Set(seen).size, 1, `cap oscillated: ${seen.join(',')}`);
   // And it settled somewhere the content actually fits.
-  const fitsIn = CHROME + drawnRows(seen[0]) * ROW + OTHER;
+  const fitsIn = CHROME + OTHER
+    + drawnRows(seen[0]).reduce((a, b) => a + b, 0);
   assert.ok(fitsIn <= AVAIL, `settled at ${seen[0]}, needing ${fitsIn} of ${AVAIL}`);
 });
 

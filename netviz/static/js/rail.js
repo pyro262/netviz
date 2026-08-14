@@ -203,6 +203,16 @@ export function rulePanel(rules, counter, nowMs, maxRules) {
       hour: spark ? spark.reduce((a, b) => a + b, 0) : 0,
     };
   });
+  // DESCENDING BY HOUR, and `fitRuleCap` silently depends on the direction.
+  // A rule that has fired carries a sparkline and is nearly twice the height of
+  // one that has not, so ranking the busy rules FIRST means lowering the cap
+  // only ever drops SHORT rows -- which is what keeps `ruleBoxMetrics`'s `max`
+  // invariant across a re-measure and the fit non-oscillating. Reverse this
+  // sort and the fitter alternates between two caps on every poll: dropping a
+  // tall row lowers the max, which frees room, which puts it back.
+  // `rail.test.mjs` asserts the property this relies on -- the rows kept at a
+  // lower cap are a prefix of the rows kept at a higher one -- rather than the
+  // sort call itself, so a re-ranking that preserves it stays legal.
   scored.sort((a, b) => b.hour - a.hour);
   const rows = scored.slice(0, cap).map(({ hour, ...row }) => row);
   if (scored.length > cap) {
@@ -241,6 +251,18 @@ export function rulePanel(rules, counter, nowMs, maxRules) {
  * Max rather than mean, because the fitter's error has a right direction --
  * assuming every row is as tall as the tallest leaves the rail short of a row
  * sometimes, where assuming the average puts it over the bottom of the screen.
+ *
+ * TWO INVARIANTS THIS DEPENDS ON, neither of them local to this function, and
+ * both breakable by an edit that looks unrelated:
+ *
+ *   1. `rulePanel` ranks rows by traffic DESCENDING, so lowering the cap drops
+ *      only short rows and `max` does not move across the re-measure. Reverse
+ *      that sort and the fit oscillates -- see the note on the sort itself.
+ *   2. `.rail-panel` stacks its rows with NO `gap`; each row's padding is
+ *      inside its own rect. That is the only reason `boxHeight - sum(rows)` is
+ *      independent of the row count. Add a `gap` and the chrome shrinks as rows
+ *      are dropped, which is the feedback loop the direct arithmetic exists to
+ *      avoid. `tests/test_static_css.py` asserts the rule declares no gap.
  *
  * Returns null when there is nothing measurable, and the caller then leaves the
  * cap alone.

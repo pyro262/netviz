@@ -92,7 +92,7 @@ function arcClass(cls, keys) {
                 + 'rules.js puts on a rule gain -- below it the class is '
                 + 'black and the traffic simply stops being drawn.' },
     speed: { type: 'number', min: 0.05, max: 5, strategy: 'uniform',
-             help: 'How fast the travelling head runs along the arc. The head '
+             help: 'How fast the traveling head runs along the arc. The head '
                  + 'reaching 1 is what fires the impact ripple. The one field '
                  + 're-read from the spec every frame, so it was already live.' },
     lift: { type: 'number', min: 0, max: 2, strategy: 'rebuild',
@@ -319,7 +319,7 @@ export const SCHEMA = {
     type: 'bool', strategy: 'uniform',
     help: 'Drag to turn the globe. Solved rather than mapped from pixels, so '
         + 'the grabbed point stays under the pointer at the limb as well as at '
-        + 'the centre.',
+        + 'the center.',
   },
   'input.zoom': {
     type: 'bool', strategy: 'uniform',
@@ -416,18 +416,18 @@ export const SCHEMA = {
       + 'limb where texture filtering turns to mush.'],
     ['bordersWatched', 'Outlines for the geo-blocked countries, in the block '
       + 'amber -- so outline, arc, ripple and arrival flash are one visual '
-      + 'language and a block lands in a shape you recognise.'],
+      + 'language and a block lands in a shape you recognize.'],
     ['bordersWorld', 'Every international land border, at half the watched '
       + 'layer’s brightness: flatten the two together and the blocked set '
       + 'the alarm layer is about dissolves into the map.'],
     ['admin1', 'US state and Canadian province lines. Dimmest of the three line '
       + 'layers -- it helps place an arc root near home and must not out-shout '
       + 'the international borders around it.'],
-    ['stars', 'Real HYG catalogue stars to magnitude 6.5, placed by RA/Dec and '
+    ['stars', 'Real HYG catalog stars to magnitude 6.5, placed by RA/Dec and '
       + 'turned by Greenwich sidereal time, so the constellations are real and '
       + 'correctly oriented for the moment.'],
     ['aurora', 'The auroral oval, sized by the live NOAA planetary K-index and '
-      + 'centred on the geomagnetic pole -- which is why Canada sees aurora '
+      + 'centered on the geomagnetic pole -- which is why Canada sees aurora '
       + 'where Siberia does not.'],
     ['atmosphere', 'The limb glow: a shell just outside the surface that gives '
       + 'the globe an edge instead of a cut-out silhouette.'],
@@ -478,7 +478,7 @@ export const SCHEMA = {
     type: 'number', min: 0, max: 1, strategy: 'uniform',
     help: 'Luminance a pixel must clear to glow at all. 0.9/0.05 blew the arc '
         + 'bodies out into a haze on a bright wall panel; a slightly higher '
-        + 'threshold keeps the travelling heads glowing while the tube bodies '
+        + 'threshold keeps the traveling heads glowing while the tube bodies '
         + 'stay linear.',
   },
   'appearance.bloom.knee': {
@@ -591,9 +591,9 @@ export function entry(path) {
 export function defaultOf(path) { return cfg(path, undefined); }
 
 /** Names for the handful of paths whose plain-English name is not derivable
- *  from the path itself. Everything else is humanised below, so this list only
+ *  from the path itself. Everything else is turned into words below, so this list only
  *  has to carry the exceptions rather than all 89 settings -- a second full
- *  copy of the catalogue would drift, same reason the schema keeps no
+ *  copy of the catalog would drift, same reason the schema keeps no
  *  defaults. */
 const LABELS = {
   'rail.enabled': 'the stats rail',
@@ -610,7 +610,7 @@ const LABELS = {
  * `layers.cityLights` -> "the city lights layer", `camera.walk.holdSeconds` ->
  * "camera walk hold seconds". Not pretty for every one of the 89, and it does
  * not need to be: it appears in a list of what a reset would forget, where the
- * job is recognising the setting you changed, not admiring the prose.
+ * job is recognizing the setting you changed, not admiring the prose.
  */
 export function settingLabel(path) {
   if (Object.prototype.hasOwnProperty.call(LABELS, path)) return LABELS[path];
