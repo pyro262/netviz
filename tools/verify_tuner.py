@@ -28,8 +28,11 @@ promises reaches there at all:
     `requestClose()` rather than the force-close, so picking "Color rules..."
     over unkept changes asks instead of discarding them silently, and a
     Cancel leaves the rules panel shut and the changes pending;
+  * that the rows whose value is baked into an arc's geometry SAY SO, and
+    that dragging one really does clear the arcs and let them come back --
+    unannounced, every arc vanishing under your hand reads as the feed dying;
   * that Randomize rolls the rows that change what the display LOOKS like --
-    `tuner.js`'s per-row `randomize` flag, 17 of the 23 sliders -- inside
+    `tuner.js`'s per-row `randomize` flag, 29 of the 38 sliders -- inside
     their own schema bounds, leaves the camera pacing and the star ramp
     untouched, marks each row it moves dirty exactly as a drag does, asks
     nothing, and is undone by one Revert;
@@ -74,6 +77,19 @@ BLOOM = "appearance.bloom.strength"      # number, 0 .. 2.0, ships at 0.7
 OPACITY = "arcs.bodyOpacity"             # number, 0.04 .. 1.0, ships at 0.18
 BLOOM_TARGET = 1.5
 OPACITY_TARGET = 0.6
+
+# Case 13's pair. A FLOW row both times: the synthetic feed draws flows tens of
+# times a second, so a cleared pool visibly refills within seconds, where
+# `arcs.block.*` would make the case wait on a block arriving and measure the
+# feed's luck instead of the panel.
+REBUILD_ROW = "arcs.flow.tube"           # rebuild: clears the pool
+REBUILD_TARGET = 0.006                   # inside 0.001 .. 0.02
+CONTROL_ROW = "arcs.flow.gain"           # uniform: must NOT clear the pool
+CONTROL_TARGET = 0.9                     # inside 0.05 .. 3
+# How long a cleared pool may take to draw its first arc again. Generous: under
+# headless swiftshader the render loop is the bottleneck, and the point is that
+# the arcs come back at all rather than how fast.
+REFILL_CAP_SECONDS = 15.0
 
 # Case 7's hand-back is timed against the rig's own rendered-time countdown
 # (`rig.state.idleT`, summed from the render loop's dt) with a wall-clock cap
@@ -449,8 +465,8 @@ def case4_keep_writes_only_touched(page) -> bool:
     A DELTA on the key set, not an assertion that storage started empty: the
     keys afterward must equal the keys before plus exactly this one path. That
     is strictly stronger than 'the blob contains appearance.bloom.strength' --
-    which a Keep persisting all 24 rows would satisfy, the exact failure the
-    panel's dirty-tracking exists to prevent (24 values frozen at today's
+    which a Keep persisting all 39 rows would satisfy, the exact failure the
+    panel's dirty-tracking exists to prevent (39 values frozen at today's
     config.js numbers, after which the display silently stops tracking any
     later change to them) -- and it needs no empty start, so this script never
     has to clear a real display's settings to run.
@@ -814,7 +830,8 @@ def case10_hover(page, cx, cy) -> bool:
 
 
 def case11_small_viewport(page) -> bool:
-    """11: on a small viewport the slice is clamped, and the stage stays usable.
+    """11: on a small viewport the slice is clamped, the stage stays usable,
+    and the header stays reachable however far the panel is scrolled.
 
     ITS OWN CASE, not folded into case 2, for one reason: it has to resize the
     viewport, and case 2's whole strength is a byte-exact comparison at the
@@ -831,7 +848,16 @@ def case11_small_viewport(page) -> bool:
     is what bounds it, and because that one property feeds both the panel's
     `width` and the stage's `left`, the panel stays exactly as wide as the
     slice at every viewport -- which is what this case asserts, rather than
-    asserting the clamp's arithmetic."""
+    asserting the clamp's arithmetic.
+
+    The scroll half was added with the arc-shape group. At 39 rows the panel
+    scrolls at every viewport this display is ever on -- 1975px of content at
+    380px wide, 3636px at the clamped 189px -- so the four buttons are only
+    reachable because `.tuner-sticky` pins them. This case scrolls the panel to
+    the very bottom and asserts every one of them is still inside it, which is
+    the same "a control past the fold does not exist" test that moved them out
+    of a footer, applied to the direction that broke next. It runs at 420x800,
+    where the panel is at its most cramped and the content at its longest."""
     close_panel(page)
     page.wait_for_timeout(300)
     original = page.viewport_size
@@ -880,6 +906,18 @@ def case11_small_viewport(page) -> bool:
         page.wait_for_timeout(600)
         state = panel_state(page)
         after = measure()
+        # Scroll to the very bottom and measure the buttons again. `measure()`
+        # already reports each one's rect against the panel's; what changes is
+        # that the rows above them have gone, so a header in the ordinary flow
+        # has gone with them.
+        scrolled = page.evaluate("""() => {
+          const el = document.querySelector('.tuner-panel');
+          el.scrollTop = el.scrollHeight;
+          return {top: el.scrollTop, scrollH: el.scrollHeight,
+                  clientH: el.clientHeight};
+        }""")
+        page.wait_for_timeout(200)
+        after_scroll = measure()
     finally:
         close_panel(page)
         if original:
@@ -907,8 +945,16 @@ def case11_small_viewport(page) -> bool:
     # into rows rather than push Close off the edge behind a scrollbar.
     outside = [b["label"] for b in after["buttons"] if not b["inside"]]
     buttons_ok = len(after["buttons"]) == 4 and not outside
+    # The panel really is scrolling -- otherwise "the buttons survived a
+    # scroll" is a claim about a scroll that never happened -- and every button
+    # is still inside the panel's box at the bottom of it.
+    panel_scrolls = scrolled["scrollH"] > scrolled["clientH"] + 1 and scrolled["top"] > 0
+    off_after_scroll = [b["label"] for b in after_scroll["buttons"]
+                        if not b["inside"] or b["bottom"] <= 0]
+    sticky_ok = (panel_scrolls and len(after_scroll["buttons"]) == 4
+                 and not off_after_scroll)
     ok = (clicked and panel_is_really_open(state) and usable and aspect_ok
-          and majority and matches and buttons_ok)
+          and majority and matches and buttons_ok and sticky_ok)
     return report(
         f"11: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
         "the stage stays usable", ok,
@@ -919,7 +965,10 @@ def case11_small_viewport(page) -> bool:
         f"{before['aspect']} -> {after['aspect']} (finite and positive={aspect_ok}), "
         f"stage keeps the majority={majority}, usable={usable}, "
         f"{len(after['buttons'])} header buttons, off the panel={outside or 'none'}, "
-        f"panelOpen={panel_is_really_open(state)}")
+        f"panelOpen={panel_is_really_open(state)}; scrolled to "
+        f"{scrolled['top']}/{scrolled['scrollH']} (client {scrolled['clientH']}, "
+        f"really scrolls={panel_scrolls}): buttons still reachable="
+        f"{not off_after_scroll} (off={off_after_scroll or 'none'})")
 
 
 def rules_panel_open(page) -> bool:
@@ -1035,12 +1084,12 @@ def case9_randomize(page, cx, cy) -> bool:
     what would teach people to click through the other three), and that the
     values that land on the wall are the ones the applier accepted.
 
-    THE EXCLUDED ROWS ARE THE HALF THAT MATTERS. Asserting only that the 17
-    moved passes unchanged against a regression that quietly randomizes all 23
+    THE EXCLUDED ROWS ARE THE HALF THAT MATTERS. Asserting only that the 29
+    moved passes unchanged against a regression that quietly randomizes all 38
     again -- the exact behavior this rule removed. The two sets are read from
     `tuner.js`'s own `randomize` flag rather than listed here, so the case
     follows the judgement rather than duplicating it, and `tuner.test.mjs` is
-    what holds the flag to the six paths by name.
+    what holds the flag to the nine paths by name.
 
     The bounds are read from tuner.js itself too, so a schema change moves the
     assertion with the control."""
@@ -1112,10 +1161,10 @@ def case9_randomize(page, cx, cy) -> bool:
           # A randomize that moved one row and left 16 alone is not a
           # randomize. Not `== len(look)`: a roll can legitimately land a row
           # back on the value it already held.
-          and len(look) == 17 and len(held) == 6
+          and len(look) == 29 and len(held) == 9
           and moved >= len(look) - 2
           # Only the look rows may be marked, so the mark count is bounded on
-          # BOTH sides -- a panel that dirtied all 23 fails here as well.
+          # BOTH sides -- a panel that dirtied all 38 fails here as well.
           and len(look) - 2 <= after["dirty"] <= len(look)
           and reverted_click and revert_dialog and revert_answered
           and not restored and store_after == store_base)
@@ -1132,7 +1181,7 @@ def case9_randomize(page, cx, cy) -> bool:
 def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
     """12: the panel SAYS what Randomize touches, and the marks agree with it.
 
-    Case 9 proves the behavior -- 17 look rows roll, 6 pacing rows do not. This
+    Case 9 proves the behavior -- 29 look rows roll, 9 held rows do not. This
     one proves the display admits to it, which is a separate claim: the scope
     lived only in the button's `title` until now, and a wall display is not
     hovered. Same call the color-rules MATCH legend made in 0.4.5.
@@ -1256,6 +1305,166 @@ def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
         f"mark color={said['swatch']} (alarm amber avoided={not_amber})")
 
 
+def live_arcs(page):
+    return page.evaluate("() => window.__netviz.arcs.liveCount()")
+
+
+def case13_rebuild_rows_warn_and_clear(page, cx, cy) -> bool:
+    """13: the rows that clear the arc pool say so, and really do clear it.
+
+    THREE CLAIMS, and each of the other two is what makes the remaining one
+    evidence rather than a coincidence.
+
+    The mark: every row `tuner.js` reports as `rebuilds` carries the glyph and
+    no other row does, compared row by row against the rendered DOM rather
+    than by count -- a warning on the wrong row keeps the total right and is
+    still a display lying about which slider is about to empty the wall.
+
+    The behavior: dragging one of them really does take the live arc count to
+    zero, and it comes back. `arcs.rebuild()` retires the pool, so the wall
+    blanks and refills from the feed over the next few seconds. Without the
+    recovery half this case would pass against a panel that killed the arcs
+    permanently, which is the failure the warning would then be describing
+    honestly and nobody would want.
+
+    The control: dragging a `uniform` row of the SAME class does NOT collapse
+    the count. On a live page arcs come and go constantly, so "the count fell"
+    on its own is also what an ordinary lull looks like; the pair is what
+    separates the pool clear from the weather.
+
+    The control row is also asserted to carry NO mark, and that clause is what
+    stops the mark half being self-referential: the marks are compared against
+    `clearsArcs`, which is the source they are drawn from, so a row wrongly
+    flagged as rebuilding agrees with itself all the way down. Naming one row
+    that must not be marked and then proving it does not clear the pool is the
+    pair that catches it. (`tuner.test.mjs` holds the flag to apply.js's
+    ARC_REBUILD_KEYS as well, which is the cheaper half of the same check.)
+
+    It runs on a rebuild row that is a FLOW -- flows arrive tens per second on
+    the synthetic feed, so the refill is observable inside a few seconds.
+    Blocks arrive rarely and live 18s, which is why the same case pointed at
+    `arcs.block.tube` would measure the feed's luck rather than the panel."""
+    close_panel(page)
+    page.wait_for_timeout(250)
+    if not open_menu_and_click(page, "settings", cx, cy):
+        return report("13: the rebuilding rows warn, and really do clear the "
+                      "arcs", False, "could not open the panel")
+    page.wait_for_timeout(400)
+
+    said = page.evaluate("""async () => {
+      const t = await import('./js/tuner.js');
+      const rows = [...document.querySelectorAll('.tuner-row')];
+      const specs = t.tunerRows();
+      const note = document.querySelector('.tuner-rebuild-note');
+      const idx = (p) => specs.findIndex((r) => r.path === p);
+      return {
+        // What the pure layer says, and what the DOM drew, per row.
+        flagged: specs.map((r) => t.clearsArcs(r)),
+        // The two rows the behavior half drives, by path: one must be marked
+        // and one must not, or the pair proves nothing.
+        rebuildRowMarked: !!rows[idx(REBUILD)]
+          && !!rows[idx(REBUILD)].querySelector('.tuner-rebuild'),
+        controlRowMarked: !!rows[idx(CONTROL)]
+          && !!rows[idx(CONTROL)].querySelector('.tuner-rebuild'),
+        marked: rows.map((r) => !!r.querySelector('.tuner-rebuild')),
+        classed: rows.map((r) => r.classList.contains('tuner-rebuilds')),
+        rowCount: rows.length,
+        specCount: specs.length,
+        expected: specs.filter(t.clearsArcs).length,
+        note: note ? note.textContent : null,
+        // The mark must sit INSIDE the label, or it is a sixth flex child
+        // competing with the slider for a 380px row.
+        insideLabel: rows.every((r) => {
+          const m = r.querySelector('.tuner-rebuild');
+          return !m || r.querySelector('.tuner-label').contains(m);
+        }),
+      };
+    }""".replace("REBUILD", repr(REBUILD_ROW)).replace("CONTROL", repr(CONTROL_ROW)))
+
+    note = said["note"] or ""
+    n = said["expected"]
+    # The count in the copy is derived; this ties it to the marks the DOM
+    # actually rendered, the same two-hop the scope line gets in case 12.
+    states_it = (n > 0 and f"The {n} rows marked" in note
+                 and "↻" in note and "come back" in note
+                 and sum(1 for m in said["marked"] if m) == n)
+    agrees = (said["marked"] == said["flagged"]
+              and said["classed"] == said["marked"]
+              and said["rowCount"] == said["specCount"]
+              and said["insideLabel"]
+              and said["rebuildRowMarked"] and not said["controlRowMarked"])
+
+    # Now the behavior. A rebuild row first.
+    #
+    # The count is read SYNCHRONOUSLY, in the same evaluate that dispatches the
+    # event and with no await between the two. `drag_slider` waits 60ms before
+    # reporting, which is long enough for the render loop to spawn a fresh arc
+    # into the pool it just emptied -- measured, one arc, and the case failed on
+    # `cleared == 1` against a working clear. What is being proved is that the
+    # handler retires the pool, so the read has to happen before a frame runs.
+    before = live_arcs(page)
+    out = page.evaluate("""async ({path, value}) => {
+      const t = await import('./js/tuner.js');
+      const idx = t.tunerRows().findIndex((r) => r.path === path);
+      if (idx < 0) return {error: `tuner has no row for ${path}`};
+      const rows = [...document.querySelectorAll('.tuner-row')];
+      if (rows.length !== t.tunerRows().length) {
+        return {error: `panel drew ${rows.length} rows, tuner.js declares ${rows.length}`};
+      }
+      const range = rows[idx].querySelector('.tuner-range');
+      if (!range) return {error: `${path} is not a slider row`};
+      range.value = String(value);
+      range.dispatchEvent(new Event('input', {bubbles: true}));
+      // No await here, deliberately -- see above.
+      return {cleared: window.__netviz.arcs.liveCount(),
+              dirtyClass: rows[idx].classList.contains('tuner-dirty')};
+    }""", {"path": REBUILD_ROW, "value": REBUILD_TARGET})
+    if out.get("error"):
+        return report("13: the rebuilding rows warn, and really do clear the "
+                      "arcs", False, out["error"])
+    cleared = out["cleared"]
+    recovered = 0
+    t0 = time.time()
+    while time.time() - t0 < REFILL_CAP_SECONDS:
+        recovered = live_arcs(page)
+        if recovered > 0:
+            break
+        page.wait_for_timeout(250)
+    click_and_confirm(page, ".tuner-revert")
+    page.wait_for_timeout(400)
+
+    # ...and the control: a uniform row of the same class must not empty it.
+    page.wait_for_timeout(1500)
+    base2 = live_arcs(page)
+    out2 = drag_slider(page, CONTROL_ROW, CONTROL_TARGET)
+    if out2.get("error"):
+        return report("13: the rebuilding rows warn, and really do clear the "
+                      "arcs", False, out2["error"])
+    after_control = live_arcs(page)
+    click_and_confirm(page, ".tuner-revert")
+    page.wait_for_timeout(300)
+    close_panel(page)
+
+    # `before` has to be non-trivial or "it went to zero" means nothing.
+    had_arcs = before >= 5
+    emptied = cleared == 0 and out["dirtyClass"]
+    came_back = recovered > 0
+    control_ok = base2 >= 5 and after_control > 0
+    ok = bool(states_it and agrees and had_arcs and emptied and came_back
+              and control_ok)
+    return report(
+        "13: the rebuilding rows warn, and really do clear the arcs", ok,
+        f"note={note!r}; states it={states_it} ({n} declared, "
+        f"{sum(1 for m in said['marked'] if m)} marks rendered), per-row "
+        f"agreement={agrees} (mark inside the label={said['insideLabel']}, "
+        f"{REBUILD_ROW} marked={said['rebuildRowMarked']}, {CONTROL_ROW} "
+        f"marked={said['controlRowMarked']}); "
+        f"{REBUILD_ROW}: live arcs {before} -> {cleared} (emptied={emptied}, row "
+        f"marked dirty={out['dirtyClass']}) -> "
+        f"{recovered} (came back={came_back}); control {CONTROL_ROW}: {base2} -> "
+        f"{after_control} (still drawn={control_ok})")
+
+
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= case1_panel_in_dom(page, cx, cy)
@@ -1272,6 +1481,7 @@ def run(page, cx, cy) -> bool:
     ok &= case8_menu_mutual_exclusion(page, cx, cy)
     ok &= case9_randomize(page, cx, cy)
     ok &= case12_randomize_scope_is_stated(page, cx, cy)
+    ok &= case13_rebuild_rows_warn_and_clear(page, cx, cy)
     # Last, because it resizes the viewport. It restores it, but a case that
     # moves the ground under the others is one that should have as little
     # after it as possible.

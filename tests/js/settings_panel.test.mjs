@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import {
   dirtyPatch, revertPatch, keepQuestion, revertQuestion, closeQuestion,
   randomizeValue, randomizeScopeLine, randomizeTooltip, randomizeHeldNames,
-  RANDOM_MARK,
+  RANDOM_MARK, REBUILD_MARK, rebuildNoteLine,
 } from '../../netviz/static/js/settings_panel.js';
 import { settingLabel } from '../../netviz/static/js/settings.js';
-import { tunerRows, isRandomized, randomizeScope } from '../../netviz/static/js/tuner.js';
+import {
+  tunerRows, isRandomized, randomizeScope, clearsArcs,
+} from '../../netviz/static/js/tuner.js';
 
 test('a keep writes only the rows that were touched', () => {
   const snapshot = new Map([['a', 1], ['b', 2], ['c', 3]]);
@@ -379,9 +381,51 @@ test('the tooltip uses the on-screen labels, not schema paths', () => {
 
 test('the printed line stays hedged where the tooltip enumerates', () => {
   // Two jobs, deliberately. The line is the one-glance version and the marks
-  // answer "which ones" precisely; a line that named all 7 would be the wall
+  // answer "which ones" precisely; a line that named all 10 would be the wall
   // of text NAME_LIMIT exists to refuse, three paragraphs up the panel.
   const line = randomizeScopeLine();
   assert.match(line, /including the camera's timings/);
   assert.ok(!line.includes('Star ramp minutes'), 'the line enumerates');
+});
+
+// ------------------------------- what the panel SAYS about the rebuild rows --
+//
+// Nine rows clear every arc on screen when they are dragged, because the shape
+// of an arc is built when the arc is drawn. That is unavoidable and correct;
+// what is not acceptable is it happening unannounced, since on a wall the arcs
+// all vanishing reads as the feed dying. These hold the copy to the rows.
+
+test('the rebuild note counts the rows that actually rebuild', () => {
+  // Derived, for the same reason the randomize count is: a number typed into
+  // the copy is a claim on a wall that nothing holds to the schema.
+  const n = tunerRows().filter(clearsArcs).length;
+  const line = rebuildNoteLine();
+  assert.ok(n > 0, 'the panel has no rebuilding rows to describe');
+  assert.match(line, new RegExp(`The ${n} rows marked`));
+  assert.ok(line.includes(REBUILD_MARK), 'the note does not show the mark');
+});
+
+test('the rebuild note says what happens AND that it is not a fault', () => {
+  // Same rule confirm.js enforces with `will` and `wont`: a warning that only
+  // lists the consequence reads as a fault report. The half that says the arcs
+  // come back is what makes the first half worth printing.
+  const line = rebuildNoteLine();
+  assert.match(line, /clears the arcs on screen/);
+  assert.match(line, /come back/);
+  assert.match(line, /not the feed dropping/);
+  // No jargon: the panel does not say "rebuild strategy" or name a schema key.
+  assert.doesNotMatch(line, /strategy|TubeGeometry|setSpec|arcs\./);
+});
+
+test('a panel with no rebuilding rows says nothing at all', () => {
+  // An empty paragraph explaining a mark nobody can see is worse than silence,
+  // and the caller appends the line only when it is non-empty.
+  assert.equal(rebuildNoteLine([]), '');
+  assert.equal(rebuildNoteLine([{ path: 'x', rebuilds: false }]), '');
+});
+
+test('the two marks are different glyphs', () => {
+  // They appear on the same rows -- all nine rebuilding rows are randomizable
+  // -- so one glyph doing both jobs would make each unreadable.
+  assert.notEqual(RANDOM_MARK, REBUILD_MARK);
 });

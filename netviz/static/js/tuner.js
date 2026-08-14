@@ -50,6 +50,29 @@ import { entry } from './settings.js';
  * look-at-this button is for, and is far harder to notice you have done than a
  * color that just changed.
  *
+ * The "Arc shape" group is where the rule had to be argued rather than read
+ * off, so the three calls are recorded here:
+ *
+ *   * `tube`, `lift` and `maxRise` are IN. All three are geometry -- how thick
+ *     an arc is, how high it arches, where its apex is capped -- and all three
+ *     are `rebuild`, so the handler clears the pool and the wall is visibly
+ *     different in the same frame the value lands.
+ *   * `life` is IN, and it is the one that could be argued either way. It is a
+ *     DURATION, which sounds like behavior over the next minute rather than
+ *     the current frame; but the schema pushes it into the arcs already in the
+ *     air ("a shortened life retires them now"), so a roll to the 0.5s floor
+ *     empties the wall in the same frame and a roll to the 60s ceiling packs
+ *     it within a couple of seconds. Both are a different picture, not a
+ *     different tempo, which is what settles it.
+ *   * `speed` is OUT, and the mechanism that makes it look live is what rules
+ *     it out. It is the one arc field re-read from the spec every frame, so it
+ *     applies instantly -- but what it applies to is the RATE the traveling
+ *     head advances. Every head is left exactly where it already was, so the
+ *     frame at the instant of the change is pixel-identical and the difference
+ *     only accumulates over the seconds after. That is the star-ramp case
+ *     again, arrived at from the opposite direction: "applies live" and
+ *     "changes the current frame" are two different questions.
+ *
  * `appearance.background` is out too, and that one is decided twice over: it
  * is a color control rather than a slider, and its luminance cap REFUSES
  * rather than clamps, so a randomizer aimed at it would spend half its rolls
@@ -110,6 +133,44 @@ export const GROUPS = [
     ],
   },
   {
+    // The SHAPE of an arc, kept apart from the group above rather than folded
+    // into it. Two reasons, and the second is the one that decided it: the
+    // group above is about color and brightness and this one is about geometry
+    // and timing, so a person hunting for "why do the arcs arch so high" has
+    // one heading to read; and every `rebuild` row on the panel is in here, so
+    // the group boundary is also where the pool-clearing rows start and stop.
+    //
+    // Five fields x three classes, written out rather than generated from a
+    // loop over the classes. A loop would produce the paths correctly and then
+    // have to invent the labels -- "Flow apex cap" is not derivable from
+    // `arcs.flow.maxRise` -- and the schema is already the thing that stops
+    // three copies of the shape drifting. See the label note above GROUPS.
+    id: 'arcshape',
+    label: 'Arc shape',
+    rows: [
+      // `life` IS randomized, and it is the one call in this group that is not
+      // obvious. See the note under GROUPS for the argument.
+      { path: 'arcs.flow.life', label: 'Flow life', randomize: true },
+      { path: 'arcs.flow.tube', label: 'Flow thickness', randomize: true },
+      // `speed` is out: it is the ONE arc field re-read from the spec every
+      // frame, and that is exactly why it fails the rule -- every traveling
+      // head is left precisely where it already was and only its rate changes.
+      { path: 'arcs.flow.speed', label: 'Flow head speed', randomize: false },
+      { path: 'arcs.flow.lift', label: 'Flow arc height', randomize: true },
+      { path: 'arcs.flow.maxRise', label: 'Flow apex cap', randomize: true },
+      { path: 'arcs.block.life', label: 'Block life', randomize: true },
+      { path: 'arcs.block.tube', label: 'Block thickness', randomize: true },
+      { path: 'arcs.block.speed', label: 'Block head speed', randomize: false },
+      { path: 'arcs.block.lift', label: 'Block arc height', randomize: true },
+      { path: 'arcs.block.maxRise', label: 'Block apex cap', randomize: true },
+      { path: 'arcs.highlight.life', label: 'Color rule life', randomize: true },
+      { path: 'arcs.highlight.tube', label: 'Color rule thickness', randomize: true },
+      { path: 'arcs.highlight.speed', label: 'Color rule head speed', randomize: false },
+      { path: 'arcs.highlight.lift', label: 'Color rule arc height', randomize: true },
+      { path: 'arcs.highlight.maxRise', label: 'Color rule apex cap', randomize: true },
+    ],
+  },
+  {
     id: 'camera',
     label: 'Camera pacing',
     rows: [
@@ -165,6 +226,25 @@ export function isRandomized(row) {
 }
 
 /**
+ * THE ONE PREDICATE for "dragging this row clears the arcs on screen".
+ *
+ * DERIVED FROM THE SCHEMA, never listed here. `settings.js` declares
+ * `strategy: 'rebuild'` on the three arc fields baked into a slot's
+ * TubeGeometry at spawn (`tube`, `lift`, `maxRise`), and `apply.js`'s
+ * ARC_REBUILD_KEYS names the same three for the handler that clears the pool;
+ * a test already asserts those two agree. A third list here -- of rows, this
+ * time -- would be the one nothing holds to the other two, and it would go
+ * wrong in the direction that matters: a row warning about a clear it does not
+ * cause, or worse, a row that clears the wall with no warning on it.
+ *
+ * Asked of the ROW rather than of the path so it reads like `isRandomized`
+ * beside it, and so the panel never has to import `entry` to draw a mark.
+ */
+export function clearsArcs(row) {
+  return !!row && row.rebuilds === true;
+}
+
+/**
  * The partition the panel's copy is written from: which rows Randomize rolls
  * and which it leaves.
  *
@@ -208,6 +288,8 @@ export function tunerRows() {
         control,
         help: e.help,
         randomize: row.randomize === true,
+        // Read off the schema entry, not written per row -- see clearsArcs.
+        rebuilds: e.strategy === 'rebuild',
       };
       if (control === 'slider') {
         item.min = e.min;

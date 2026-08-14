@@ -378,10 +378,26 @@
         background: #12101fee; color: #d8d4ea;
         border-right: 1px solid #ffffff1a;
         font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-        padding: 0.9rem 1rem 1.2rem;
+        /* No padding at the TOP: `.tuner-sticky` carries its own, so the
+           pinned header covers the full width of the scrollport and no row
+           can be seen sliding through a gap above it. */
+        padding: 0 1rem 1.2rem;
+      }
+      /* The pinned header block: title, the four buttons, the pending count
+         and the feedback line. At 39 rows the panel is ~1975px of content on a
+         1440px screen (~3636px at the clamped 189px width), so without this
+         the buttons are off screen the moment anyone scrolls to the arc-shape
+         group -- the same "a control past the fold does not exist" failure
+         that moved them out of a footer, reached from the other end.
+         The background is OPAQUE where the panel's is #12101fee: rows pass
+         behind this block, and a translucent pin would show them through the
+         buttons. Over the near-black page ground the two read the same. */
+      .tuner-sticky {
+        position: sticky; top: 0; z-index: 1;
+        background: #12101f; padding: 0.9rem 0 0.3rem;
       }
       /* Revert, Keep and Close all live here now, beside the title and above
-         the 24 rows -- they were in a footer past the fold, where the display
+         the rows -- they were in a footer past the fold, where the display
          reported never having seen them. `flex-wrap` with the three buttons in
          their own `.tuner-actions` box is what makes a narrow panel degrade
          honestly: at 380px the title and all three fit on one line (measured
@@ -438,6 +454,16 @@
          short of room wraps inside itself and the row grows taller rather than
          the controls dropping to a second line. */
       .tuner-mark { display: inline-block; width: 1.1em; color: #6f6893; }
+      /* The "changing this clears the arcs on screen" mark. It qualifies the
+         label it follows, so it is a SUFFIX inside the label rather than a
+         second gutter: it appears on 9 rows of 39, and a reserved column for
+         it would take width off all 39 to warn about a quarter of them.
+         A step ABOVE the randomize gutter (#9c96b8, the muted text color)
+         rather than below it -- this one is a warning and that one is a
+         capability -- and still not the alarm amber, which means "blocked"
+         everywhere else on this display. `margin-left` and not a space in the
+         text node, so the gap survives any future white-space collapsing. */
+      .tuner-rebuild { margin-left: 0.35em; color: #9c96b8; }
       .tuner-group { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
                      color: #9c96b8; margin: 1rem 0 0.4rem;
                      border-bottom: 1px solid #ffffff14; padding-bottom: 0.2rem; }

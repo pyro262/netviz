@@ -34,10 +34,10 @@
 //   preview  the UNWRAPPED applier. A drag changes the wall and stores
 //            nothing, so experimenting costs nothing and a reload undoes it.
 //   Keep     savePatch() of the touched paths only.
-// Persisting all 24 would freeze two dozen values at today's config.js
+// Persisting all 39 would freeze three dozen values at today's config.js
 // numbers, after which the display silently stops tracking any later change
 // to them -- the exact failure `traffic.extraResolvers` was just fixed for.
-import { tunerRows, isRandomized, randomizeScope } from './tuner.js';
+import { tunerRows, isRandomized, randomizeScope, clearsArcs } from './tuner.js';
 import { defaultOf, entry, settingLabel } from './settings.js';
 import { savePatch } from './rulestore.js';
 
@@ -83,9 +83,18 @@ export function revertPatch(snapshot, dirty) {
 //   * Which rows is `tuner.js`'s per-row `randomize` flag, and the rule is
 //     "changing it changes the current frame" -- see the long note above
 //     `GROUPS` for why that is a judgement per row rather than a group check.
-//     17 of the 23 sliders qualify; the camera's five walk values and the star
-//     ramp change how the wall BEHAVES over the next few minutes, not how it
-//     looks now.
+//     29 of the 38 sliders qualify; the camera's five walk values, the star
+//     ramp and the three arc head speeds change how the wall BEHAVES over the
+//     seconds and minutes after, not how it looks now.
+//   * NINE OF THE ROWS IT ROLLS CLEAR THE ARC POOL, and that is one blank and
+//     one refill rather than nine. Randomize applies one path at a time, so
+//     nine `rebuild` rows really do call `arcs.rebuild()` nine times in one
+//     click -- but that function only flips `active`/`visible` off on every
+//     pool slot, with nothing allocated or disposed, and all nine run
+//     synchronously inside the click handler before a frame is drawn. The
+//     second through ninth pass over an already-empty pool. So the calls
+//     compound and the effect does not: the wall blanks once and refills from
+//     the live feed, exactly as one drag of one of those rows does.
 //   * Sliders only, on top of the flag. The one non-slider that is not a
 //     checkbox is `appearance.background`, whose luminance cap REFUSES rather
 //     than clamps -- a randomizer that spent half its rolls being refused would
@@ -164,6 +173,32 @@ export function randomizeValue(row, rand = Math.random) {
 export const RANDOM_MARK = '•';
 
 /**
+ * The mark that says "dragging this row clears the arcs on screen".
+ *
+ * WHY THE PANEL HAS TO SAY THIS AT ALL. Three of the arc-shape fields --
+ * thickness, arc height and apex cap -- are baked into a slot's TubeGeometry
+ * when the arc spawns, so `arcs.setSpec` cannot bend an arc already in the
+ * air; the handler retires the whole pool instead and the wall refills over
+ * the next few seconds. That is correct and there is no version of it that is
+ * not: the alternative is a control that appears dead until a block happens to
+ * arrive, and block arcs live 18s and arrive rarely. What is NOT acceptable is
+ * an unannounced one. On a wall, every arc vanishing the instant you touch a
+ * slider reads as the collector dying, and the person tuning is the last
+ * person who should be guessing whether they just broke the feed.
+ *
+ * A SUFFIX INSIDE THE LABEL, not a second gutter. The randomize mark is a
+ * fixed-width gutter because it has to keep every label in one column; this
+ * one appears on 9 rows of 39 and trails the words it qualifies, so it costs
+ * no width on the rows that do not carry it and cannot shift the label column
+ * on the ones that do. Same structural safety as the gutter: `.tuner-row` sets
+ * no `flex-wrap`, so a label short of room wraps inside itself.
+ *
+ * One constant, used by the rows and by the sentence that explains them --
+ * same rule as RANDOM_MARK, and for the same reason.
+ */
+export const REBUILD_MARK = '↻';
+
+/**
  * What the panel prints about Randomize's scope, in visible copy.
  *
  * NOT A TOOLTIP, and that is the whole point of this function existing. The
@@ -184,6 +219,30 @@ export function randomizeScopeLine(scope = randomizeScope()) {
   return `Randomize changes only the ${count} settings that affect how the `
        + `display looks -- the rows marked ${RANDOM_MARK} below. It leaves the `
        + `other ${heldCount} as they are, including the camera's timings.`;
+}
+
+/**
+ * What the panel prints about the rebuilding rows, in visible copy beside the
+ * randomize scope.
+ *
+ * The count is DERIVED from the rows, for the same reason the randomize scope
+ * is: the set is whatever `settings.js` declares `rebuild`, and a number typed
+ * here would be a claim on a wall that nothing holds to the schema.
+ *
+ * It names the consequence AND the reassurance, the way confirm.js's questions
+ * carry both a `will` and a `wont`: "every arc disappears" alone reads as a
+ * fault report, and the half that says they come straight back is what makes
+ * the first half worth printing. Returns the empty string when no row on the
+ * panel rebuilds, so a future panel that drops them all is silent rather than
+ * explaining a mark nobody can see.
+ */
+export function rebuildNoteLine(rows = tunerRows()) {
+  const n = rows.filter(clearsArcs).length;
+  if (!n) return '';
+  return `The ${n} rows marked ${REBUILD_MARK} change the SHAPE of an arc, `
+       + `which is built when the arc is drawn. Dragging one clears the arcs `
+       + `on screen and they come back over the next few seconds. That is the `
+       + `setting working, not the feed dropping.`;
 }
 
 /**
@@ -242,7 +301,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
  *  that it stops being an answer and becomes a wall of text. Randomize is what
  *  made this concrete: a Close after one names every pending setting in a
  *  single sentence -- 615 characters at the 23 rows it moved before the look
- *  rule landed, and still hundreds at today's 17 -- in a dialog whose whole
+ *  rule landed, and still hundreds at today's 29 -- in a dialog whose whole
  *  argument is that people read it. The COUNT is always exact and always first, so nothing is hidden;
  *  only the enumeration is bounded. */
 const NAME_LIMIT = 6;
@@ -252,7 +311,7 @@ const NAME_LIMIT = 6;
  *  Over the limit it truncates and says so, rather than either printing
  *  everything or silently listing the first few as though they were all of
  *  them. The remainder is always `paths.length - limit`, so a full Randomize --
- *  17 rows at the time of writing, 23 before the look rule narrowed the set --
+ *  29 rows at the time of writing, 17 before the arc-shape group was added --
  *  reads "..., and 11 more". The figure moves with the set, which is why it is
  *  derived here and stated with its date rather than written down as a
  *  constant somebody would later reason from. */
@@ -477,6 +536,17 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
       mark.title = 'Randomize can change this setting.';
     }
     label.append(mark, document.createTextNode(spec.label));
+    // The rebuild suffix, emitted only on the rows that rebuild -- unlike the
+    // randomize gutter, which is reserved on every row. It trails the label
+    // text, so an absent one costs nothing and a present one cannot move the
+    // label column. See REBUILD_MARK.
+    if (clearsArcs(spec)) {
+      row.classList.add('tuner-rebuilds');
+      const rb = el('span', 'tuner-rebuild', REBUILD_MARK);
+      rb.title = 'Changing this clears the arcs on screen; they come back over '
+               + 'the next few seconds.';
+      label.append(rb);
+    }
     row.append(label);
 
     const refs = { row };
@@ -624,7 +694,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
    *  is undone by the Revert button sitting immediately beside it. A dialog in
    *  front of a button whose entire point is to be quick is also the kind
    *  people learn to click through, which is what would make the other three
-   *  stop being read. The net is already there: with 17 rows pending, Close
+   *  stop being read. The net is already there: with 29 rows pending, Close
    *  asks.
    *
    *  A REFUSED ROW IS NAMED, never counted out silently. `write()` puts the
@@ -664,7 +734,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     // be used while watching that globe -- a scrim would dim the very thing
     // every one of these rows is being judged against.
     // ALL THREE BUTTONS IN THE HEADER, and the pending count and the feedback
-    // line with them. Revert and Keep used to sit in a footer below 24 rows,
+    // line with them. Revert and Keep used to sit in a footer below the rows,
     // where the display this runs on reported never having seen them at all:
     // the panel is a scrolling rail, so a control past the fold is a control
     // that does not exist. Order is Revert, Keep, Close -- the exit on the
@@ -698,9 +768,25 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     close.addEventListener('click', () => requestClose());
     actions.append(randomBtn, revertBtn, keepBtn, close);
     head.append(actions);
-    node.append(head);
-    node.append(el('div', 'tuner-count', 'No changes'));
-    node.append(el('div', 'tuner-note', ''));
+    // The header, the pending count and the feedback line ride in one STICKY
+    // block, and that is what makes the four buttons reachable now the panel
+    // is 39 rows deep. The panel scrolls -- 1975px of content against a
+    // 1440px screen at the shipped 380px width, and 3636px at the clamped
+    // 189px one -- so a header pinned to the top of the DOCUMENT flow is a
+    // header that is off screen the moment anybody scrolls to the arc-shape
+    // group at the bottom. That is the same failure that moved these buttons
+    // out of a footer in the first place, arrived at from the other end: a
+    // control past the fold is a control that does not exist.
+    //
+    // All three together rather than the header alone: the count is what
+    // Revert and Keep act on and the note is what they report, so a pinned row
+    // of buttons over a scrolled-away count would be the answer without the
+    // question.
+    const sticky = el('div', 'tuner-sticky');
+    sticky.append(head);
+    sticky.append(el('div', 'tuner-count', 'No changes'));
+    sticky.append(el('div', 'tuner-note', ''));
+    node.append(sticky);
 
     node.append(el('p', 'tuner-lead',
       'Changes show on the wall immediately and are forgotten on the next '
@@ -713,6 +799,15 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     // touches), and the mark's key has to be findable at a glance rather than
     // read out of a block.
     node.append(el('p', 'tuner-lead tuner-scope', randomizeScopeLine()));
+
+    // The rebuild key, in its own paragraph for the same reason the scope is:
+    // a mark on a row is only a key if something on the panel says what it
+    // means, and a wall display is not hovered. Appended conditionally so an
+    // empty line is never drawn -- see rebuildNoteLine.
+    const rebuildLine = rebuildNoteLine();
+    if (rebuildLine) {
+      node.append(el('p', 'tuner-lead tuner-rebuild-note', rebuildLine));
+    }
 
     const body = el('div', 'tuner-body');
     let seen = null;

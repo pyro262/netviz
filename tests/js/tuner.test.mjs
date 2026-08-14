@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GROUPS, tunerRows, stepFor, isRandomized, randomizeScope,
+  GROUPS, tunerRows, stepFor, isRandomized, randomizeScope, clearsArcs,
 } from '../../netviz/static/js/tuner.js';
 import { entry, defaultOf } from '../../netviz/static/js/settings.js';
+import { ARC_REBUILD_KEYS } from '../../netviz/static/js/apply.js';
 
 /** The control a path will be drawn with, read the way tuner.js reads it --
  *  from the schema type -- so a test over raw GROUPS rows does not need a
@@ -17,11 +18,11 @@ test('every row names a path the schema actually declares', () => {
   }
 });
 
-test('the panel shows 24 rows in three groups', () => {
+test('the panel shows 39 rows in four groups', () => {
   const rows = tunerRows();
-  assert.equal(rows.length, 24);
+  assert.equal(rows.length, 39);
   assert.deepEqual([...new Set(rows.map((r) => r.group))],
-                   ['appearance', 'arcs', 'camera']);
+                   ['appearance', 'arcs', 'arcshape', 'camera']);
 });
 
 test('no path appears twice, and no label repeats inside a group', () => {
@@ -102,6 +103,15 @@ const RANDOMIZE_EXCLUDED = [
   'camera.walk.spanDegrees',
   'camera.walk.rampFloor',
   'camera.walk.degreesPerSecond',
+  // How fast the traveling head runs, which is the one arc field re-read from
+  // the spec every frame -- so it applies instantly and STILL fails the rule.
+  // Every head is left exactly where it already was; only the rate it advances
+  // at changes, so the frame at the instant of the change is identical and the
+  // difference accumulates over the seconds after. "Applies live" and "changes
+  // the current frame" are two different questions.
+  'arcs.flow.speed',
+  'arcs.block.speed',
+  'arcs.highlight.speed',
 ];
 
 test('every slider declares randomize explicitly, never by default', () => {
@@ -128,21 +138,31 @@ test('tunerRows refuses a slider with no randomize flag', () => {
   } finally {
     good.randomize = saved;
   }
-  assert.equal(tunerRows().length, 24, 'the table was not put back');
+  assert.equal(tunerRows().length, 39, 'the table was not put back');
 });
 
-test('the randomized set is 17 sliders, and the excluded six are these six', () => {
+test('the randomized set is 29 sliders, and the excluded nine are these nine', () => {
   // A count alone is passed by a swap. The names are what hold the rule: the
   // camera's distance is IN despite living in "Camera pacing" (it is how big
-  // the globe is, visible in the first frame), and the star ramp is OUT
-  // despite living in "Appearance".
+  // the globe is, visible in the first frame), the star ramp is OUT despite
+  // living in "Appearance", and an arc's `life` is IN while its `speed` is OUT
+  // despite the two sitting side by side in one group.
   const rows = tunerRows();
   const on = rows.filter((r) => r.control === 'slider' && r.randomize);
   const off = rows.filter((r) => r.control === 'slider' && !r.randomize);
-  assert.equal(on.length, 17, `randomized ${on.length} sliders`);
+  assert.equal(on.length, 29, `randomized ${on.length} sliders`);
   assert.deepEqual(off.map((r) => r.path).sort(), [...RANDOMIZE_EXCLUDED].sort());
   assert.ok(on.some((r) => r.path === 'camera.distance'),
             'camera.distance is a look setting and must be randomized');
+  // The pair the arc-shape group turns on, asserted as a pair: `life` is
+  // pushed into the arcs already in the air, so the wall empties or fills in
+  // the same frame; `speed` leaves every head where it is.
+  for (const cls of ['flow', 'block', 'highlight']) {
+    assert.ok(on.some((r) => r.path === `arcs.${cls}.life`),
+              `arcs.${cls}.life retires live arcs now and must be randomized`);
+    assert.ok(off.some((r) => r.path === `arcs.${cls}.speed`),
+              `arcs.${cls}.speed changes a rate, not the frame`);
+  }
   assert.equal(on.length + off.length, rows.filter((r) => r.control === 'slider').length);
 });
 
@@ -187,8 +207,8 @@ test('randomizeScope partitions every row, and rolled matches the flag', () => {
   assert.deepEqual([...scope.rolled, ...scope.held].map((r) => r.path).sort(),
                    rows.map((r) => r.path).sort());
   // Today's numbers, stated so a change is deliberate rather than unnoticed.
-  assert.equal(scope.count, 17);
-  assert.equal(scope.heldCount, 7);
+  assert.equal(scope.count, 29);
+  assert.equal(scope.heldCount, 10);
 });
 
 test('the scope moves with the table rather than being written down', () => {
@@ -197,9 +217,51 @@ test('the scope moves with the table rather than being written down', () => {
   const group = GROUPS.find((g) => g.id === 'arcs');
   const removed = group.rows.pop();
   try {
-    assert.equal(randomizeScope().count, 16);
+    assert.equal(randomizeScope().count, 28);
   } finally {
     group.rows.push(removed);
   }
-  assert.equal(randomizeScope().count, 17, 'the table was not put back');
+  assert.equal(randomizeScope().count, 29, 'the table was not put back');
+});
+
+// ------------------------------------------------- the rows that rebuild --
+//
+// Three arc fields are baked into a slot's TubeGeometry at spawn, so changing
+// one clears the pool and the wall refills over the next few seconds. The
+// panel marks those rows, and these hold the mark to the SCHEMA rather than to
+// a list -- a warning on a row that does not clear, or a row that clears with
+// no warning, are both a display saying something untrue about itself.
+
+test('a row rebuilds exactly when its schema entry says rebuild', () => {
+  for (const row of tunerRows()) {
+    assert.equal(row.rebuilds, entry(row.path).strategy === 'rebuild', row.path);
+    assert.equal(clearsArcs(row), row.rebuilds, row.path);
+  }
+  assert.equal(clearsArcs(null), false);
+  assert.equal(clearsArcs({ rebuilds: 'yes' }), false, 'only a real true counts');
+});
+
+test('the rebuilding rows are the three geometry fields on all three classes', () => {
+  // Named, not counted, and derived from apply.js's own ARC_REBUILD_KEYS --
+  // the list the handler that clears the pool reads. A test that only counted
+  // nine would pass a swap, and a fourth list written out here is exactly the
+  // drift the derivation exists to prevent.
+  const want = [];
+  for (const cls of ['flow', 'block', 'highlight']) {
+    for (const key of ARC_REBUILD_KEYS) want.push(`arcs.${cls}.${key}`);
+  }
+  const got = tunerRows().filter(clearsArcs).map((r) => r.path);
+  assert.deepEqual(got.sort(), want.sort());
+  assert.equal(got.length, 9);
+});
+
+test('every rebuilding row on the panel is one Randomize can roll', () => {
+  // Not a coincidence and not a requirement of the schema: all three geometry
+  // fields change the picture now, so all nine carry both marks. Stated so
+  // that if one is ever held back, the pool-clear count in the randomizer's
+  // note has to be revisited rather than quietly becoming wrong.
+  for (const row of tunerRows()) {
+    if (!clearsArcs(row)) continue;
+    assert.ok(isRandomized(row), `${row.path} rebuilds but is held back`);
+  }
 });
