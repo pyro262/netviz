@@ -280,6 +280,44 @@ export function ruleBoxMetrics(boxHeight, rowHeights) {
 }
 
 /**
+ * The rail's CONTENT height: its children, its gaps and its own padding.
+ *
+ * WHY NOT `scrollHeight`, WHICH THIS REPLACED. #rail is a flex column and
+ * `.rail-foot` carries `margin-top: auto`, so every spare pixel is absorbed as
+ * flex slack and there is nothing to scroll until the content genuinely
+ * overflows. Until then `scrollHeight === clientHeight` exactly, which made
+ * `available - other` collapse to `boxHeight`: the fitter handed the rule panel
+ * precisely the room it already occupied, so free space could never reach it
+ * and the only question left was whether the panel's own rows divided evenly.
+ * They do not -- a fired row is 77px against an idle row's 41.4px and
+ * `ruleBoxMetrics` takes the max -- so the fit lost a row on every draw at every
+ * viewport. Measured live at 2560x1440: three rules with `maxRules: 2` drew one
+ * row and a "+2 more" with ~315px of rail standing empty. It is the same class
+ * of error as the negative chrome above, in the opposite direction: there the
+ * fitter invented room, here it hid room that was really there.
+ *
+ * The flex slack is deliberately excluded rather than counted: that slack IS
+ * the space being competed for, so folding it into `other` would be the bug
+ * again by another route.
+ *
+ * Pure for the same reason `fitRuleCap` is -- the caller reads the rects and
+ * the computed style, this does the arithmetic, and the decision is proved
+ * under `node --test`.
+ *
+ * @param childHeights each direct child's rendered height, in px.
+ * @param gap          the column's `row-gap`; applied between children only.
+ * @param padding      the rail's own top plus bottom padding, which
+ *                     `clientHeight` includes and so must be counted here too.
+ */
+export function railContentHeight({ childHeights, gap, padding }) {
+  const kids = (Array.isArray(childHeights) ? childHeights : []).filter((h) => h > 0);
+  if (!kids.length) return 0;
+  const g = gap > 0 ? gap : 0;
+  const pad = padding > 0 ? padding : 0;
+  return kids.reduce((a, b) => a + b, 0) + g * (kids.length - 1) + pad;
+}
+
+/**
  * How many rule rows actually FIT, given what the rail measured about itself.
  *
  * THE PROBLEM, MEASURED BEFORE IT WAS BUILT. `rail.maxRules` is bounded 1..20
@@ -601,7 +639,10 @@ export function start(counter, classColors) {
    *  `other` is the whole rail minus the rule panel, so it carries the head,
    *  the other panels, the foot and the flex gaps without this function
    *  knowing what any of them are -- a list of what to add up would go stale
-   *  the first time a panel is added. */
+   *  the first time a panel is added.
+   *
+   *  It comes from `railContentHeight`, NOT from `scrollHeight`, and that is
+   *  the whole correctness of the fit -- see the note on that function. */
   const measure = () => {
     const box = root.querySelector('.rail-panel-rules');
     if (!box) return null;
@@ -614,9 +655,15 @@ export function start(counter, classColors) {
     const metrics = ruleBoxMetrics(
       boxH, [...rows].map((r) => r.getBoundingClientRect().height));
     if (!metrics) return null;
+    const style = getComputedStyle(root);
+    const content = railContentHeight({
+      childHeights: [...root.children].map((el) => el.getBoundingClientRect().height),
+      gap: parseFloat(style.rowGap),
+      padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+    });
     return {
       available: root.clientHeight,
-      other: root.scrollHeight - boxH,
+      other: content - boxH,
       ...metrics,
     };
   };

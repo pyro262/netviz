@@ -535,7 +535,7 @@ test('the shape test PREVENTS the call, it does not merely survive it', () => {
 // and a scrollbar alone is no answer on a wall nobody is standing at. These
 // hold the arithmetic that decides how many rows are drawn instead.
 
-import { fitRuleCap, ruleBoxMetrics } from '../../netviz/static/js/rail.js';
+import { fitRuleCap, railContentHeight, ruleBoxMetrics } from '../../netviz/static/js/rail.js';
 
 // One row 30px, 200px of other panels, 40px of panel chrome. 600 - 200 - 40 is
 // 360px of room, so 12 rows fit.
@@ -721,4 +721,45 @@ test('rulePanel tags itself so the fitter can find it', () => {
   const c = createClassCounter();
   const p = rulePanel([{ match: 'DE', color: '#111111' }], c, 1000, 5);
   assert.equal(p.id, 'rules');
+});
+
+test('the rail is measured by its content, not by its scroll height', () => {
+  // THE BUG THIS EXISTS FOR, measured live at 2560x1440 against the real
+  // container: three rules with `maxRules: 2` drew ONE rule row plus a
+  // "+2 more", with ~315px of the rail standing empty below the foot.
+  //
+  // `measure()` derived `other` as `scrollHeight - boxHeight`. #rail is a flex
+  // column whose `.rail-foot` carries `margin-top: auto`, so until content
+  // genuinely exceeds the viewport there is nothing to scroll and
+  // `scrollHeight === clientHeight`. That makes `available - other` collapse to
+  // `boxHeight` -- the fitter hands the panel exactly the room it already
+  // occupies, every time, and free space can never reach it. With rows of two
+  // different heights (77px fired, 41.4px idle) `floor(boxHeight / 77)` then
+  // undercounts, so the panel loses a row on every draw regardless of viewport.
+  //
+  // The content height is the sum of the rail's own children plus its gaps and
+  // padding -- the flex slack the `margin-top: auto` opens up is deliberately
+  // NOT part of it, since that slack is precisely the room being competed for.
+  const kids = [40, 223, 347, 177, 171, 20];   // head, three panels, rules, foot
+  const boxHeight = 171;
+  const content = railContentHeight({ childHeights: kids, gap: 20.16, padding: 46 });
+  assert.ok(Math.abs(content - 1124.8) < 0.5, `content measured ${content}`);
+
+  const rows = [77, 41.4];
+  const common = { available: 1440, other: content - boxHeight, total: 3, maxRules: 2 };
+  assert.equal(fitRuleCap({ ...common, ...ruleBoxMetrics(boxHeight, rows) }), 2);
+
+  // The old arithmetic, for the record: it reduces to 1 on the same numbers.
+  const scrollHeight = 1440;                    // no overflow -> equals available
+  assert.equal(fitRuleCap({
+    ...common, other: scrollHeight - boxHeight, ...ruleBoxMetrics(boxHeight, rows),
+  }), 1);
+});
+
+test('railContentHeight refuses what it cannot measure', () => {
+  assert.equal(railContentHeight({ childHeights: [], gap: 10, padding: 4 }), 0);
+  assert.equal(railContentHeight({ childHeights: null, gap: NaN, padding: NaN }), 0);
+  // One child means no gap at all, not one gap.
+  assert.equal(railContentHeight({ childHeights: [100], gap: 20, padding: 0 }), 100);
+  assert.equal(railContentHeight({ childHeights: [100, 100], gap: 20, padding: 0 }), 220);
 });
