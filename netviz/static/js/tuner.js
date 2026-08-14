@@ -24,6 +24,45 @@
 // watches.
 import { entry } from './settings.js';
 
+/**
+ * `randomize` — the rule, written here because it is a judgement per row.
+ *
+ * A ROW IS RANDOMIZED IF CHANGING IT CHANGES THE CURRENT FRAME. Not how the
+ * display behaves over the next two minutes: how it looks right now. Randomize
+ * is a "show me something else" button, so what it may touch is what the eye
+ * sees the instant it is clicked.
+ *
+ * That is why the flag is PER ROW and must not be replaced by a group check or
+ * a path prefix. Two rows sit against their own group's intuition, and a rule
+ * derived from the group name gets both of them wrong:
+ *
+ *   * `camera.distance` is IN, and it lives in "Camera pacing". It is not
+ *     pacing at all -- it is how big the globe is on the wall, visible in the
+ *     first frame after it changes.
+ *   * `appearance.starRampMinutes` is OUT, and it lives in "Appearance". It
+ *     only sets how fast star brightness crosses dawn and dusk, so unless the
+ *     display happens to be inside a ramp at that moment, the frame is
+ *     identical before and after.
+ *
+ * The five `camera.walk.*` rows are out for the same reason as the ramp: they
+ * change the camera's MOTION rather than its picture, so randomizing them
+ * makes the wall behave oddly for the next few minutes -- which is not what a
+ * look-at-this button is for, and is far harder to notice you have done than a
+ * color that just changed.
+ *
+ * `appearance.background` is out too, and that one is decided twice over: it
+ * is a color control rather than a slider, and its luminance cap REFUSES
+ * rather than clamps, so a randomizer aimed at it would spend half its rolls
+ * being rejected over the one value that decides whether anything else on the
+ * wall is legible.
+ *
+ * Every slider row must declare the flag explicitly -- `tunerRows()` throws
+ * otherwise, and a test holds the set by name. A new row silently defaulting
+ * into or out of the set is the failure that check exists for: into, and the
+ * button starts moving something nobody decided it should; out of, and it
+ * quietly stops being part of the feature with nothing saying so.
+ */
+
 /** Labels are written out rather than derived from the path.
  *
  *  Three arc classes share the same field names, so a label taken from the
@@ -37,47 +76,51 @@ export const GROUPS = [
     id: 'appearance',
     label: 'Appearance',
     rows: [
-      { path: 'appearance.bloom.strength', label: 'Bloom strength' },
-      { path: 'appearance.bloom.radius', label: 'Bloom radius' },
-      { path: 'appearance.bloom.threshold', label: 'Bloom threshold' },
-      { path: 'appearance.bloom.knee', label: 'Bloom knee' },
-      { path: 'appearance.background', label: 'Background color' },
-      { path: 'appearance.starBrightness', label: 'Star brightness' },
-      { path: 'appearance.starDayGain', label: 'Star gain by day' },
-      { path: 'appearance.starRampMinutes', label: 'Star ramp minutes' },
+      { path: 'appearance.bloom.strength', label: 'Bloom strength', randomize: true },
+      { path: 'appearance.bloom.radius', label: 'Bloom radius', randomize: true },
+      { path: 'appearance.bloom.threshold', label: 'Bloom threshold', randomize: true },
+      { path: 'appearance.bloom.knee', label: 'Bloom knee', randomize: true },
+      { path: 'appearance.background', label: 'Background color',
+        // Not a slider, and its cap refuses rather than clamps -- see the
+        // note above `GROUPS`. Written out rather than left to the default so
+        // the one non-slider row is not the one silent entry in the table.
+        randomize: false },
+      { path: 'appearance.starBrightness', label: 'Star brightness', randomize: true },
+      { path: 'appearance.starDayGain', label: 'Star gain by day', randomize: true },
+      { path: 'appearance.starRampMinutes', label: 'Star ramp minutes', randomize: false },
     ],
   },
   {
     id: 'arcs',
     label: 'Arcs',
     rows: [
-      { path: 'traffic.flowsPerSecond', label: 'Flows drawn per second' },
-      { path: 'arcs.bodyOpacity', label: 'Arc body opacity' },
+      { path: 'traffic.flowsPerSecond', label: 'Flows drawn per second', randomize: true },
+      { path: 'arcs.bodyOpacity', label: 'Arc body opacity', randomize: true },
       // No `arcs.highlight.colorAt`: a color rule carries its own color,
       // set per rule in the color-rules panel. The two fields a rule can
       // leave to the shared highlight spec are the two below.
-      { path: 'arcs.flow.colorAt', label: 'Flow color' },
-      { path: 'arcs.flow.gain', label: 'Flow gain' },
-      { path: 'arcs.flow.bloomScale', label: 'Flow glow' },
-      { path: 'arcs.block.colorAt', label: 'Block color' },
-      { path: 'arcs.block.gain', label: 'Block gain' },
-      { path: 'arcs.block.bloomScale', label: 'Block glow' },
-      { path: 'arcs.highlight.gain', label: 'Color rule gain' },
-      { path: 'arcs.highlight.bloomScale', label: 'Color rule glow' },
+      { path: 'arcs.flow.colorAt', label: 'Flow color', randomize: true },
+      { path: 'arcs.flow.gain', label: 'Flow gain', randomize: true },
+      { path: 'arcs.flow.bloomScale', label: 'Flow glow', randomize: true },
+      { path: 'arcs.block.colorAt', label: 'Block color', randomize: true },
+      { path: 'arcs.block.gain', label: 'Block gain', randomize: true },
+      { path: 'arcs.block.bloomScale', label: 'Block glow', randomize: true },
+      { path: 'arcs.highlight.gain', label: 'Color rule gain', randomize: true },
+      { path: 'arcs.highlight.bloomScale', label: 'Color rule glow', randomize: true },
     ],
   },
   {
     id: 'camera',
     label: 'Camera pacing',
     rows: [
-      { path: 'camera.distance', label: 'Distance from globe' },
+      { path: 'camera.distance', label: 'Distance from globe', randomize: true },
       // Note the `walk.` segment on all five below: `camera.cycleSeconds`
       // does not exist.
-      { path: 'camera.walk.cycleSeconds', label: 'Cycle length' },
-      { path: 'camera.walk.holdSeconds', label: 'Hold over traffic' },
-      { path: 'camera.walk.spanDegrees', label: 'Walk span' },
-      { path: 'camera.walk.rampFloor', label: 'Walk ramp floor' },
-      { path: 'camera.walk.degreesPerSecond', label: 'Walk speed cap' },
+      { path: 'camera.walk.cycleSeconds', label: 'Cycle length', randomize: false },
+      { path: 'camera.walk.holdSeconds', label: 'Hold over traffic', randomize: false },
+      { path: 'camera.walk.spanDegrees', label: 'Walk span', randomize: false },
+      { path: 'camera.walk.rampFloor', label: 'Walk ramp floor', randomize: false },
+      { path: 'camera.walk.degreesPerSecond', label: 'Walk speed cap', randomize: false },
     ],
   },
 ];
@@ -115,6 +158,13 @@ export function tunerRows() {
       if (!e) throw new Error(`tuner: no such setting ${row.path}`);
       const control = CONTROL[e.type];
       if (!control) throw new Error(`tuner: no control for ${e.type} (${row.path})`);
+      // Explicit, never defaulted: a slider that forgot the flag would either
+      // join the randomizer or drop out of it silently, and both are decisions
+      // nobody made. Same shape as the schema's "every number declares both
+      // bounds" -- refuse at construction, with the offender named.
+      if (control === 'slider' && typeof row.randomize !== 'boolean') {
+        throw new Error(`tuner: ${row.path} does not declare randomize`);
+      }
       const item = {
         path: row.path,
         group: group.id,
@@ -122,6 +172,7 @@ export function tunerRows() {
         label: row.label,
         control,
         help: e.help,
+        randomize: row.randomize === true,
       };
       if (control === 'slider') {
         item.min = e.min;

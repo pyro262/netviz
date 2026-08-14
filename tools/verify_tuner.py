@@ -28,9 +28,15 @@ promises reaches there at all:
     `requestClose()` rather than the force-close, so picking "Color rules..."
     over unkept changes asks instead of discarding them silently, and a
     Cancel leaves the rules panel shut and the changes pending;
-  * that Shuffle rolls every slider inside its own schema bounds, marks each
-    row dirty exactly as a drag does, asks nothing, and is undone by one
-    Revert;
+  * that Randomize rolls the rows that change what the display LOOKS like --
+    `tuner.js`'s per-row `randomize` flag, 17 of the 23 sliders -- inside
+    their own schema bounds, leaves the camera pacing and the star ramp
+    untouched, marks each row it moves dirty exactly as a drag does, asks
+    nothing, and is undone by one Revert;
+  * that every clickable control lights under the pointer and a DISABLED one
+    does not -- a disabled button that lifts is a control lying about being
+    clickable, and the guard that stops it is a computed style no unit test
+    in this repo can see;
   * and that the camera is held for the whole time the panel is open, then
     handed back on the MENU's short delay rather than the drag's long one.
 
@@ -719,8 +725,96 @@ def case7_camera_held(page, cx, cy) -> bool:
         f"{max_idle:.2f}s -- the per-frame pokes keep it near 0); {tail}")
 
 
-def case10_small_viewport(page) -> bool:
-    """10: on a small viewport the slice is clamped, and the stage stays usable.
+def case10_hover(page, cx, cy) -> bool:
+    """10: a clickable button changes under the pointer, and a DISABLED one
+    does not.
+
+    The disabled half is the whole point and is the easy one to regress: Keep
+    and Revert are disabled with nothing pending, and a disabled button that
+    lights up is a control lying about being clickable. Dropping the
+    `:not(:disabled)` guard from the CSS is a one-character mistake that no
+    unit test in this repo can see, because it is a computed style on a real
+    element under a real pointer.
+
+    Both directions are asserted in one case on purpose. "The disabled button
+    did not change" is also what a hover rule that does not exist at all looks
+    like, so it is only evidence when the enabled button, hovered the same way
+    on the same page, does change."""
+    close_panel(page)
+    page.wait_for_timeout(250)
+    if not open_menu_and_click(page, "settings", cx, cy):
+        return report("10: hover lifts a clickable button and never a disabled "
+                      "one", False, "could not open the panel")
+    page.wait_for_timeout(400)
+
+    def bg(sel):
+        return page.evaluate("""(sel) => {
+          const b = document.querySelector(sel);
+          if (!b) return null;
+          const cs = getComputedStyle(b);
+          return {bg: cs.backgroundColor, border: cs.borderTopColor,
+                  cursor: cs.cursor, disabled: !!b.disabled};
+        }""", sel)
+
+    # Nothing pending yet, so Keep is disabled. Move the pointer well away
+    # first: a hover left over from the click that opened the panel would make
+    # the "resting" reading a hovered one.
+    page.mouse.move(cx, cy)
+    page.wait_for_timeout(150)
+    keep_rest = bg(".tuner-keep")
+    page.hover(".tuner-keep")
+    page.wait_for_timeout(200)
+    keep_hover = bg(".tuner-keep")
+    disabled_ok = (keep_rest and keep_rest["disabled"]
+                   and keep_hover["bg"] == keep_rest["bg"]
+                   and keep_hover["border"] == keep_rest["border"]
+                   # ...and it does not claim to be clickable either.
+                   and keep_hover["cursor"] != "pointer")
+
+    # Randomize is never disabled, so it is the control that proves the rule
+    # exists at all -- read at rest first, from a pointer parked elsewhere.
+    page.mouse.move(cx, cy)
+    page.wait_for_timeout(150)
+    rnd_rest = bg(".tuner-randomize")
+    page.hover(".tuner-randomize")
+    page.wait_for_timeout(200)
+    rnd_hover = bg(".tuner-randomize")
+    enabled_ok = (rnd_rest and not rnd_rest["disabled"]
+                  and rnd_hover["bg"] != rnd_rest["bg"]
+                  and rnd_hover["cursor"] == "pointer")
+
+    # Now make something pending so Keep ENABLES, and hover the same button
+    # again: same element, same gesture, opposite answer.
+    out = drag_slider(page, OPACITY, OPACITY_TARGET)
+    if out.get("error"):
+        return report("10: hover lifts a clickable button and never a disabled "
+                      "one", False, out["error"])
+    page.mouse.move(cx, cy)
+    page.wait_for_timeout(150)
+    keep_rest2 = bg(".tuner-keep")
+    page.hover(".tuner-keep")
+    page.wait_for_timeout(200)
+    keep_hover2 = bg(".tuner-keep")
+    enabled_keep_ok = (keep_rest2 and not keep_rest2["disabled"]
+                       and keep_hover2["bg"] != keep_rest2["bg"]
+                       and keep_hover2["cursor"] == "pointer")
+
+    close_panel(page)
+    page.wait_for_timeout(300)
+
+    ok = disabled_ok and enabled_ok and enabled_keep_ok
+    return report(
+        "10: hover lifts a clickable button and never a disabled one", ok,
+        f"Keep disabled: {keep_rest['bg']} -> {keep_hover['bg']} "
+        f"(unchanged={keep_hover['bg'] == keep_rest['bg']}, cursor="
+        f"{keep_hover['cursor']}); Randomize enabled: {rnd_rest['bg']} -> "
+        f"{rnd_hover['bg']} (changed={rnd_hover['bg'] != rnd_rest['bg']}); Keep "
+        f"once enabled: {keep_rest2['bg']} -> {keep_hover2['bg']} "
+        f"(changed={keep_hover2['bg'] != keep_rest2['bg']})")
+
+
+def case11_small_viewport(page) -> bool:
+    """11: on a small viewport the slice is clamped, and the stage stays usable.
 
     ITS OWN CASE, not folded into case 2, for one reason: it has to resize the
     viewport, and case 2's whole strength is a byte-exact comparison at the
@@ -816,7 +910,7 @@ def case10_small_viewport(page) -> bool:
     ok = (clicked and panel_is_really_open(state) and usable and aspect_ok
           and majority and matches and buttons_ok)
     return report(
-        f"10: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
+        f"11: at {SMALL_VIEWPORT[0]}x{SMALL_VIEWPORT[1]} the slice is clamped and "
         "the stage stays usable", ok,
         f"viewport {after['vw']}px: stage {before['stage']['w']} -> "
         f"{after['stage']['w']} (slice {slice_w}, panel {panel_w}, agree={matches}), "
@@ -930,24 +1024,31 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
         f"live -> {after['live']} store unchanged={after['store'] == store_base}")
 
 
-def case9_shuffle(page, cx, cy) -> bool:
-    """9: Shuffle moves every slider, inside the bounds, with no dialog -- and
-    one Revert puts the whole lot back.
+def case9_randomize(page, cx, cy) -> bool:
+    """9: Randomize moves the LOOK rows and only those, inside the bounds, with
+    no dialog -- and one Revert puts the whole lot back.
 
-    `shuffleValue` is proved against the real catalogue under `node --test`;
+    `randomizeValue` is proved against the real catalogue under `node --test`;
     what only a page can show is that the BUTTON is wired to it, that every row
     it touches is marked dirty exactly as a drag's is, that it does NOT ask
     (Keep, Revert and Close all do, and a dialog in front of the quick button is
     what would teach people to click through the other three), and that the
     values that land on the wall are the ones the applier accepted.
 
-    The bounds are read from tuner.js itself rather than written here, so a
-    schema change moves the assertion with the control."""
+    THE EXCLUDED ROWS ARE THE HALF THAT MATTERS. Asserting only that the 17
+    moved passes unchanged against a regression that quietly randomizes all 23
+    again -- the exact behavior this rule removed. The two sets are read from
+    `tuner.js`'s own `randomize` flag rather than listed here, so the case
+    follows the judgement rather than duplicating it, and `tuner.test.mjs` is
+    what holds the flag to the six paths by name.
+
+    The bounds are read from tuner.js itself too, so a schema change moves the
+    assertion with the control."""
     close_panel(page)
     page.wait_for_timeout(250)
     if not open_menu_and_click(page, "settings", cx, cy):
-        return report("9: Shuffle rolls every slider inside its bounds, and "
-                      "Revert puts them back", False, "could not open the panel")
+        return report("9: Randomize rolls the look rows and leaves the pacing "
+                      "alone", False, "could not open the panel")
     page.wait_for_timeout(400)
 
     store_base = read_store(page)
@@ -958,7 +1059,7 @@ def case9_shuffle(page, cx, cy) -> bool:
       for (const r of t.tunerRows()) out[r.path] = c.cfg(r.path, null);
       return out;
     }""")
-    clicked = click_panel_button(page, ".tuner-shuffle")
+    clicked = click_panel_button(page, ".tuner-randomize")
     page.wait_for_timeout(500)
     dialog = confirm_is_really_open(confirm_state(page))
     if dialog:
@@ -974,20 +1075,25 @@ def case9_shuffle(page, cx, cy) -> bool:
       }
       return {
         vals, bounds,
+        // The two sets, as the page itself reports them.
+        look: rows.filter((r) => r.control === 'slider' && r.randomize).map((r) => r.path),
+        held: rows.filter((r) => r.control === 'slider' && !r.randomize).map((r) => r.path),
         dirty: document.querySelectorAll('.tuner-row.tuner-dirty').length,
-        sliders: rows.filter((r) => r.control === 'slider').length,
         count: (document.querySelector('.tuner-count') || {}).textContent,
         note: (document.querySelector('.tuner-note') || {}).textContent,
       };
     }""")
 
+    look, held = after["look"], after["held"]
     inside = [p for p, b in after["bounds"].items()
               if not (b["min"] - 1e-9 <= after["vals"][p] <= b["max"] + 1e-9)]
     # Every non-slider must be untouched: the color row's luminance cap refuses
     # rather than clamps, so a randomizer reaching it would read as broken.
     others = [p for p in before
               if p not in after["bounds"] and after["vals"][p] != before[p]]
-    moved = sum(1 for p in after["bounds"] if after["vals"][p] != before[p])
+    moved = sum(1 for p in look if after["vals"][p] != before[p])
+    # The half that catches a regression back to randomizing everything.
+    strayed = [p for p in held if after["vals"][p] != before[p]]
 
     reverted_click, revert_dialog, revert_answered, _ = \
         click_and_confirm(page, ".tuner-revert")
@@ -1002,19 +1108,22 @@ def case9_shuffle(page, cx, cy) -> bool:
     restored = [p for p in before if back[p] != before[p]]
     store_after = read_store(page)
 
-    ok = (clicked and not dialog and not inside and not others
-          # A shuffle that moved one slider and left 20 alone is not a shuffle.
-          # Not `== sliders`: a roll can legitimately land a row back on the
-          # value it already held.
-          and moved >= after["sliders"] - 2
-          and after["dirty"] >= after["sliders"] - 2
+    ok = (clicked and not dialog and not inside and not others and not strayed
+          # A randomize that moved one row and left 16 alone is not a
+          # randomize. Not `== len(look)`: a roll can legitimately land a row
+          # back on the value it already held.
+          and len(look) == 17 and len(held) == 6
+          and moved >= len(look) - 2
+          # Only the look rows may be marked, so the mark count is bounded on
+          # BOTH sides -- a panel that dirtied all 23 fails here as well.
+          and len(look) - 2 <= after["dirty"] <= len(look)
           and reverted_click and revert_dialog and revert_answered
           and not restored and store_after == store_base)
     return report(
-        "9: Shuffle rolls every slider inside its bounds, and Revert puts them "
-        "back", ok,
-        f"clicked={clicked} asked={dialog} (must be False); {moved}/{after['sliders']} "
-        f"sliders moved, {after['dirty']} rows marked dirty, out of bounds={inside}, "
+        "9: Randomize rolls the look rows and leaves the pacing alone", ok,
+        f"clicked={clicked} asked={dialog} (must be False); {moved}/{len(look)} look "
+        f"sliders moved, {len(held)} excluded rows moved={strayed or 'none'}, "
+        f"{after['dirty']} rows marked dirty, out of bounds={inside}, "
         f"non-sliders touched={others}, note={after['note']!r}; after Revert "
         f"(asked={revert_dialog}): rows still changed={restored}, store unchanged="
         f"{store_after == store_base}")
@@ -1034,11 +1143,12 @@ def run(page, cx, cy) -> bool:
     ok &= case6_cancel_is_safe(page, cx, cy)
     ok &= case7_camera_held(page, cx, cy)
     ok &= case8_menu_mutual_exclusion(page, cx, cy)
-    ok &= case9_shuffle(page, cx, cy)
+    ok &= case9_randomize(page, cx, cy)
     # Last, because it resizes the viewport. It restores it, but a case that
     # moves the ground under the others is one that should have as little
     # after it as possible.
-    ok &= case10_small_viewport(page)
+    ok &= case10_hover(page, cx, cy)
+    ok &= case11_small_viewport(page)
     return ok
 
 

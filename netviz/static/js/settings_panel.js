@@ -74,23 +74,30 @@ export function revertPatch(snapshot, dirty) {
   return out;
 }
 
-// ------------------------------------------------------------- the shuffle --
+// ----------------------------------------------------------- the randomizer --
 //
-// Shuffle sets every SLIDER row to a random value inside its own schema bounds.
-// Three decisions are worth stating, because each one is the kind that gets
-// "simplified" later:
+// Randomize sets the rows that decide WHAT THE DISPLAY LOOKS LIKE to a random
+// value inside their own schema bounds. Four decisions are worth stating,
+// because each one is the kind that gets "simplified" later:
 //
-//   * Sliders only. The one non-slider that is not a checkbox is
-//     `appearance.background`, whose luminance cap REFUSES rather than clamps --
-//     a randomizer that spent half its rolls being refused would read as a
-//     broken button, and the ground color is the one value that decides whether
-//     anything else on the wall is legible at all.
-//   * All three groups, camera pacing included. The bounds ARE the safety:
-//     `camera.distance`'s 3.3 floor is the limb-clip threshold and
-//     `arcs.*.gain`'s 0.05 floor is what stops a class going black, so no
-//     reachable roll can produce an unreadable wall. That is the whole reason
-//     the bounds live in the schema rather than in the controls.
-//   * Snapped to the row's OWN step, so a shuffled value is one the slider
+//   * Which rows is `tuner.js`'s per-row `randomize` flag, and the rule is
+//     "changing it changes the current frame" -- see the long note above
+//     `GROUPS` for why that is a judgement per row rather than a group check.
+//     17 of the 23 sliders qualify; the camera's five walk values and the star
+//     ramp change how the wall BEHAVES over the next few minutes, not how it
+//     looks now.
+//   * Sliders only, on top of the flag. The one non-slider that is not a
+//     checkbox is `appearance.background`, whose luminance cap REFUSES rather
+//     than clamps -- a randomizer that spent half its rolls being refused would
+//     read as a broken button, and the ground color is the one value that
+//     decides whether anything else on the wall is legible at all.
+//   * The bounds ARE the safety: `camera.distance`'s 3.3 floor is the limb-clip
+//     threshold and `arcs.*.gain`'s 0.05 floor is what stops a class going
+//     black, so no reachable roll of any single row can produce an unreadable
+//     wall. That is the whole reason the bounds live in the schema rather than
+//     in the controls. (Per row -- a legal COMBINATION is still reachable, and
+//     Revert beside the button is what makes that survivable.)
+//   * Snapped to the row's OWN step, so a randomized value is one the slider
 //     could have been dragged to and the typed readout shows a number a person
 //     could write down -- not 0.18300000000000002.
 //
@@ -130,7 +137,7 @@ function decimalsOf(x) {
  * feeds in a SYNTHETIC row (0..1.3 by 0.5) rather than pretending a real one
  * exercises it. Do not write down that the catalogue proves this.
  */
-export function shuffleValue(row, rand = Math.random) {
+export function randomizeValue(row, rand = Math.random) {
   if (!row || row.control !== 'slider') return null;
   const { min, max, step } = row;
   if (!Number.isFinite(min) || !Number.isFinite(max) || !(step > 0)) return null;
@@ -164,9 +171,9 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
  *
  *  Six, because the list exists to answer "which ones?" for the case somebody
  *  actually has in their head -- a handful of rows they dragged -- and past
- *  that it stops being an answer and becomes a wall of text. Shuffle is what
- *  made this concrete: a Close after one names 23 settings in a single
- *  615-character sentence, in a dialog whose whole argument is that people
+ *  that it stops being an answer and becomes a wall of text. Randomize is what
+ *  made this concrete: a Close after one names 17 settings in a single
+ *  sentence hundreds of characters long, in a dialog whose whole argument is that people
  *  read it. The COUNT is always exact and always first, so nothing is hidden;
  *  only the enumeration is bounded. */
 const NAME_LIMIT = 6;
@@ -504,7 +511,14 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     askThen(revertQuestion(paths), () => { doRevert(); setNote('Put back.'); });
   }
 
-  /** Roll every slider inside its own bounds.
+  /** Roll every LOOK slider inside its own bounds.
+   *
+   *  The set is `tuner.js`'s `randomize` flag, asked per row rather than
+   *  decided here: whether changing a setting changes the current frame is a
+   *  fact about that setting, and it belongs beside the row it describes. The
+   *  `control === 'slider'` test stays as well -- the flag says "this row is
+   *  about the look", the control test says "this row has a bounded numeric
+   *  range to roll inside", and they are two different questions.
    *
    *  It goes through `write()`, the same path a drag takes, so every row it
    *  moves is marked dirty, its readout is set from what came BACK rather than
@@ -517,28 +531,28 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
    *  is undone by the Revert button sitting immediately beside it. A dialog in
    *  front of a button whose entire point is to be quick is also the kind
    *  people learn to click through, which is what would make the other three
-   *  stop being read. The net is already there: with ~23 rows pending, Close
+   *  stop being read. The net is already there: with 17 rows pending, Close
    *  asks.
    *
    *  A REFUSED ROW IS NAMED, never counted out silently. `write()` puts the
-   *  refusal reason in the note line, and a final "Shuffled N sliders" would
+   *  refusal reason in the note line, and a final "Randomized N settings" would
    *  paint straight over it while the count reported successes only -- the
    *  "control that silently does nothing" shape this project treats as worse
    *  than a missing control. No slider can reach it today (every numeric path
-   *  clamps; only `appearance.background` refuses, and Shuffle does not touch
+   *  clamps; only `appearance.background` refuses, and Randomize does not touch
    *  it), so this is latent rather than live -- which is exactly when it is
    *  cheap to get right. */
-  function shuffle() {
+  function randomize() {
     let n = 0;
     const refused = [];
     for (const spec of tunerRows()) {
-      if (spec.control !== 'slider') continue;
-      const v = shuffleValue(spec, Math.random);
+      if (spec.control !== 'slider' || !spec.randomize) continue;
+      const v = randomizeValue(spec, Math.random);
       if (v === null) continue;
       if (write(spec.path, v)) n += 1;
       else refused.push(spec.label);
     }
-    const done = `Shuffled ${n} slider${n === 1 ? '' : 's'}. "Revert" puts them back.`;
+    const done = `Randomized ${n} setting${n === 1 ? '' : 's'}. "Revert" puts them back.`;
     setNote(refused.length
       ? `${done} Refused: ${refused.join(', ')}.`
       : done);
@@ -566,12 +580,13 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     const head = el('div', 'tuner-head');
     head.append(el('h2', 'tuner-title', 'Tuning'));
     const actions = el('div', 'tuner-actions');
-    // Leftmost: Shuffle MAKES pending changes, so it belongs beside Revert,
+    // Leftmost: Randomize MAKES pending changes, so it belongs beside Revert,
     // which is what undoes them -- and as far as possible from Close.
-    const shuffleBtn = el('button', 'tuner-shuffle', 'Shuffle');
-    shuffleBtn.title = 'Set every slider to a random value inside its own '
-                     + 'limits. Nothing is remembered; "Revert" puts it all back.';
-    shuffleBtn.addEventListener('click', shuffle);
+    const randomBtn = el('button', 'tuner-randomize', 'Randomize');
+    randomBtn.title = 'Give every setting that changes how the display LOOKS a '
+                    + 'random value inside its own limits. The camera pacing is '
+                    + 'left alone. Nothing is remembered; "Revert" puts it all back.';
+    randomBtn.addEventListener('click', randomize);
     const revertBtn = el('button', 'tuner-revert', 'Revert');
     revertBtn.title = 'Put the settings you changed back to how they were when '
                     + 'this panel opened, or to what you last kept.';
@@ -587,7 +602,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     // close goes through, the menu's mutual exclusion included. The returned
     // close() is the force-close teardown paths and verifiers need.
     close.addEventListener('click', () => requestClose());
-    actions.append(shuffleBtn, revertBtn, keepBtn, close);
+    actions.append(randomBtn, revertBtn, keepBtn, close);
     head.append(actions);
     node.append(head);
     node.append(el('div', 'tuner-count', 'No changes'));

@@ -274,7 +274,7 @@
         background: #05040ab8;
       }
       /* max-height AND overflow, because the dialog's words are built from
-         what is pending and can therefore be long: a Close after a Shuffle
+         what is pending and can therefore be long: a Close after a Randomize
          names 23 settings and runs to ~1,000 characters. The parent centers
          with `align-items: center`, so an over-tall box grows off BOTH ends --
          the title clips at the top and the buttons go below the fold with
@@ -381,7 +381,7 @@
       /* flex-wrap HERE as well as on .tuner-head, and the second one is not
          redundant: .tuner-head's wrap drops the actions group as a UNIT, which
          does nothing once the group ALONE is wider than the content box. With
-         Shuffle added the group measures 228.5px, and at the 420px viewport
+         Randomize added the group measures ~230px, and at the 420px viewport
          verify_tuner.py case 10 drives, the panel is 189px -- so unwrapped,
          Keep and Close were measured hanging off the right edge, and since
          .tuner-panel sets `overflow-y: auto` its overflow-x computes to auto,
@@ -425,6 +425,62 @@
       }
       .tuner-panel button { cursor: pointer; }
       .tuner-panel button:disabled { opacity: 0.4; cursor: default; }
+
+      /* ------------------------------------------------------ hover states --
+         Every clickable control on the page lights slightly under the pointer,
+         and every one of them says so with `cursor: pointer` as well -- the two
+         halves of one signal, asked for from the wall ("there should be a color
+         change when im hovering over a clickable button").
+
+         A LIFT, NOT A NEW COLOR. The ground is near-black and the scheme is
+         plasma, so each rule raises the control's OWN background and border a
+         step -- `#ffffff10` toward `#ffffff20` in the tuning panel, `#0b0916`
+         toward a slightly lighter violet-grey in the dialogs. No hue appears on
+         hover that is not already on the display, and the alarm amber is not
+         used at all: it means "blocked" everywhere else, and spending it on a
+         mouse pointer would devalue it where it matters.
+
+         A DISABLED CONTROL MUST NOT MOVE. That is the whole signal: Keep and
+         Revert are disabled with nothing pending, and a disabled button that
+         lights up under the pointer is a control lying about being clickable.
+         Hence `:hover:not(:disabled)` -- and note the menu, whose rows are
+         disabled by a CLASS rather than the attribute, needs `:not(.disabled)`
+         instead; its rule is up beside `.menu-item` and is left as the one
+         place that knows that. `verify_tuner.py` case 10 hovers the disabled
+         Keep and asserts its computed background is unchanged, then makes a
+         change and asserts the enabled one does move. */
+      .tuner-panel button:hover:not(:disabled) {
+        background: #ffffff20; border-color: #ffffff3d;
+      }
+      /* The color swatch and the checkboxes are clicked too, so they carry the
+         pointer even though they are inputs rather than buttons. The range
+         sliders deliberately do not: a drag is not a click, and the browser's
+         own affordance for one is the right one. */
+      .tuner-panel input[type="color"],
+      .tuner-panel input[type="checkbox"] { cursor: pointer; }
+      .tuner-panel input[type="color"]:hover { border-color: #ffffff3d; }
+
+      .rules-panel button, .rules-panel select,
+      .rules-panel input[type="color"] { cursor: pointer; }
+      .rules-panel button:hover:not(:disabled),
+      .rules-panel select:hover:not(:disabled) {
+        background: #17142b; border-color: #3d3560;
+      }
+      /* The per-row controls: the enable toggle, the delete cross, "+ Add
+         rule". They are buttons, so the rule above already covers them --
+         these two only carry what is specific to each. The delete cross warms
+         toward the refusal color the panel already uses for a bad row rather
+         than to the alarm amber. */
+      .rules-panel .rules-delete:hover:not(:disabled) { border-color: #7201a8; }
+      .rules-panel input[type="color"]:hover { border-color: #3d3560; }
+
+      .confirm-foot button:hover:not(:disabled) {
+        background: #17142b; border-color: #3d3560;
+      }
+      /* Cancel keeps its violet edge on hover -- it is the emphasized answer,
+         and a hover that flattened the two buttons together would undo the one
+         piece of shape this dialog has. */
+      .confirm-foot .confirm-no:hover:not(:disabled) { border-color: #9333ea; }
     </style>
     <script type="importmap">
       {

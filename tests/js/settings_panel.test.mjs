@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   dirtyPatch, revertPatch, keepQuestion, revertQuestion, closeQuestion,
-  shuffleValue,
+  randomizeValue,
 } from '../../netviz/static/js/settings_panel.js';
 import { settingLabel } from '../../netviz/static/js/settings.js';
 import { tunerRows } from '../../netviz/static/js/tuner.js';
@@ -70,7 +70,7 @@ test('a persist: false path is applied live but never kept', () => {
   assert.deepEqual(patch, { 'layers.stars': false });
 });
 
-// -------------------------------------------------------------- shuffle --
+// ------------------------------------------------------------ randomize --
 //
 // Every one of these runs against the REAL catalogue, not a made-up row: the
 // bounds are the only thing making a random wall a readable wall, so what is
@@ -78,31 +78,31 @@ test('a persist: false path is applied live but never kept', () => {
 
 const SLIDERS = tunerRows().filter((r) => r.control === 'slider');
 
-test('the catalogue really has sliders to shuffle', () => {
+test('the catalogue really has sliders to randomize', () => {
   // Otherwise every loop below passes vacuously.
   assert.ok(SLIDERS.length > 10, `only ${SLIDERS.length} slider rows`);
 });
 
-test("a shuffled value is always inside the row's own bounds", () => {
+test("a randomized value is always inside the row's own bounds", () => {
   // A deterministic sweep rather than Math.random: an out-of-bounds roll that
   // happens once in a thousand is a bug that reaches the wall and not the
   // suite.
   for (const row of SLIDERS) {
     for (let i = 0; i <= 200; i += 1) {
       const t = i / 200 - 1e-15;       // the top end just under 1
-      const v = shuffleValue(row, () => Math.max(0, t));
+      const v = randomizeValue(row, () => Math.max(0, t));
       assert.ok(v >= row.min && v <= row.max,
                 `${row.path}: rand=${t} gave ${v}, outside [${row.min}, ${row.max}]`);
     }
   }
 });
 
-test('a shuffled value lands on a step boundary of its own row', () => {
+test('a randomized value lands on a step boundary of its own row', () => {
   // So the typed readout shows a number a person could write down, and the
   // value is one the slider could have been dragged to.
   for (const row of SLIDERS) {
     for (let i = 0; i <= 50; i += 1) {
-      const v = shuffleValue(row, () => i / 50 - 1e-15);
+      const v = randomizeValue(row, () => i / 50 - 1e-15);
       const steps = (v - row.min) / row.step;
       assert.ok(Math.abs(steps - Math.round(steps)) < 1e-6,
                 `${row.path}: ${v} is ${steps} steps from ${row.min}`);
@@ -116,7 +116,7 @@ test('rand 0 is exactly min, and rand just under 1 never passes max', () => {
   // THE SYNTHETIC ROW IS THE POINT OF THIS TEST, and the shipped rows are the
   // weaker half. `stepFor` divides every range by 200 and rounds down to a
   // power of ten, so on the real catalogue `max - min` is always a whole
-  // number of steps and the clamp in `shuffleValue` NEVER FIRES: the reviewer
+  // number of steps and the clamp in `randomizeValue` NEVER FIRES: the reviewer
   // deleted it and all 486 tests still passed, while three comments claimed
   // the case was proved. A guard that passes everything looks identical to a
   // clean tree.
@@ -137,8 +137,8 @@ test('rand 0 is exactly min, and rand just under 1 never passes max', () => {
   const ODD = { control: 'slider', path: '(synthetic 0..1.3 by 0.5)',
                 min: 0, max: 1.3, step: 0.5 };
   for (const row of [...SLIDERS, ODD]) {
-    assert.equal(shuffleValue(row, () => 0), row.min, `${row.path} floor`);
-    const top = shuffleValue(row, () => 1 - Number.EPSILON);
+    assert.equal(randomizeValue(row, () => 0), row.min, `${row.path} floor`);
+    const top = randomizeValue(row, () => 1 - Number.EPSILON);
     assert.ok(top <= row.max, `${row.path}: top roll ${top} > max ${row.max}`);
     assert.ok(top > row.max - row.step - 1e-9,
               `${row.path}: top roll ${top} is nowhere near max ${row.max}`);
@@ -153,7 +153,7 @@ test('a non-slider row is never given a value', () => {
   const others = tunerRows().filter((r) => r.control !== 'slider');
   assert.ok(others.length > 0, 'no non-slider rows in the catalogue to check');
   for (const row of others) {
-    assert.equal(shuffleValue(row, () => 0.5), null, `${row.path} was given a value`);
+    assert.equal(randomizeValue(row, () => 0.5), null, `${row.path} was given a value`);
   }
   assert.ok(others.some((r) => r.path === 'appearance.background'),
             'the color row is not in the catalogue any more -- check this test');
@@ -224,10 +224,10 @@ for (const [name, build] of QUESTIONS) {
 }
 
 test('a long pending list is counted exactly and enumerated up to a limit', () => {
-  // Shuffle is what made this concrete: a Close after one has 23 settings
-  // pending, and naming every one of them put a 615-character sentence in a
+  // Randomize is what made this concrete: a Close after one has 17 settings
+  // pending, and naming every one of them put a long sentence in a
   // dialog whose entire argument is that people read it. The COUNT stays exact
-  // -- nothing is hidden, and "23" is the number that tells somebody what they
+  // -- nothing is hidden, and the count is the number that tells somebody what they
   // are about to lose -- while the enumeration stops and says how much it left
   // out.
   const many = tunerRows().filter((r) => r.control === 'slider').map((r) => r.path);
