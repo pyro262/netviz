@@ -1164,6 +1164,12 @@ def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
         const m = r.querySelector('.tuner-mark');
         return !!(m && m.textContent.trim());
       });
+      // The class the panel also sets, read here rather than left as an unused
+      // hook -- an unread hook is indistinguishable from a dead one. It must
+      // agree with the glyph exactly: two ways of saying "Randomize touches
+      // this row" that can disagree is the same drift `isRandomized` exists to
+      // stop, one layer out.
+      const classed = rows.map((r) => r.classList.contains('tuner-can-random'));
       // The layout cost of the mark, measured as a straight A/B on the live
       // panel rather than by comparing marked rows against held ones. Several
       // labels already wrap at 380px for reasons that have nothing to do with
@@ -1191,7 +1197,7 @@ def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
         expected: scope.count,
         expectedHeld: scope.heldCount,
         flagged: t.tunerRows().map((r) => t.isRandomized(r)),
-        marked,
+        marked, classed,
         markCount: marked.filter(Boolean).length,
         withMarks, blanked, swatch,
       };
@@ -1201,10 +1207,20 @@ def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
     # The visible copy has to carry the scope in words AND the derived count --
     # a number with no sentence around it is not an explanation, and a sentence
     # with a hardcoded number is the staleness this exists to stop.
+    #
+    # `expected` is randomizeScope().count, which is the SAME source the copy
+    # was built from, so this pair alone is self-referential: a randomizeScope
+    # returning `rolled.length + 1` would print "18 settings" on the wall and
+    # still be reported as stating it correctly. The clause that closes it is
+    # `markCount == expected` -- the marks are counted off the rendered DOM, and
+    # `agrees` below ties those to what the button actually moved, so the
+    # printed number reaches the behavior through two measured hops rather than
+    # agreeing with itself.
     states_it = ("how the display looks" in text
                  and f"only the {said['expected']} settings" in text
                  and f"other {said['expectedHeld']}" in text
-                 and "•" in text)
+                 and "•" in text
+                 and said["markCount"] == said["expected"])
 
     clicked = click_panel_button(page, ".tuner-randomize")
     page.wait_for_timeout(500)
@@ -1212,7 +1228,8 @@ def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
       .map((r) => r.classList.contains('tuner-dirty'))""")
 
     # Row by row, not count against count.
-    agrees = moved == said["marked"] and said["marked"] == said["flagged"]
+    agrees = (moved == said["marked"] and said["marked"] == said["flagged"]
+              and said["classed"] == said["marked"])
     # Every row identical in height and label position with the marks present
     # and with them blanked: the mark costs exactly zero layout, so it cannot be
     # what pushes a row onto a second line.
@@ -1229,7 +1246,9 @@ def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
     return report(
         "12: the panel states Randomize's scope, and the marks match what it "
         "moves", ok,
-        f"text={text!r}; states it={states_it}; marked={said['markCount']} rows, "
+        f"text={text!r}; states it={states_it} "
+        f"(printed {said['expected']} vs {said['markCount']} marks rendered); "
+        f"marked={said['markCount']} rows, "
         f"randomize moved={sum(1 for m in moved if m)}, per-row agreement="
         f"{agrees}; geometry unchanged with the marks blanked={free} "
         f"(rows that moved={diff or 'none'}, heights seen="

@@ -186,6 +186,37 @@ export function randomizeScopeLine(scope = randomizeScope()) {
        + `other ${heldCount} as they are, including the camera's timings.`;
 }
 
+/**
+ * The longer version, for the button's `title`: the same scope, plus the held
+ * rows BY NAME.
+ *
+ * The names are derived from the partition, not written out. Review caught the
+ * hand-written version claiming the held set was "the camera's timings and the
+ * background color", which silently omitted `appearance.starRampMinutes` --
+ * neither of those things, and held for a third reason again. The counts were
+ * already derived and did not protect it, because a CHARACTERIZATION is a
+ * separate claim from a count: it is the half that goes stale the first time a
+ * row is held for a new reason. So it is derived too, and the vocabulary is the
+ * row's own on-screen `label` rather than `settingLabel()`'s humanised path --
+ * the tooltip is pointing at rows a person can see, and "Walk speed cap" is
+ * what is printed beside the one it means where "camera walk degrees per
+ * second" is the schema talking.
+ *
+ * The printed line stays hedged ("including the camera's timings") on purpose:
+ * it is the one-glance version, and the marks answer "which ones" precisely.
+ */
+export function randomizeHeldNames(scope = randomizeScope()) {
+  return scope.held.map((r) => r.label).join(', ');
+}
+
+export function randomizeTooltip(scope = randomizeScope()) {
+  return `Give every setting that changes how the display LOOKS a random value `
+       + `inside its own limits -- the ${scope.count} rows marked ${RANDOM_MARK}. `
+       + `The other ${scope.heldCount} are left alone: ${randomizeHeldNames(scope)}. `
+       + `Every value stays inside its own limits, nothing is remembered, and `
+       + `"Revert" puts it all back in one click.`;
+}
+
 // ------------------------------------------------------- the three questions --
 //
 // Each of Keep, Revert and Close ends the pending work in a way clicking again
@@ -427,12 +458,18 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     const label = el('div', 'tuner-label');
     // The mark goes INSIDE the label, never beside it. `.tuner-row` is a flex
     // row whose widths are already tight (~347px of content at 380px), so a
-    // sixth flex child would take a slot from the slider and is the way a row
-    // ends up on two lines -- the failure `min-width: 0` on the text inputs
-    // exists to prevent, arrived at from the other side. An inline span inside
-    // the label takes no slot at all, and its 0.8em gutter is reserved on EVERY
-    // row (the span is emitted empty for the rest) so the labels stay aligned
-    // and marking a row shifts nothing.
+    // sixth flex child would take a slot from the slider and could push the
+    // controls off. An inline span inside the label takes no slot at all.
+    //
+    // WHY A ROW CANNOT GO TO TWO LINES because of this, structurally rather
+    // than by measurement: `.tuner-row` sets no `flex-wrap`, so its children
+    // never wrap to a second line whatever the gutter costs -- a label short of
+    // room wraps INSIDE itself and the row grows taller instead. Several labels
+    // already do that at 380px. What the gutter does cost is width: 1.1em off
+    // every label, which at the clamped 189px panel is about 13px.
+    //
+    // The gutter is reserved on EVERY row (the span is emitted empty for the
+    // rest) so the labels stay in one column and marking a row shifts nothing.
     const mark = el('span', 'tuner-mark', isRandomized(spec) ? RANDOM_MARK : '');
     if (isRandomized(spec)) {
       row.classList.add('tuner-can-random');
@@ -638,15 +675,10 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     // Leftmost: Randomize MAKES pending changes, so it belongs beside Revert,
     // which is what undoes them -- and as far as possible from Close.
     const randomBtn = el('button', 'tuner-randomize', 'Randomize');
-    // The tooltip keeps the LONGER version. The scope itself is printed under
-    // the header instead of living only here -- a wall display is not hovered.
-    randomBtn.title = 'Give every setting that changes how the display LOOKS a '
-                    + 'random value inside its own limits -- the rows marked '
-                    + `${RANDOM_MARK}. The camera's timings and the background `
-                    + 'color are left alone, because changing them does not '
-                    + 'change what is on the wall right now. Every value stays '
-                    + 'inside its own limits, nothing is remembered, and '
-                    + '"Revert" puts it all back in one click.';
+    // The tooltip keeps the LONGER version -- the held rows by name. The scope
+    // itself is printed under the header rather than living only here: a wall
+    // display is not hovered.
+    randomBtn.title = randomizeTooltip();
     randomBtn.addEventListener('click', randomize);
     const revertBtn = el('button', 'tuner-revert', 'Revert');
     revertBtn.title = 'Put the settings you changed back to how they were when '

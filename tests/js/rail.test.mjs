@@ -525,3 +525,82 @@ test('the shape test PREVENTS the call, it does not merely survive it', () => {
     calls.length = 0;
   }
 });
+
+// ------------------------------------------- fitting the rail to the screen --
+//
+// MEASURED FIRST, on a real page with `rail.maxRules` at its 20 ceiling: the
+// rail's content first exceeds the viewport at 9 rules at 2560x1440 and 8 at
+// 1920x1080, and overflows by 502px / 378px at 20. `#rail` had no overflow
+// property, so that content spilled off the bottom of the screen unreachable --
+// and a scrollbar alone is no answer on a wall nobody is standing at. These
+// hold the arithmetic that decides how many rows are drawn instead.
+
+import { fitRuleCap } from '../../netviz/static/js/rail.js';
+
+// One row 30px, 200px of other panels, 40px of panel chrome. 600 - 200 - 40 is
+// 360px of room, so 12 rows fit.
+const BOX = { available: 600, other: 200, chrome: 40, rowHeight: 30 };
+
+test('a list that fits is not reduced', () => {
+  assert.equal(fitRuleCap({ ...BOX, total: 5, maxRules: 20 }), 5);
+  assert.equal(fitRuleCap({ ...BOX, total: 12, maxRules: 20 }), 12);
+});
+
+test('a list that does not fit loses a row to "+N more"', () => {
+  // 12 rows of room and 20 rules: 11 rules plus the line that says 9 are
+  // missing. Returning 12 would draw the overflow row off the bottom, which is
+  // the one row that must survive -- it is what stops the truncation being
+  // silent.
+  assert.equal(fitRuleCap({ ...BOX, total: 20, maxRules: 20 }), 11);
+});
+
+test('fitting never exceeds rail.maxRules', () => {
+  // A fit is a REDUCTION of the operator's setting. Plenty of room and a cap of
+  // 3 is still 3 -- the setting is a decision, not a hint.
+  assert.equal(fitRuleCap({ ...BOX, total: 20, maxRules: 3 }), 3);
+  assert.equal(fitRuleCap({ ...BOX, available: 4000, total: 20, maxRules: 5 }), 5);
+});
+
+test('a rail with no room still shows one rule, never zero', () => {
+  // Below the floor the scrollbar is the net. Zero would drop the "+N more"
+  // line with the rows and the display would stop saying the rules exist.
+  assert.equal(fitRuleCap({ ...BOX, available: 240, total: 20, maxRules: 20 }), 1);
+  assert.equal(fitRuleCap({ ...BOX, available: 0, total: 20, maxRules: 20 }), 20);
+  assert.equal(fitRuleCap({ ...BOX, available: -50, total: 20, maxRules: 20 }), 20);
+});
+
+test('an unmeasurable rail falls back to the setting, not to a guess', () => {
+  // First paint, or a row of zero height. The un-fitted rail is what shipped,
+  // so falling back to it is the honest failure -- inventing a number from a
+  // measurement that is not there is how a control starts lying.
+  assert.equal(fitRuleCap({ ...BOX, rowHeight: 0, total: 20, maxRules: 7 }), 7);
+  assert.equal(fitRuleCap({ ...BOX, rowHeight: NaN, total: 20, maxRules: 7 }), 7);
+  assert.equal(fitRuleCap({ available: NaN, other: 0, chrome: 0, rowHeight: 10,
+                            total: 20, maxRules: 7 }), 7);
+});
+
+test('the fit is stable: feeding its own answer back changes nothing', () => {
+  // The oscillation guard, as a property rather than as a comment. `other` and
+  // `chrome` do not depend on how many rows are drawn, so one repaint reaches
+  // the answer and the next draw agrees -- a shrink-then-grow loop over these
+  // same numbers would flip between two values for ever.
+  const first = fitRuleCap({ ...BOX, total: 20, maxRules: 20 });
+  assert.equal(fitRuleCap({ ...BOX, total: 20, maxRules: first }), first);
+  assert.equal(fitRuleCap({ ...BOX, total: first, maxRules: first }), first);
+});
+
+test('a bad maxRules cannot blank the panel', () => {
+  // rail.maxRules is schema-bounded 1..20, but rulePanel already defends its
+  // own cap the same way and this is the same argument: a 0 or a NaN arriving
+  // from anywhere must not mean "draw nothing".
+  assert.equal(fitRuleCap({ ...BOX, total: 3, maxRules: 0 }), 3);
+  assert.equal(fitRuleCap({ ...BOX, total: 3, maxRules: NaN }), 3);
+});
+
+test('rulePanel tags itself so the fitter can find it', () => {
+  // The measurement needs to know which section is this panel. A class, not a
+  // dataset write -- the DOM fake and a real HTMLElement disagree about that.
+  const c = createClassCounter();
+  const p = rulePanel([{ match: 'DE', color: '#111111' }], c, 1000, 5);
+  assert.equal(p.id, 'rules');
+});

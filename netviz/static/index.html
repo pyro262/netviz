@@ -89,6 +89,20 @@
            it takes 1.6s) rather than blanking them: the last known numbers are
            what someone walking up to a dead feed wants to see. */
         transition: opacity 2s ease;
+        /* THE SAFETY NET, NOT THE SOLUTION. rail.js's fitRuleCap drops the rule
+           rows that do not fit and names them ("+N more"), because nobody is
+           standing at a wall display to scroll it -- content below the fold is
+           invisible for ever. This catches what fitting cannot: a very short
+           viewport, or a browser zoomed in, where even one rule row plus the
+           fixed panels exceeds the height. Before both, the rail had no
+           overflow property at all, so content simply spilled off the bottom of
+           the screen with no scrollbar and no way to reach it -- measured, 502px
+           of it at 20 rules on 2560x1440.
+           `scrollbar-gutter: stable` is not cosmetic: without it the scrollbar
+           appearing narrows the rail, which rewraps the labels, which changes
+           the row height the fitter just measured. */
+        overflow-y: auto; scrollbar-gutter: stable;
+        scrollbar-width: thin; scrollbar-color: #7201a8 transparent;
       }
       #rail.on { display: flex; }
       body.degraded #rail { opacity: 0.28; }
@@ -378,25 +392,32 @@
                     flex-wrap: wrap; gap: 0.4rem; }
       .tuner-title { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
                      margin: 0; color: #dda825; flex: 1 1 auto; }
-      /* flex-wrap HERE as well as on .tuner-head, and the second one is not
-         redundant: .tuner-head's wrap drops the actions group as a UNIT, which
-         does nothing once the group ALONE is wider than the content box. With
-         Randomize added the group measures ~230px, and at the 420px viewport
-         verify_tuner.py case 10 drives, the panel is 189px -- so unwrapped,
-         Keep and Close were measured hanging off the right edge, and since
-         .tuner-panel sets `overflow-y: auto` its overflow-x computes to auto,
-         which means they scrolled away rather than showing. A control off the
-         panel is a control that does not exist: exactly the failure that moved
-         these buttons out of the footer. Case 10 asserts every header button's
-         rect is inside the panel's, and was confirmed to fail against this
-         rule deleted.
+      /* The actions group. THE COMMENT THAT USED TO BE HERE CLAIMED A PROOF
+         THAT NEVER HAPPENED, and the correction is worth more than the rule.
+         It said the group's own `flex-wrap` was what stopped Keep and Close
+         hanging off the right edge at 189px, "confirmed to fail against this
+         rule deleted", citing case 10 -- which is the hover case; the small
+         viewport is case 11. Neither could have shown it, because this whole
+         rule had been dropped by the CSS parser (a stray `*/` upstream, fixed
+         2026-08-13) for its entire life, so every measurement behind that
+         paragraph was taken with no rule applied at all.
 
-         `flex: 0 1 auto` with `min-width: 0` is the other half, and wrapping
-         without it changes NOTHING -- measured, still ['Keep', 'Close'] off
-         the panel. `flex-shrink: 0` means the group keeps its max-content
-         228.5px whatever the box is, so the wrap it was just given never has a
-         narrower width to wrap INTO. Letting it shrink is what turns the
-         overflow into a second row. */
+         RE-RUN PROPERLY ON THIS BRANCH, rule deleted, case 11 green: 12/12,
+         `off the panel=none`. It does not prevent an overflow and never did.
+         Without the rule the four buttons are inline-blocks in a plain block
+         div, so they wrap as inline content on their own and the div's
+         min-content width is the widest single button either way -- there is
+         nothing here to overflow.
+
+         What the rule actually buys, measured at 420px (panel 189px) with and
+         without: the 0.35rem gaps (without it the buttons touch -- Randomize
+         ends at x=94 and Revert starts at 94), right alignment of the wrapped
+         second row (Keep at x=75 with, x=16 without), and cross-axis
+         centering. At 2560px both fit one row and only the gaps differ.
+         It is kept for those three, which is a design decision rather than a
+         guard -- worth writing down honestly, because a rule documented as
+         load-bearing is one nobody dares touch for the wrong reason. Deleting
+         it degrades the header's appearance and breaks nothing. */
       .tuner-actions { display: flex; align-items: center; gap: 0.35rem;
                        flex: 0 1 auto; min-width: 0; flex-wrap: wrap;
                        justify-content: flex-end; }
@@ -411,9 +432,14 @@
          hue of its own -- the same "a lift, not a new color" rule the hover
          states follow, run downward. And hence a fixed-width inline gutter
          emitted on EVERY row, empty on the ones Randomize leaves: the reserved
-         0.8em is what keeps the labels aligned in one column and makes the mark
-         cost exactly zero layout, marked or not. Measured at 380px: row height
-         and label left edge identical with the marks in and out. */
+         1.1em is what keeps the labels aligned in one column, so a MARKED row
+         costs exactly what a held one does (verify_tuner.py case 12 blanks
+         every mark and asserts no row's height or label position moves).
+         That measurement does not say the gutter itself is free -- it is not,
+         it takes ~13px off every label at the clamped 189px panel. What makes
+         it safe is structural: `.tuner-row` sets no `flex-wrap`, so a label
+         short of room wraps inside itself and the row grows taller rather than
+         the controls dropping to a second line. */
       .tuner-mark { display: inline-block; width: 1.1em; color: #6f6893; }
       .tuner-group { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
                      color: #9c96b8; margin: 1rem 0 0.4rem;

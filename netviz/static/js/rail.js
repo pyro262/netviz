@@ -208,7 +208,74 @@ export function rulePanel(rules, counter, nowMs, maxRules) {
   if (scored.length > cap) {
     rows.push({ label: `+${scored.length - cap} more`, value: '', muted: true });
   }
-  return { title: 'COLOR RULES', note: 'SINCE LOAD', rows };
+  // `id` reaches the DOM as a second class on the section, which is how the
+  // fitter finds this panel to measure it. A class rather than a `dataset`
+  // write: the unit suite's DOM fake and a real HTMLElement disagree about
+  // `dataset`, and menu.js has already been bitten by exactly that.
+  return { id: 'rules', title: 'COLOR RULES', note: 'SINCE LOAD', rows };
+}
+
+/**
+ * How many rule rows actually FIT, given what the rail measured about itself.
+ *
+ * THE PROBLEM, MEASURED BEFORE IT WAS BUILT. `rail.maxRules` is bounded 1..20
+ * and ships at 5, and the rail had no overflow handling at all -- `#rail` is
+ * `position: fixed; inset 0` with no `overflow`, so anything past the bottom of
+ * the viewport simply spilled off the screen. Sweeping the rule count with
+ * `maxRules` at its 20 ceiling: content first exceeds the viewport at **9 rules
+ * at 2560x1440 and 8 at 1920x1080**, and at 20 rules it overflows by 502px and
+ * 378px respectively. That is a third of the rail's height gone, and the FOOT
+ * goes with it -- `.rail-foot` is `margin-top: auto`, so the build label is the
+ * first thing off the bottom. Well under the ceiling, so this is a real
+ * overflow rather than a hypothetical one.
+ *
+ * WHY NOT JUST A SCROLLBAR. Nobody is standing at a wall display to scroll it,
+ * so content below the fold is invisible for ever -- the same "a control past
+ * the fold is a control that does not exist" the tuning panel's buttons were
+ * moved for. The rail therefore has to FIT, and scrolling is the safety net for
+ * what fitting cannot reach (a short viewport, a browser zoomed in).
+ *
+ * WHY NOT SHRINK THE TEXT. The rail is sized in `vw` to be read from across a
+ * room; scaling it to fit 20 rules would silently trade the one thing it exists
+ * for. Dropping rows is the better trade because `rulePanel` already NAMES what
+ * it dropped ("+N more") -- the reader loses the detail and keeps the fact,
+ * where shrinking loses nothing visibly and everything practically.
+ *
+ * THE ARITHMETIC IS DIRECT, NOT A FEEDBACK LOOP, and that is deliberate. Both
+ * inputs it divides -- the chrome around the rows and the height of one row --
+ * are independent of how many rows are currently drawn, so this converges in a
+ * single repaint and then holds. A "shrink until it fits, grow while there is
+ * slack" loop over the same measurements oscillates, because removing a row
+ * creates exactly the slack that argues for putting it back.
+ *
+ * Pure, so the decision is proved under `node --test` rather than by opening a
+ * browser at four viewport sizes; the caller measures and hands the numbers in,
+ * the same seam `campath.js` and `orbit.js` use.
+ *
+ * @param available  the rail's own client height, in px.
+ * @param other      every other panel, the head, the foot and the flex gaps.
+ * @param chrome     the rule panel minus its rows: title, padding, border.
+ * @param rowHeight  one rendered `.rail-row`.
+ * @param total      enabled rules -- what `rulePanel` would rank.
+ * @param maxRules   `rail.maxRules`, never exceeded. A fit is a REDUCTION of
+ *                   the operator's setting, never a licence to go past it.
+ */
+export function fitRuleCap({ available, other, chrome, rowHeight, total, maxRules }) {
+  const cap = Math.max(1, Math.floor(maxRules) || 5);
+  // Nothing measurable yet -- first paint, rail unmounted, a row of zero
+  // height. Trust the setting rather than inventing a number from a
+  // measurement that is not there: the un-fitted rail is what shipped, so
+  // falling back to it is the honest failure mode.
+  if (!(available > 0) || !(rowHeight > 0)) return cap;
+  const fits = Math.floor((available - other - chrome) / rowHeight);
+  // Everything fits: no reduction to make.
+  if (fits >= total) return Math.min(cap, Math.max(1, total));
+  // It does not, so one row goes to "+N more" and the rest carry rules. Floored
+  // at 1 rather than 0: a COLOR RULES panel with no rows would drop the "+N
+  // more" line too and the display would stop saying the rules exist at all,
+  // which is the silent truncation the named overflow exists to prevent. Below
+  // that floor the scrollbar is what catches it.
+  return Math.max(1, Math.min(cap, fits - 1));
 }
 
 export function panels(snapshot, extra, colors) {
@@ -363,7 +430,7 @@ function paint(root, data, clock, version) {
   root.append(head);
 
   for (const panel of data) {
-    const box = el('section', 'rail-panel');
+    const box = el('section', `rail-panel${panel.id ? ` rail-panel-${panel.id}` : ''}`);
     const h = el('h2', 'rail-panel-title', panel.title);
     if (panel.note) h.append(el('span', 'rail-panel-note', panel.note));
     box.append(h);
@@ -459,12 +526,41 @@ export function start(counter, classColors) {
   // is redeployed, and a redeploy reloads the page anyway, so blanking it
   // because one request timed out would be throwing away a fact we hold.
   let version = '';
-  const draw = () => {
+
+  /** What `fitRuleCap` needs, read off the rail as it currently stands.
+   *
+   *  Returns null when there is nothing to measure -- no rule panel drawn, or
+   *  no rows in it -- and the caller then leaves the cap alone. Measuring is
+   *  the only DOM-side half of this; every decision made from these numbers is
+   *  in `fitRuleCap`, which is why it is a separate function.
+   *
+   *  `other` is the whole rail minus the rule panel, so it carries the head,
+   *  the other panels, the foot and the flex gaps without this function
+   *  knowing what any of them are -- a list of what to add up would go stale
+   *  the first time a panel is added. */
+  const measure = () => {
+    const box = root.querySelector('.rail-panel-rules');
+    if (!box) return null;
+    const rows = box.querySelectorAll('.rail-row');
+    if (!rows.length) return null;
+    const boxH = box.getBoundingClientRect().height;
+    const rowHeight = rows[0].getBoundingClientRect().height;
+    return {
+      available: root.clientHeight,
+      other: root.scrollHeight - boxH,
+      chrome: boxH - rows.length * rowHeight,
+      rowHeight,
+    };
+  };
+
+  const draw = (capOverride) => {
     version = versionLabel(snapshot) || version;
+    const rules = cfg('arcs.rules', []);
+    const cap = capOverride === undefined ? cfg('rail.maxRules', 5) : capOverride;
     // The rule rows come from the renderer's own counter, not from
     // /stats.json: the collector has never seen the rule list.
     const extra = counter
-      ? rulePanel(cfg('arcs.rules', []), counter, Date.now(), cfg('rail.maxRules', 5))
+      ? rulePanel(rules, counter, Date.now(), cap)
       : null;
     // Read per paint, never cached: an arc recolor through settings has to
     // move the key with it.
@@ -477,6 +573,21 @@ export function start(counter, classColors) {
       colors = null;
     }
     paint(root, panels(snapshot, extra, colors), formatClock(new Date()), version);
+
+    // Then fit, at most once per draw. `capOverride !== undefined` is what
+    // stops a second pass: the numbers `fitRuleCap` divides do not depend on
+    // how many rows are drawn, so one repaint reaches the answer and a third
+    // would only be the same arithmetic again. Every draw starts from
+    // `rail.maxRules` afresh rather than from the last fitted cap, so deleting
+    // a rule or growing the window gives the rows straight back -- a cap that
+    // ratcheted down would need somebody to reload the wall to undo it.
+    if (capOverride !== undefined || !extra) return;
+    const m = measure();
+    if (!m) return;
+    const total = (Array.isArray(rules) ? rules : [])
+      .filter((r) => r && r.enabled !== false).length;
+    const fitted = fitRuleCap({ ...m, total, maxRules: cap });
+    if (fitted !== cap) draw(fitted);
   };
 
   const poll = async () => {

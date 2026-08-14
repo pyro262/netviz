@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   dirtyPatch, revertPatch, keepQuestion, revertQuestion, closeQuestion,
-  randomizeValue, randomizeScopeLine, RANDOM_MARK,
+  randomizeValue, randomizeScopeLine, randomizeTooltip, randomizeHeldNames,
+  RANDOM_MARK,
 } from '../../netviz/static/js/settings_panel.js';
 import { settingLabel } from '../../netviz/static/js/settings.js';
 import { tunerRows, isRandomized, randomizeScope } from '../../netviz/static/js/tuner.js';
@@ -347,4 +348,40 @@ test('the scope line follows a change to the table', () => {
 
 test('the default scope line and the shipped partition agree', () => {
   assert.equal(randomizeScopeLine(), randomizeScopeLine(randomizeScope()));
+});
+
+test('the tooltip names the held rows, and names ALL of them', () => {
+  // Review caught the hand-written version claiming the held set was "the
+  // camera's timings and the background color" -- which quietly omitted the
+  // star ramp, held for a third reason again. The counts were already derived
+  // and did NOT protect this: a characterization is a separate claim from a
+  // count, and it is the half that goes stale when a row is held for a new
+  // reason. So the names are derived, and this holds every one of them.
+  const scope = randomizeScope();
+  const tip = randomizeTooltip();
+  for (const row of scope.held) {
+    assert.ok(tip.includes(row.label),
+              `the tooltip does not name the held row ${row.path}`);
+  }
+  assert.equal(randomizeHeldNames(scope).split(', ').length, scope.heldCount);
+  assert.match(tip, new RegExp(`the ${scope.count} rows marked`));
+  assert.match(tip, new RegExp(`other ${scope.heldCount} are left alone`));
+});
+
+test('the tooltip uses the on-screen labels, not humanised schema paths', () => {
+  // The tooltip points at rows a person can see: "Walk speed cap" is printed
+  // beside the one it means, where settingLabel gives "camera walk degrees per
+  // second" -- the schema talking to itself.
+  const tip = randomizeTooltip();
+  assert.match(tip, /Walk speed cap/);
+  assert.doesNotMatch(tip, /camera walk degrees per second/);
+});
+
+test('the printed line stays hedged where the tooltip enumerates', () => {
+  // Two jobs, deliberately. The line is the one-glance version and the marks
+  // answer "which ones" precisely; a line that named all 7 would be the wall
+  // of text NAME_LIMIT exists to refuse, three paragraphs up the panel.
+  const line = randomizeScopeLine();
+  assert.match(line, /including the camera's timings/);
+  assert.ok(!line.includes('Star ramp minutes'), 'the line enumerates');
 });
