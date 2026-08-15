@@ -149,7 +149,13 @@ export const CONFIG = {
       // alone starts quicker but flattens the ramp. The cap has to clear the
       // derived peak or it silently becomes the rate.
       degreesPerSecond: 2.2,
-      spanDegrees: 75,      // how far from the traffic a walk may get
+      // 75 in 0.4.1, cut to 65 in 0.5.0: on the wall the walk was carrying
+      // home far enough toward the limb that the arcs' own root went with it.
+      // Lowering the span also lowers the DERIVED peak rate, so the walk gets
+      // slightly gentler as well as shorter -- degreesPerSecond is a cap and
+      // still clears the new peak, so it stays a cap rather than becoming the
+      // rate.
+      spanDegrees: 65,      // how far from the traffic a walk may get
       rampFloor: 0.35,      // the walk sets off at this fraction of its peak rate
       latitudeClamp: 62,    // the walk bounces off this rather than stalling
     },
