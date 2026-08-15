@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextPollDelay, auroraFromReading, nextLightningPoll, strokesDue, playbackStart } from '../../netviz/static/js/schedule.js';
+import { nextPollDelay, auroraFromReading, nextLightningPoll, strokesDue, playbackStart, shouldPollNow } from '../../netviz/static/js/schedule.js';
 
 const H = 3600_000;
 const PERIOD = 3 * H;
@@ -175,4 +175,39 @@ test('playbackStart accepts a position exactly one second inside the window', ()
 
 test('nextLightningPoll retries fast when unhealthy', () => {
   assert.equal(nextLightningPoll(Date.now(), false), 120_000);
+});
+
+test('shouldPollNow fires only when switched on, empty, idle and not too soon', () => {
+  assert.equal(shouldPollNow(true, false, false, Infinity, 5000), true);
+});
+
+test('shouldPollNow refuses when switched off', () => {
+  // Turning the layer off is never a reason to fetch, whatever else is true.
+  assert.equal(shouldPollNow(false, false, false, Infinity, 5000), false);
+});
+
+test('shouldPollNow refuses when data is already held -- no refetch on redraw', () => {
+  // Switching a layer back on while its last fetch is still current should
+  // draw immediately from what is already there, not spend a request to
+  // confirm it.
+  assert.equal(shouldPollNow(true, true, false, Infinity, 5000), false);
+});
+
+test('shouldPollNow refuses while a poll is already in flight', () => {
+  // The in-flight poll's own completion reschedules the timer; a second call
+  // here would be a second overlapping fetch for the same answer.
+  assert.equal(shouldPollNow(true, false, true, Infinity, 5000), false);
+});
+
+test('shouldPollNow refuses a poll that just ran, even though it is no longer in flight', () => {
+  // THE CASE MIN_REPOLL_MS EXISTS FOR: several toggles in the same second (a
+  // fast double-click, or apply() replaying a patch that touches the same
+  // key twice) must add up to at most one extra fetch, not one per toggle.
+  assert.equal(shouldPollNow(true, false, false, 1000, 5000), false);
+  assert.equal(shouldPollNow(true, false, false, 4999, 5000), false);
+});
+
+test('shouldPollNow fires again once the quiet window has passed', () => {
+  assert.equal(shouldPollNow(true, false, false, 5000, 5000), true);
+  assert.equal(shouldPollNow(true, false, false, 9_999_999, 5000), true);
 });

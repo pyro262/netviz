@@ -19,7 +19,7 @@
 import * as THREE from 'three';
 import { cfg } from './config.js';
 import { latLonToVec3 } from './globe.js';
-import { nextLightningPoll, strokesDue, playbackStart } from './schedule.js';
+import { nextLightningPoll, strokesDue, playbackStart, shouldPollNow } from './schedule.js';
 
 // 11.5 strokes/second worldwide (measured) times a ~3.2s total life is about 37
 // alive at once. 2048 is fifty times that: the pool exists so nothing allocates
@@ -27,6 +27,13 @@ import { nextLightningPoll, strokesDue, playbackStart } from './schedule.js';
 const POOL = 2048;
 
 const RETRY_MS = 120_000;
+
+// How recently a poll must have run for setVisible(true) to treat the layer
+// as "already being checked" and skip firing another one -- same role as
+// clouds.js's constant of the same name, sized the same way: generous
+// against real fetch latency, tiny against the ten-minute schedule, only
+// there to collapse a burst of toggles into at most one extra request.
+const MIN_REPOLL_MS = 5000;
 
 // Fallback only: a renderer talking to a collector old enough not to serve
 // `state.lag` yet still needs a number. netviz/lightning.py now serves this
@@ -137,6 +144,8 @@ export function createLightning(radius) {
   let age = null;
   let timer = null;
   let stopped = false;
+  let inFlight = false;         // guards setVisible's immediate poll below
+  let lastPollAt = 0;           // ditto
 
   function spawn(lat, lon) {
     // latLonToVec3 owns the trig, including theta = -lon. Re-deriving it here
@@ -168,6 +177,20 @@ export function createLightning(radius) {
   }
 
   const poll = async () => {
+    // Read here, at the top of every poll, rather than gating the mount in
+    // main.js: the mount is a one-time decision made before the menu exists,
+    // but whether to spend network on a fetch has to track the live toggle,
+    // including a flip that lands mid-flight of the previous poll's
+    // setTimeout wait. The held bucket/strokes/age are left untouched while
+    // off -- turning the layer back on with the same bucket still current
+    // must redraw it, not discover it has been quietly cleared.
+    if (!cfg('layers.lightning', false)) {
+      inFlight = false;
+      if (!stopped) timer = setTimeout(poll, nextLightningPoll(Date.now(), true, RETRY_MS));
+      return;
+    }
+    inFlight = true;
+    lastPollAt = Date.now();
     let ok = false;
     try {
       const r = await fetch('/lightning.json', { cache: 'no-store' });
@@ -226,11 +249,13 @@ export function createLightning(radius) {
         strokes = [];
         count = 0;
         points.visible = false;
+        inFlight = false;
         return;
       }
     } catch {
       ok = false;
     }
+    inFlight = false;
     if (!stopped) timer = setTimeout(poll, nextLightningPoll(Date.now(), ok, RETRY_MS));
   };
 
@@ -268,6 +293,23 @@ export function createLightning(radius) {
       // lightning if there is any", and there is not any until a bucket has
       // been fetched. Same reasoning as clouds.js's setVisible.
       points.visible = !!v && strokes.length > 0;
+      // Turning the layer on with no bucket held yet must not wait for the
+      // ten-minute schedule -- see clouds.js's setVisible for the full
+      // reasoning, which is identical here. Only fires when there is nothing
+      // to draw (strokes.length === 0); a layer switched back on while its
+      // last bucket is still playing needs no fetch at all. Gated on
+      // inFlight and MIN_REPOLL_MS so a burst of toggles adds at most one
+      // extra request, not one per click.
+      const since = lastPollAt ? Date.now() - lastPollAt : Infinity;
+      if (shouldPollNow(v, strokes.length > 0, inFlight, since, MIN_REPOLL_MS)) {
+        // Deferred one tick, not called synchronously -- see clouds.js's
+        // setVisible for why: apply.js's executor runs this handler and only
+        // THEN writes CONFIG, so a synchronous poll() would read
+        // cfg('layers.lightning') before that write lands and see the OLD
+        // value, silently taking the disabled branch instead of fetching.
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(poll, 0);
+      }
     },
 
     /** Point sprites are sized in pixels, so this is set from the drawing

@@ -153,6 +153,34 @@ export function playbackStart(age, lag, window) {
 }
 
 /**
+ * Whether switching a network-fed layer (clouds, lightning) on should fire an
+ * immediate poll rather than waiting for its next scheduled one.
+ *
+ * Both layers share this decision exactly -- only the meaning of "has no data
+ * yet" differs (cloud fade vs. bucket stroke count) and that is decided by
+ * the caller, not here. Pulled out because the whole point is that a menu
+ * toggle must not feel broken by waiting up to an hour (clouds) or ten
+ * minutes (lightning) for data that a fetch could have in under a second,
+ * but a display nobody is watching for months must never be able to stack
+ * fetches from a fast double-click or a settings patch that touches the same
+ * key twice -- both are correctness properties worth pinning down with a
+ * table of cases rather than trusting by eye.
+ *
+ * @param on        the setting being switched to (setVisible's `v`)
+ * @param hasData   true when the layer already holds something drawable --
+ *                  no fetch is needed at all, on or off
+ * @param inFlight  true while a poll's fetch is unresolved
+ * @param msSinceLastPoll milliseconds since the last poll STARTED, or
+ *                  Infinity if none has ever run
+ * @param minRepollMs the "just ran" window below which a second immediate
+ *                  poll is refused even though the first has since finished
+ */
+export function shouldPollNow(on, hasData, inFlight, msSinceLastPoll, minRepollMs) {
+  if (!on || hasData || inFlight) return false;
+  return msSinceLastPoll >= minRepollMs;
+}
+
+/**
  * The strokes falling in [fromSec, toSec) of the playing bucket.
  *
  * HALF-OPEN, and the cursor is carried across calls, because both halves of

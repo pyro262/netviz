@@ -38,11 +38,13 @@ const sunVec = new THREE.Vector3();
 // Set in boot(); the sun updater runs before it exists on the very first call.
 let aurora = null;
 const sunLocal = new THREE.Vector3();
-// Set at mount, and null when the layer was off at boot -- the field arrives
-// over the network, so unlike the baked layers this one is not part of globe.
+// Set at mount, always -- the field arrives over the network, so unlike the
+// baked layers this one is not part of globe. Mounted unconditionally now
+// (see boot() below): only null in the brief window before boot() runs.
 let clouds = null;
-// Set at mount, and null when the layer was off at boot -- like the clouds, the
-// data arrives over the network rather than being baked into the globe.
+// Set at mount, always -- like the clouds, the data arrives over the network
+// rather than being baked into the globe. Mounted unconditionally, same
+// reasoning as clouds.
 let lightning = null;
 
 // The globe group may rotate, so the sun vector has to be expressed in the
@@ -219,21 +221,31 @@ async function boot() {
 
   // In globe.group like the aurora: the field is fixed to the Earth's surface,
   // so it has to turn with it rather than hanging in front of the camera.
-  if (cfg('layers.clouds', true)) {
-    clouds = createClouds(GLOBE_RADIUS);
-    globe.group.add(clouds.mesh);
-    // The handle, not the mesh: clouds.setVisible refuses to show a shell with
-    // no field in it, which mesh.visible alone cannot know.
-    globe.registerLayer('clouds', clouds);
-  }
+  //
+  // Mounted unconditionally -- not behind cfg('layers.clouds') -- so the menu
+  // row this task exists for has something live to flip. The boot-time guard
+  // used to skip the poll loop entirely when the setting started false, which
+  // left ctx.clouds null for ever and made apply.js's 'layers.clouds' handler
+  // a permanent no-op: a control the operator could click with no effect on
+  // the wall. clouds.js itself now reads the setting on every poll and skips
+  // its fetch while off, so mounting always costs one object and zero network
+  // when the layer is not wanted.
+  clouds = createClouds(GLOBE_RADIUS);
+  globe.group.add(clouds.mesh);
+  // The handle, not the mesh: clouds.setVisible refuses to show a shell with
+  // no field in it, which mesh.visible alone cannot know.
+  globe.registerLayer('clouds', clouds);
 
   // In globe.group like the clouds: the strokes are fixed to the Earth's
   // surface, so they turn with it rather than hanging in front of the camera.
-  if (cfg('layers.lightning', false)) {
-    lightning = createLightning(GLOBE_RADIUS);
-    globe.group.add(lightning.points);
-    globe.registerLayer('lightning', lightning);
-  }
+  //
+  // Mounted unconditionally, same reasoning as clouds above: lightning.js
+  // reads 'layers.lightning' itself on every poll and skips the fetch while
+  // off, so a display that leaves lightning off (the default) still pays
+  // nothing for it beyond one Points object with an empty pool.
+  lightning = createLightning(GLOBE_RADIUS);
+  globe.group.add(lightning.points);
+  globe.registerLayer('lightning', lightning);
 
   // A disabled ripple layer still needs a spawn() to call, so the arc landing
   // callback below does not have to know whether it exists.
