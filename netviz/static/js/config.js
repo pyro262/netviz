@@ -256,8 +256,14 @@ export const CONFIG = {
     atmosphere: true,
     ripples: true,         // expanding ring where an arc lands
     countryFlash: true,    // the blocked country's outline lights up
-    clouds: true,          // NOAA's hourly global cloud mosaic, if served
-    lightning: false,      // Blitzortung strokes, replayed ~40 min behind
+    // Both network-fed layers default off. Each now mounts unconditionally and
+    // gates its actual NOAA/Blitzortung fetch on this setting, so a fresh
+    // kiosk that never touched the menu costs neither upstream a single
+    // request; turning either on is two clicks in the menu's Layers
+    // submenu, not an edit here. A display that already chose true keeps its
+    // own choice in localStorage -- this only governs one that never has.
+    clouds: false,          // NOAA's hourly global cloud mosaic, if served
+    lightning: false,       // Blitzortung strokes, replayed ~40 min behind
   },
 
   // Real cloud cover. Drawn only when the collector has actually fetched a

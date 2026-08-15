@@ -437,7 +437,9 @@ export const SCHEMA = {
       + 'block lands in it.'],
     ['clouds', 'Real cloud cover, from NOAA\u2019s hourly global mosaic of every '
       + 'geostationary weather satellite. Off, or with no field fetched, the '
-      + 'globe shows its baked surface alone \u2014 there is no invented weather.'],
+      + 'globe shows its baked surface alone \u2014 there is no invented weather. '
+      + 'Off by default, like lightning: the fetch is gated on this setting, so '
+      + 'a fresh kiosk that has never touched the menu asks NOAA for nothing.'],
     ['lightning', 'Real lightning strokes from Blitzortung\u2019s volunteer '
       + 'network, replayed at normal speed about 40 minutes behind now -- the '
       + 'archive is published on that delay and no amount of polling closes '
