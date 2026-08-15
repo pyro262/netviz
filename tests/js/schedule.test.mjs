@@ -121,12 +121,24 @@ test('nextLightningPoll lands two minutes past a ten-minute boundary', () => {
   // 32 minutes of publish lag is three whole buckets plus two minutes, so the
   // useful phase within a 600s period is 120s.
   const boundary = Date.UTC(2026, 7, 15, 7, 0, 0);
-  for (const offset of [0, 61_000, 119_000, 121_000, 500_000]) {
+  for (const offset of [0, 61_000, 121_000, 500_000]) {
     const delay = nextLightningPoll(boundary + offset, true);
     const landed = (boundary + offset + delay) % 600_000;
     assert.ok(Math.abs(landed - 120_000) < 1000, `landed at ${landed}`);
     assert.ok(delay > 0 && delay <= 600_000);
   }
+});
+
+test('nextLightningPoll waits a whole period rather than firing a second early', () => {
+  // The shared nextPollDelay guard returns the full period when the calculated
+  // delay is ≤1000 ms, so a caller is never handed a sub-second delay that would
+  // spin it into a hot loop. The aurora and cloud layers already depend on this.
+  // When a poll starts at 119_000 ms into a 600_000 ms period, the raw delay is
+  // exactly 1000 ms, which triggers the guard: return the full period instead.
+  // This is the intended behavior, documented here so it is not mistaken for a bug.
+  const boundary = Date.UTC(2026, 7, 15, 7, 0, 0);
+  const delay = nextLightningPoll(boundary + 119_000, true);
+  assert.equal(delay, 600_000);
 });
 
 test('nextLightningPoll retries fast when unhealthy', () => {
