@@ -257,6 +257,7 @@ export const CONFIG = {
     ripples: true,         // expanding ring where an arc lands
     countryFlash: true,    // the blocked country's outline lights up
     clouds: true,          // NOAA's hourly global cloud mosaic, if served
+    lightning: false,      // Blitzortung strokes, replayed ~40 min behind
   },
 
   // Real cloud cover. Drawn only when the collector has actually fetched a
@@ -272,6 +273,25 @@ export const CONFIG = {
     nightDim: 0.30,
     // Near-white, cast violet so the layer belongs to the plasma scheme.
     tint: '#d9d7f0',
+  },
+
+  // Real lightning, replayed at 1x about forty minutes behind the world. Drawn
+  // only when the collector has actually fetched a bucket -- see
+  // js/lightning.js and netviz/lightning.py.
+  lightning: {
+    // The flash is the event. Short: a strike that lingers is a lamp.
+    flashLife: 0.22,
+    // The afterglow is what lets a storm cell accumulate a visible footprint.
+    // At 11.5 strokes a second over a whole planet, the flash alone averages
+    // about two lit pixels and reads as sensor noise.
+    glowLife: 3.2,
+    // Pixels at the drawing buffer's scale, like the city sprites.
+    size: 2.6,
+    brightness: 1.0,
+    // Cold white-blue, so lightning is never mistaken for a block arc's amber
+    // or a flow arc's violet. It is the only thing on the globe that is not
+    // network traffic and it must not join that vocabulary.
+    color: '#cfe6ff',
   },
 
   ripples: {

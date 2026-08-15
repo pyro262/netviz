@@ -3,6 +3,7 @@ import { BACKGROUND } from './palette.js';
 import { createGlobe, latLonToVec3 } from './globe.js';
 import { sunDirection } from './sun.js';
 import { createClouds } from './clouds.js';
+import { createLightning } from './lightning.js';
 import { createArcs } from './arcs.js';
 import { cfg, CONFIG, loadServerConfig } from './config.js';
 import { createRipples } from './ripples.js';
@@ -40,6 +41,9 @@ const sunLocal = new THREE.Vector3();
 // Set at mount, and null when the layer was off at boot -- the field arrives
 // over the network, so unlike the baked layers this one is not part of globe.
 let clouds = null;
+// Set at mount, and null when the layer was off at boot -- like the clouds, the
+// data arrives over the network rather than being baked into the globe.
+let lightning = null;
 
 // The globe group may rotate, so the sun vector has to be expressed in the
 // group's local frame -- otherwise the terminator rides along with the
@@ -223,6 +227,14 @@ async function boot() {
     globe.registerLayer('clouds', clouds);
   }
 
+  // In globe.group like the clouds: the strokes are fixed to the Earth's
+  // surface, so they turn with it rather than hanging in front of the camera.
+  if (cfg('layers.lightning', false)) {
+    lightning = createLightning(GLOBE_RADIUS);
+    globe.group.add(lightning.points);
+    globe.registerLayer('lightning', lightning);
+  }
+
   // A disabled ripple layer still needs a spawn() to call, so the arc landing
   // callback below does not have to know whether it exists.
   // The stub carries the whole interface, as the stars stub does and as
@@ -368,6 +380,7 @@ async function boot() {
       globe.cityPoints.material.uniforms.pixelScale.value =
         renderer.domElement.height * 0.002;
     }
+    if (lightning) lightning.setPixelScale(renderer.domElement.height * 0.002);
     // Stars are pixel-sized too. 1/1440 keeps a mag 6 star sub-pixel-ish and
     // Sirius a few pixels across at any resolution.
     stars.setPixelScale(renderer.domElement.height / 1440);
@@ -441,6 +454,7 @@ async function boot() {
     last = now;
     arcs.update(dt);
     ripples.update(dt);
+    if (lightning) lightning.update(dt);
     if (aurora) aurora.mesh.material.uniforms.time.value += dt;
     globe.updateFlashes(dt);
     stars.update(dt);
@@ -475,7 +489,7 @@ async function boot() {
   // input, with input's slot in ctx filled in last.
   const ctx = {
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
-    scene, input: null, polling, resize, rail, classCounts, clouds,
+    scene, input: null, polling, resize, rail, classCounts, clouds, lightning,
   };
   // TWO appliers, on purpose. `preview` is the raw executor: the tuning panel
   // drives it while somebody drags a slider, so the wall changes and NOTHING
@@ -586,7 +600,7 @@ async function boot() {
   // exists so tools/shoot.py can assert the scene has live arcs rather than
   // leaving "looks about right" as the only check.
   window.__netviz = {
-    arcs, globe, ripples, aurora, clouds, renderer, camera, scene, rig, stars, input,
+    arcs, globe, ripples, aurora, clouds, lightning, renderer, camera, scene, rig, stars, input,
     settings, menu, rulesPanel, settingsPanel,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
