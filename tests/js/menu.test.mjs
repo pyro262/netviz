@@ -1127,6 +1127,36 @@ test('firstSentence: a multi-sentence string is cut at the first period-plus-whi
   );
 });
 
+test('firstSentence: a trailing dash clause is cut, because that is where the aside starts', () => {
+  // Much of the schema is one sentence whose second half is an aside after
+  // " -- ", so the first period lands at the very end. Measured on the real
+  // strings, cutting at the dash takes these three from 166/187/152
+  // characters to 58/113/95, and the part removed is elaboration in every
+  // case rather than the part that says what the layer is.
+  const watched = firstSentence(entry('layers.bordersWatched').help);
+  assert.equal(watched, 'Outlines for the geo-blocked countries, in the block amber');
+  assert.ok(!firstSentence(entry('layers.lightning').help).includes('no amount of polling'));
+  assert.ok(!firstSentence(entry('layers.aurora').help).includes('Siberia'));
+});
+
+test('firstSentence: a colon is NOT a boundary, because the schema uses it to define, not to trail', () => {
+  // layers.atmosphere is "The limb glow: a shell just outside the surface
+  // that gives the globe an edge...". Cutting at the colon would leave "The
+  // limb glow" -- the name of the thing with the explanation thrown away.
+  // The dash and the colon do opposite jobs in this prose.
+  const atmosphere = firstSentence(entry('layers.atmosphere').help);
+  assert.ok(atmosphere.includes('a shell just outside the surface'),
+    'the colon was treated as a sentence boundary and ate the definition');
+});
+
+test('firstSentence: a very short opening dash clause is left alone rather than cut to a fragment', () => {
+  // The guard on the dash rule: below MIN_CLAUSE the dash is ignored, so a
+  // sentence that opens with a brief aside keeps its whole first sentence
+  // instead of becoming two or three words.
+  assert.equal(firstSentence('Stars -- the real ones -- turned by sidereal time.'),
+    'Stars -- the real ones -- turned by sidereal time.');
+});
+
 test('schemaTitle: a path with no schema entry gets no title, not undefined-as-a-string or empty', () => {
   assert.equal(schemaTitle('layers.doesNotExist'), undefined);
   assert.equal(schemaTitle('not.a.real.path.at.all'), undefined);

@@ -30,11 +30,36 @@ export const DOUBLE_TAP = { maxMs: 320, maxPx: 24 };
  * Text with no period-then-whitespace at all -- already one sentence, or a
  * sentence that simply ends the string with no trailing space -- is returned
  * unchanged rather than truncated on a guess.
+ *
+ * A DASH CLAUSE COUNTS AS A BOUNDARY TOO, and this is worth the extra rule:
+ * much of the schema is written as one sentence whose second half is an
+ * aside after " -- ", so the first period lands at the very end and the
+ * tooltip comes back at ~150-190 characters. Measured against the real text,
+ * cutting at the dash takes layers.bordersWatched from 166 to 58,
+ * layers.lightning from 187 to 113 and layers.aurora from 152 to 95, and
+ * changes nothing else -- the aside is elaboration in every case, never the
+ * part that says what the layer is.
+ *
+ * A COLON IS DELIBERATELY NOT A BOUNDARY. It reads like one, but the schema
+ * uses it to introduce the definition rather than to trail an aside:
+ * layers.atmosphere is "The limb glow: a shell just outside the surface
+ * that...", and cutting there leaves "The limb glow", which names the thing
+ * without explaining it. The dash and the colon are doing opposite jobs in
+ * this prose and only one of them can be cut on.
+ *
+ * MIN_CLAUSE guards the one way the dash rule could go wrong: a sentence
+ * opening with a very short dashed clause would otherwise be cut to a
+ * fragment. Below that length the dash is ignored and the full first
+ * sentence is used.
  */
+const MIN_CLAUSE = 45;
+
 export function firstSentence(text) {
   const s = String(text);
   const m = /\.\s/.exec(s);
-  return m ? s.slice(0, m.index + 1) : s;
+  const sentence = m ? s.slice(0, m.index + 1) : s;
+  const dash = sentence.indexOf(' -- ');
+  return dash >= MIN_CLAUSE ? sentence.slice(0, dash) : sentence;
 }
 
 /**
