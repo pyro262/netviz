@@ -176,7 +176,7 @@ export function createClouds(radius) {
     // previous poll's setTimeout wait. Reading it once at mount would freeze
     // the layer at whatever the boot config said, exactly the bug this task
     // removes.
-    if (!cfg('layers.clouds', true)) {
+    if (!cfg('layers.clouds', false)) {
       inFlight = false;
       if (!stopped) {
         timer = setTimeout(poll, nextPollDelay(Date.now(), POLL_PERIOD_MS, POLL_OFFSET_MS, true, RETRY_MS));
@@ -199,7 +199,7 @@ export function createClouds(radius) {
           if (await loadField()) etag = stamp;
         }
         uniforms.fade.value = texture ? fade : 0;
-        mesh.visible = uniforms.fade.value > 0 && cfg('layers.clouds', true);
+        mesh.visible = uniforms.fade.value > 0 && cfg('layers.clouds', false);
         ok = true;
       } else {
         // 404: this collector has no cloud layer. Stop asking -- it cannot
