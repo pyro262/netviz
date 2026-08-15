@@ -19,7 +19,7 @@
 import * as THREE from 'three';
 import { cfg } from './config.js';
 import { latLonToVec3 } from './globe.js';
-import { nextLightningPoll, strokesDue } from './schedule.js';
+import { nextLightningPoll, strokesDue, playbackStart } from './schedule.js';
 
 // 11.5 strokes/second worldwide (measured) times a ~3.2s total life is about 37
 // alive at once. 2048 is fifty times that: the pool exists so nothing allocates
@@ -27,6 +27,24 @@ import { nextLightningPoll, strokesDue } from './schedule.js';
 const POOL = 2048;
 
 const RETRY_MS = 120_000;
+
+// Fallback only: a renderer talking to a collector old enough not to serve
+// `state.lag` yet still needs a number. netviz/lightning.py now serves this
+// as PUBLISH_LAG so there is exactly one definition instead of the two that
+// silently drifted into the boot-race bug documented in schedule.js.
+const DEFAULT_LAG_SEC = 32 * 60;
+
+// Float32 birth timestamps lose precision as the shared `now` clock grows: at
+// ~2.6M seconds (roughly one month of uptime, and this kiosk only reloads on
+// a deploy, so a month is ordinary) the ULP is about 0.25s -- bigger than
+// flashLife's default of 0.22s, so the flash quantizes away entirely. Folding
+// the clock and every live birth back by an hour, hourly, keeps every
+// (now - birth) difference exact while never letting the magnitude grow
+// enough to matter. arcs.js, ripples.js and globe.js sidestep this the same
+// way clouds.js sidesteps a similar problem: a per-slot age reset to 0. This
+// module can't do that -- `now` is one shared uniform, not per-slot -- so it
+// gets its own periodic rebase instead.
+const CLOCK_FOLD_SEC = 3600;
 
 const VERT = /* glsl */`
   uniform float now;
@@ -157,19 +175,49 @@ export function createLightning(radius) {
         const state = await r.json();
         ok = true;
         if (state.bucket && state.bucket !== bucket) {
-          bucket = state.bucket;
-          strokes = Array.isArray(state.strokes) ? state.strokes : [];
-          count = strokes.length;
           // Playback starts where the bucket already is, not at 0: the poll may
           // land a minute late, and starting at 0 every time would replay that
           // minute and then run past the next bucket's arrival.
-          playAt = Math.max(0, Math.min(state.window || 600, state.age - (32 * 60)));
-          cursor = 0;
-          age = state.age;
+          const lag = state.lag ?? DEFAULT_LAG_SEC;
+          const start = playbackStart(state.age, lag, state.window || 600);
+          if (start === null) {
+            // Belt-and-braces guard against the boot-race bug (see
+            // LIGHTNING_OFFSET_MS in schedule.js): a bucket that is already
+            // spent by the time it is fetched must never be adopted -- doing
+            // so would clamp playAt to `window` and then never fire another
+            // stroke for the full next 600s. Treat this poll as unhealthy
+            // instead, so the poller retries on RETRY_MS and finds a live
+            // bucket within two minutes rather than waiting out a dead one.
+            ok = false;
+          } else {
+            bucket = state.bucket;
+            strokes = Array.isArray(state.strokes) ? state.strokes : [];
+            count = strokes.length;
+            playAt = start;
+            cursor = 0;
+            age = state.age;
+          }
         } else if (!state.bucket) {
-          // The collector is up and has nothing yet. Keep asking.
+          // The collector is up and has nothing yet -- e.g. it just restarted
+          // and hasn't completed its first fetch. Clear bucket/age too, not
+          // just strokes/count: leaving the old bucket name and a frozen age
+          // standing made the rail read "LIGHTNING 0 · 38m behind" forever
+          // through any outage, however long, because rail.js gates the row
+          // on `bucket` being truthy. Clearing both is what makes the row
+          // disappear, which is the honest state.
           strokes = [];
           count = 0;
+          bucket = null;
+          age = null;
+        } else {
+          // Same bucket as last poll. Re-sync age from the collector's own
+          // clock on every successful poll, not only when a new bucket
+          // arrives: update() stops advancing `age` whenever the layer is
+          // invisible or has no strokes (early return), and even while
+          // visible a stalled frame loses time forever (main.js clamps dt to
+          // 0.1s, so lost wall-clock time is never recovered). Left alone,
+          // "how far behind" on the rail would only ever be a lower bound.
+          age = state.age;
         }
         refreshVisibility();
       } else if (r.status === 404) {
@@ -194,6 +242,17 @@ export function createLightning(radius) {
     /** One frame. `dt` is seconds, the same value arcs.js is driven with. */
     update(dt) {
       clock += dt;
+      // See CLOCK_FOLD_SEC above: rebase the whole clock, and every live
+      // birth with it, once an hour, so a Float32 `now - birth` never grows
+      // into the range where its precision would swallow flashLife. The -1e6
+      // sentinels for unused pool slots only get more negative -- harmless,
+      // since FRAG's `vAge > glowLife` discard already rejects anything that
+      // negative regardless of magnitude.
+      if (clock > CLOCK_FOLD_SEC) {
+        clock -= CLOCK_FOLD_SEC;
+        for (let i = 0; i < births.length; i += 1) births[i] -= CLOCK_FOLD_SEC;
+        geometry.attributes.birth.needsUpdate = true;
+      }
       uniforms.now.value = clock;
       if (!points.visible || !strokes.length) return;
       const from = playAt;

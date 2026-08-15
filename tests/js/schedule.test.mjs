@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextPollDelay, auroraFromReading, nextLightningPoll, strokesDue } from '../../netviz/static/js/schedule.js';
+import { nextPollDelay, auroraFromReading, nextLightningPoll, strokesDue, playbackStart } from '../../netviz/static/js/schedule.js';
 
 const H = 3600_000;
 const PERIOD = 3 * H;
@@ -117,14 +117,17 @@ test('strokesDue on an empty bucket is empty, not a throw', () => {
   assert.equal(out.cursor, 0);
 });
 
-test('nextLightningPoll lands two minutes past a ten-minute boundary', () => {
-  // 32 minutes of publish lag is three whole buckets plus two minutes, so the
-  // useful phase within a 600s period is 120s.
+test('nextLightningPoll lands two and a half minutes past a ten-minute boundary', () => {
+  // 32 minutes of publish lag is three whole buckets plus two minutes -- but
+  // LIGHTNING_OFFSET_MS carries an extra +30_000 on top of that (see its
+  // comment in schedule.js: polling at the SAME instant as the collector's
+  // own poll deterministically reads the previous cycle's bucket), so the
+  // useful phase within a 600s period is 150s, not 120s.
   const boundary = Date.UTC(2026, 7, 15, 7, 0, 0);
   for (const offset of [0, 61_000, 121_000, 500_000]) {
     const delay = nextLightningPoll(boundary + offset, true);
     const landed = (boundary + offset + delay) % 600_000;
-    assert.ok(Math.abs(landed - 120_000) < 1000, `landed at ${landed}`);
+    assert.ok(Math.abs(landed - 150_000) < 1000, `landed at ${landed}`);
     assert.ok(delay > 0 && delay <= 600_000);
   }
 });
@@ -133,12 +136,41 @@ test('nextLightningPoll waits a whole period rather than firing a second early',
   // The shared nextPollDelay guard returns the full period when the calculated
   // delay is ≤1000 ms, so a caller is never handed a sub-second delay that would
   // spin it into a hot loop. The aurora and cloud layers already depend on this.
-  // When a poll starts at 119_000 ms into a 600_000 ms period, the raw delay is
-  // exactly 1000 ms, which triggers the guard: return the full period instead.
-  // This is the intended behavior, documented here so it is not mistaken for a bug.
+  // With the 150s phase, a poll starting at 149_000 ms into a 600_000 ms period
+  // has a raw delay of exactly 1000 ms, which triggers the guard: return the
+  // full period instead. This is the intended behavior, documented here so it
+  // is not mistaken for a bug.
   const boundary = Date.UTC(2026, 7, 15, 7, 0, 0);
-  const delay = nextLightningPoll(boundary + 119_000, true);
+  const delay = nextLightningPoll(boundary + 149_000, true);
   assert.equal(delay, 600_000);
+});
+
+test('playbackStart refuses a bucket that is already spent -- the boot-race guard', () => {
+  // THE REGRESSION THIS EXISTS FOR: the renderer's LIGHTNING_OFFSET_MS used to
+  // equal the collector's PUBLISH_LAG exactly, so both polled the same instant
+  // and the renderer always read the PREVIOUS cycle's bucket. Verified: at
+  // age=2520, lag=1920 (32 minutes), window=600, playAt clamped to exactly
+  // 600 -- the end of the window -- and never fired another stroke.
+  assert.equal(playbackStart(2520, 32 * 60, 600), null);
+  // The fixed offset (150s phase) lands with room inside the window.
+  const start = playbackStart(150 + 32 * 60, 32 * 60, 600);
+  assert.equal(start, 150);
+});
+
+test('playbackStart clamps a bucket that arrived early to 0', () => {
+  // age - lag can be negative if the poll lands before the nominal lag has
+  // fully elapsed; playback cannot start before the bucket's own beginning.
+  assert.equal(playbackStart(30, 32 * 60, 600), 0);
+});
+
+test('playbackStart treats a missing age as no bucket at all', () => {
+  assert.equal(playbackStart(null, 32 * 60, 600), null);
+  assert.equal(playbackStart(undefined, 32 * 60, 600), null);
+});
+
+test('playbackStart accepts a position exactly one second inside the window', () => {
+  assert.equal(playbackStart(599, 0, 600), 599);
+  assert.equal(playbackStart(600, 0, 600), null);   // exactly spent, refused
 });
 
 test('nextLightningPoll retries fast when unhealthy', () => {

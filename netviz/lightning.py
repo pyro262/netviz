@@ -174,22 +174,27 @@ class LightningCache:
 
     def __init__(self, cap: int = MAX_STROKES) -> None:
         self._cap = cap
-        self._name: Optional[str] = None
-        self._start: Optional[float] = None
-        self._strokes: list = []
+        # A single field, not three (name/start/strokes), and always replaced
+        # by rebinding it whole rather than mutated in place. `update()` runs
+        # on an asyncio.to_thread worker while `state()` is read from the
+        # event loop thread; each of three separate attribute assignments is
+        # individually GIL-atomic but the sequence is not, so a state() call
+        # landing between them could serve one bucket's strokes under another
+        # bucket's name and start time -- and the renderer keys playback on
+        # the name. One tuple, published with one assignment, has no such gap.
+        self._bucket: Optional[tuple[str, float, list]] = None  # (name, start, strokes)
 
     @property
     def name(self) -> Optional[str]:
-        return self._name
+        return self._bucket[0] if self._bucket else None
 
     def update(self, name: str, strokes: list) -> None:
         kept = sample(strokes, self._cap)
         # Rounded once here rather than on every request: 3 decimals is 110 m,
         # far below one pixel of a globe on a wall, and it takes the payload
         # from ~125 KB to ~95 KB.
-        self._strokes = [[int(s), round(lat, 3), round(lon, 3)] for s, lat, lon in kept]
-        self._name = name
-        self._start = bucket_start(name)
+        rounded = [[int(s), round(lat, 3), round(lon, 3)] for s, lat, lon in kept]
+        self._bucket = (name, bucket_start(name), rounded)
 
     def state(self, now: float) -> dict:
         """What /lightning.json serves.
@@ -199,13 +204,21 @@ class LightningCache:
         'nothing fetched yet' from 'a quiet sky', and unlike clouds, a quiet
         sky is a real and common state.
         """
+        name, start, strokes = self._bucket if self._bucket else (None, None, [])
         return {
-            "bucket": (None if self._start is None
-                       else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._start))),
-            "age": None if self._start is None else now - self._start,
-            "count": len(self._strokes),
+            "bucket": (None if start is None
+                       else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start))),
+            "age": None if start is None else now - start,
+            "count": len(strokes),
             "window": BUCKET_SECONDS,
-            "strokes": self._strokes,
+            # The renderer used to hardcode this lag as its own constant
+            # (32 * 60_000 ms), duplicating PUBLISH_LAG above. Two independent
+            # copies of the same number is how they drifted out of phase with
+            # each other in the first place (see schedule.js's comment on
+            # LIGHTNING_OFFSET_MS) -- serving it here makes this the one
+            # definition and the renderer a reader of it.
+            "lag": PUBLISH_LAG,
+            "strokes": strokes,
         }
 
 

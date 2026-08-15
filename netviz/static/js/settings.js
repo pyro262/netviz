@@ -558,7 +558,7 @@ export const SCHEMA = {
   'lightning.size': {
     type: 'number', min: 0.5, max: 12, strategy: 'uniform',
     help: 'Strike size in pixels, scaled to the drawing buffer like the city '
-        + 'lights -- so it stays the same apparent size at 1080p and 4K.',
+        + 'lights — so it stays the same apparent size at 1080p and 4K.',
   },
   'lightning.brightness': {
     type: 'number', min: 0, max: 3, strategy: 'uniform',

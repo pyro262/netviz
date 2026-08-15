@@ -101,6 +101,7 @@ def test_cache_before_any_fetch_is_empty_but_not_absent():
     assert state["age"] is None
     assert state["count"] == 0
     assert state["strokes"] == []
+    assert state["lag"] == lightning.PUBLISH_LAG
 
 
 def test_cache_rounds_coordinates_to_three_decimals():
@@ -111,6 +112,7 @@ def test_cache_rounds_coordinates_to_three_decimals():
     assert state["bucket"] == "2026-08-15T06:50:00Z"
     assert state["age"] == 60.0
     assert state["count"] == 1
+    assert state["lag"] == lightning.PUBLISH_LAG
 
 
 def test_refresh_installs_the_newest_ready_bucket():

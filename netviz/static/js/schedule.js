@@ -90,7 +90,27 @@ export function cloudFade(age, ttl) {
 // whole buckets plus two, so within a 600s period the poll wants to fire at
 // 120s past a boundary.
 const LIGHTNING_PERIOD_MS = 600_000;
-const LIGHTNING_OFFSET_MS = 32 * 60_000;
+//
+// THE +30_000 IS LOAD-BEARING, not a fudge factor. This used to be exactly
+// 32 * 60_000 -- the same number as netviz/lightning.py's PUBLISH_LAG, on the
+// same 600s period -- which means the renderer polled at the SAME INSTANT the
+// collector's own poll began doing an HTTPS GET, a gunzip and a 6,900-line
+// parse before its cache moves. The renderer therefore deterministically read
+// the PREVIOUS cycle's bucket every scheduled poll, verified numerically:
+//
+//   renderer polls at +120s   cache holds 20260815_0620   age 2520   playAt 600
+//   renderer polls at +720s   cache holds 20260815_0630   age 2520   playAt 600
+//
+// playAt clamped to the 600s window every time, strokesDue found nothing (the
+// max stroke second is 599), and the layer stayed dark forever after boot --
+// the boot poll alone lands at an arbitrary phase and happened to work, which
+// is why every live check during development passed. Polling 30s AFTER the
+// collector, not WITH it, is what a phase offset means here: identical
+// constants are a race the renderer always loses. The honest cost is that the
+// first ~30 seconds of each bucket goes unplayed, which is inherent to any
+// positive lag between "the collector has it" and "the renderer asks" -- a
+// truthful trade, not a lossy one.
+const LIGHTNING_OFFSET_MS = 32 * 60_000 + 30_000;
 
 /**
  * Milliseconds until the collector should have a new bucket.
@@ -102,6 +122,34 @@ const LIGHTNING_OFFSET_MS = 32 * 60_000;
  */
 export function nextLightningPoll(nowMs, healthy = true, retryMs = 120_000) {
   return nextPollDelay(nowMs, LIGHTNING_PERIOD_MS, LIGHTNING_OFFSET_MS, healthy, retryMs);
+}
+
+/**
+ * Where playback of a freshly-fetched bucket should start, or null if the
+ * bucket is already spent.
+ *
+ * This is the belt-and-braces guard for the boot-race bug described on
+ * LIGHTNING_OFFSET_MS above: even with the phase fix, a slow collector poll,
+ * a slow renderer fetch, or a clock skewed the wrong way can still hand the
+ * renderer a bucket whose playback position is already past its own window.
+ * Adopting such a bucket anyway would clamp to `window` and then sit there --
+ * strokesDue never fires because the max stroke second is `window - 1` -- so
+ * the layer would go dark for the full next 600s instead of just failing this
+ * one poll and retrying on the short interval. Pulled out as a pure function,
+ * rather than a branch inline in lightning.js's poll(), because it is the one
+ * piece of that decision that does not need a DOM or a fetch to test.
+ *
+ * @param age    seconds since the bucket's coverage started (state.age)
+ * @param lag    the collector's publish lag, in seconds (state.lag)
+ * @param window the bucket's length in seconds (state.window)
+ * @returns the playback position to start at, clamped to [0, window), or
+ *          null when age - lag has already reached or passed window
+ */
+export function playbackStart(age, lag, window) {
+  if (age === null || age === undefined) return null;
+  const pos = age - lag;
+  if (pos >= window) return null;
+  return Math.max(0, Math.min(window, pos));
 }
 
 /**
