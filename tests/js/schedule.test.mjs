@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextPollDelay, auroraFromReading } from '../../netviz/static/js/schedule.js';
+import { nextPollDelay, auroraFromReading, nextLightningPoll, strokesDue } from '../../netviz/static/js/schedule.js';
 
 const H = 3600_000;
 const PERIOD = 3 * H;
@@ -78,4 +78,57 @@ test('a stale reading is drawn dimmer rather than confidently', () => {
   const old = auroraFromReading({ kp: 6, stale: true });
   assert.equal(old.visible, true, 'a stale reading still draws');
   assert.ok(old.strength < fresh.strength, `${old.strength} !< ${fresh.strength}`);
+});
+
+test('strokesDue fires every stroke exactly once across a whole bucket', () => {
+  const strokes = [];
+  for (let s = 0; s < 600; s += 1) strokes.push([s, s / 10, -s / 10]);
+
+  let cursor = 0;
+  let fired = 0;
+  for (let t = 0; t < 600; t += 1 / 6) {           // 6 frames per simulated second
+    const out = strokesDue(strokes, t, t + 1 / 6, cursor);
+    cursor = out.cursor;
+    fired += out.items.length;
+  }
+  assert.equal(fired, strokes.length);
+});
+
+test('strokesDue does not fire a stroke sitting exactly on a window edge twice', () => {
+  const strokes = [[10, 1, 2]];
+  const a = strokesDue(strokes, 9, 10, 0);
+  assert.equal(a.items.length, 0);                 // half-open: 10 is not in [9, 10)
+  const b = strokesDue(strokes, 10, 11, a.cursor);
+  assert.equal(b.items.length, 1);
+  const c = strokesDue(strokes, 11, 12, b.cursor);
+  assert.equal(c.items.length, 0);
+});
+
+test('strokesDue returns everything in a window that spans several seconds', () => {
+  const strokes = [[0, 1, 1], [1, 2, 2], [2, 3, 3], [9, 4, 4]];
+  const out = strokesDue(strokes, 0, 3, 0);
+  assert.equal(out.items.length, 3);
+  assert.equal(out.cursor, 3);
+});
+
+test('strokesDue on an empty bucket is empty, not a throw', () => {
+  const out = strokesDue([], 0, 1, 0);
+  assert.deepEqual(out.items, []);
+  assert.equal(out.cursor, 0);
+});
+
+test('nextLightningPoll lands two minutes past a ten-minute boundary', () => {
+  // 32 minutes of publish lag is three whole buckets plus two minutes, so the
+  // useful phase within a 600s period is 120s.
+  const boundary = Date.UTC(2026, 7, 15, 7, 0, 0);
+  for (const offset of [0, 61_000, 119_000, 121_000, 500_000]) {
+    const delay = nextLightningPoll(boundary + offset, true);
+    const landed = (boundary + offset + delay) % 600_000;
+    assert.ok(Math.abs(landed - 120_000) < 1000, `landed at ${landed}`);
+    assert.ok(delay > 0 && delay <= 600_000);
+  }
+});
+
+test('nextLightningPoll retries fast when unhealthy', () => {
+  assert.equal(nextLightningPoll(Date.now(), false), 120_000);
 });

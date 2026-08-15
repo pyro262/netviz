@@ -84,3 +84,49 @@ export function cloudFade(age, ttl) {
   if (age >= ttl) return 0;
   return 1 - (age - start) / (ttl - start);
 }
+
+// Blitzortung publishes a 10-minute bucket about 31 minutes after the minute it
+// covers, and netviz/lightning.py adds a minute of margin. 32 minutes is three
+// whole buckets plus two, so within a 600s period the poll wants to fire at
+// 120s past a boundary.
+const LIGHTNING_PERIOD_MS = 600_000;
+const LIGHTNING_OFFSET_MS = 32 * 60_000;
+
+/**
+ * Milliseconds until the collector should have a new bucket.
+ *
+ * The unhealthy retry is 2 minutes rather than the cloud layer's 5: a bucket
+ * is only useful for the 600 seconds it takes to play, so discovering a
+ * recovered collector after five minutes means discovering it with most of the
+ * bucket already gone.
+ */
+export function nextLightningPoll(nowMs, healthy = true, retryMs = 120_000) {
+  return nextPollDelay(nowMs, LIGHTNING_PERIOD_MS, LIGHTNING_OFFSET_MS, healthy, retryMs);
+}
+
+/**
+ * The strokes falling in [fromSec, toSec) of the playing bucket.
+ *
+ * HALF-OPEN, and the cursor is carried across calls, because both halves of
+ * that are correctness rather than taste. A closed interval fires a stroke
+ * sitting on a frame boundary twice -- a double flash in one place, which on a
+ * wall reads as a hot pixel. Scanning from 0 every frame is 6,000 comparisons
+ * at 60 fps forever, when the strokes are already sorted and playback only
+ * ever moves forward.
+ *
+ * @param strokes sorted `[second, lat, lon]` triples from /lightning.json
+ * @param fromSec playback position at the previous frame
+ * @param toSec   playback position now
+ * @param cursor  index returned by the previous call; 0 for a new bucket
+ * @returns `{ items, cursor }` -- pass `cursor` back in next frame
+ */
+export function strokesDue(strokes, fromSec, toSec, cursor = 0) {
+  const items = [];
+  let i = cursor;
+  while (i < strokes.length && strokes[i][0] < fromSec) i += 1;
+  while (i < strokes.length && strokes[i][0] < toSec) {
+    items.push(strokes[i]);
+    i += 1;
+  }
+  return { items, cursor: i };
+}
