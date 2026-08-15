@@ -66,12 +66,17 @@ const LAYER_GROUPS = [
  * menuModel(state) → Array<Item>
  *
  * Builds the menu structure given the display's current state.
- * state is {railOn, layers: {...twelve keys...}, layersExpanded,
+ * state is {railOn, layers: {...twelve keys...}, layersExpanded, testMode,
  * canLookHere, settingsPanel, rulesPanel, canReset}.
  *
  * Returns an array of top-level menu items in this order:
  * - lookHere: action, enabled only when pointer was on globe
  * - rail: toggle, reflects current rail state
+ * - testMode: toggle, reflects state.testMode -- sits directly above Layers
+ *   so it reads as governing what follows: with it on, hovering a layer
+ *   toggle below previews that layer live before you commit to it with a
+ *   click. It is a pure config write with nothing of its own to preview, so
+ *   it does not preview itself.
  * - layers: submenu, click-to-expand, with a group header (kind: 'group',
  *   non-interactive) before each of the four groups and a toggle for each
  *   of the twelve layers -- present only while state.layersExpanded is
@@ -94,6 +99,13 @@ export function menuModel(state) {
       label: 'Stats rail',
       kind: 'toggle',
       on: state.railOn,
+      enabled: true,
+    },
+    {
+      id: 'testMode',
+      label: 'Test mode',
+      kind: 'toggle',
+      on: !!state.testMode,
       enabled: true,
     },
     {
@@ -160,7 +172,19 @@ export function menuModel(state) {
  *  reusing menuModel's layer ids -- but the top-level toggles read friendlier
  *  than their path (`rail`, not `rail.enabled`), so the handful that differ
  *  are named here rather than guessed from the id at click time. */
-const TOGGLE_PATHS = { rail: 'rail.enabled' };
+const TOGGLE_PATHS = { rail: 'rail.enabled', testMode: 'menu.testMode' };
+
+/**
+ * Delay before a hovered layer row actually previews, in milliseconds.
+ *
+ * Sweeping the pointer down twelve rows on the way to the one you actually
+ * want must not strobe the wall -- eleven layers flashing on for a single
+ * frame each as the cursor passes over them. 150ms is comfortably longer
+ * than a sweep's dwell time on any one row (a deliberate mouse pass over a
+ * dozen 24px rows spends well under 100ms on each) and still reads as
+ * instant to someone who actually pauses on a row to look at it.
+ */
+export const HOVER_DELAY_MS = 150;
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -208,12 +232,100 @@ function clampPosition(node, x, y) {
  * ranks its z-index only among stage's own children and the `#rail` sibling
  * painted its numbers straight over the menu's opaque background.
  *
+ * `preview` is the RAW, non-persisting applier (`createApplier(ctx)` in
+ * main.js, unwrapped by `withPersistence`) -- optional, and used for exactly
+ * one thing: applying a layer live while the pointer merely hovers it, under
+ * `menu.testMode`. Nothing a hover does may ever reach `localStorage`, which
+ * is why this is a second applier rather than a flag on `settings` -- a
+ * hover that happened to go through the persisting one would freeze
+ * whatever the pointer last touched into every future boot. A menu built
+ * with no `preview` (most tests, and any future caller with no use for the
+ * feature) behaves exactly as it did before this option existed: no hover
+ * listeners are attached, no timer is ever started.
+ *
  * Built from menuModel() on every open, never cached across opens, so a
  * toggle flipped a minute ago -- by this menu or by anything else that calls
  * settings.apply -- shows correctly the next time somebody opens it.
  */
-export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, root }) {
+export function createMenu({
+  rig, settings, preview, rulesPanel, settingsPanel, onReset, root,
+  hoverDelayMs = HOVER_DELAY_MS,
+}) {
   let node = null;
+  // The layer path currently being hover-previewed, and the value it held
+  // before the preview started -- NOT config.js's default, which can differ
+  // from what was actually on screen. Also doubles as the guard tying a
+  // pending timer or a live preview back to the one row that started it.
+  let hoverState = null;
+  // The pending "apply after hoverDelayMs" timer, so a leave inside the
+  // delay window can cancel it before anything is ever pushed to the wall.
+  let hoverTimer = null;
+
+  function clearHoverTimer() {
+    if (hoverTimer !== null) { clearTimeout(hoverTimer); hoverTimer = null; }
+  }
+
+  /** Revert whatever preview is currently live (if any) and forget it. This
+   *  is the ONE path every close route funnels through -- outside click,
+   *  Escape, blur, a fresh open() replacing this menu, and the Layers group
+   *  itself collapsing or expanding (which rebuilds the DOM out from under a
+   *  row that may be mid-preview, with no mouseleave to fire on a node that
+   *  just got removed). A preview that outlives its cause is a wall showing
+   *  something nobody chose, which is the one failure mode here worse than
+   *  the feature not working at all. Safe to call unconditionally -- whether
+   *  or not this menu has a `preview` applier, and whether or not anything
+   *  is actually pending. */
+  function cancelPreview() {
+    clearHoverTimer();
+    if (!preview || !hoverState) return;
+    preview.apply({ [hoverState.path]: hoverState.previousValue });
+    hoverState = null;
+  }
+
+  /** Drop a pending or active preview for `path` WITHOUT reverting it --
+   *  called right before a click commits the same value for real, so that
+   *  `act()`'s own `close()` a moment later finds nothing left to undo.
+   *  Without this, clicking a mid-preview row would apply the click's value
+   *  and then have close()'s revert immediately undo it back to what was on
+   *  screen before the hover -- the commit silently erasing itself. */
+  function dropPreview(path) {
+    clearHoverTimer();
+    if (hoverState && hoverState.path === path) hoverState = null;
+  }
+
+  /** Wire hover preview onto one layer toggle row. Only ever called for rows
+   *  whose id starts with `layers.` -- see the call site -- which is the
+   *  whole of the scope: not the rail (a toggle that resizes the renderer
+   *  and relayouts the menu itself has no business firing on mouse
+   *  movement), not the actions, not Test mode's own row, not a group
+   *  header. */
+  function wireHoverPreview(row, path, flippedValue) {
+    row.addEventListener('mouseenter', () => {
+      // Read fresh, not captured at menu-build time: Test mode is itself a
+      // toggle in this same menu, so a stale copy would mean the row above
+      // it takes an extra open/close cycle to take effect.
+      if (!cfg('menu.testMode', false)) return;
+      // Moving from one previewed row to another reverts the first before
+      // the second is even scheduled -- only one row ever previews at once.
+      cancelPreview();
+      const previousValue = cfg(path, undefined);
+      hoverTimer = setTimeout(() => {
+        hoverTimer = null;
+        hoverState = { path, previousValue };
+        preview.apply({ [path]: flippedValue });
+      }, hoverDelayMs);
+    });
+    row.addEventListener('mouseleave', () => {
+      // Inside the delay window: the timer above is cleared and nothing was
+      // ever applied, so there is nothing to revert. After it: put back the
+      // value that was actually live before the hover started.
+      clearHoverTimer();
+      if (hoverState && hoverState.path === path) {
+        preview.apply({ [hoverState.path]: hoverState.previousValue });
+        hoverState = null;
+      }
+    });
+  }
   // The pointerdown that dismissed the menu, kept only until the next open.
   //
   // This listener is on `document` in the CAPTURE phase and input.js's is on
@@ -257,6 +369,7 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
   function currentState(point) {
     return {
       railOn: cfg('rail.enabled', false),
+      testMode: cfg('menu.testMode', false),
       layers: {
         cityLights: cfg('layers.cityLights', true),
         coastline: cfg('layers.coastline', true),
@@ -296,6 +409,13 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
    *  addEventListener call below for the guard against this being undone by
    *  accident. */
   function toggleLayersExpand() {
+    // The row rebuild below detaches whatever DOM node menu-item listeners
+    // are attached to -- if a layer row happens to be mid-preview when the
+    // group collapses (or, on a fast re-expand, when it expands again), its
+    // element is simply gone and no mouseleave will ever fire on it. Revert
+    // first, same as any other close route, or the wall is left showing a
+    // preview nothing can ever undo.
+    cancelPreview();
     layersExpanded = !layersExpanded;
     if (!node || !lastOpen) return;   // nothing open to redraw
     const fresh = buildNode(lastOpen.point);
@@ -322,6 +442,12 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
   function onBlur() { close(); }
 
   function close() {
+    // Every close route -- outside click, Escape, blur, act()'s own
+    // finally, and open() calling close() on a fresh open below -- funnels
+    // through here, so this one call is what guarantees a preview never
+    // survives the menu going away. Unconditional: cancelPreview() is a
+    // no-op when nothing is pending.
+    cancelPreview();
     if (!node) return;
     node.remove();
     node = null;
@@ -366,7 +492,23 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
       row.append(el('span', `menu-check${item.on ? ' on' : ''}`, item.on ? '✓' : ''));
       if (item.enabled) {
         const path = TOGGLE_PATHS[item.id] || item.id;
-        row.addEventListener('click', act(() => settings.apply({ [path]: !item.on })));
+        row.addEventListener('click', act(() => {
+          // Drop any preview this exact row holds BEFORE the click's own
+          // apply -- act()'s finally calls close(), which calls
+          // cancelPreview(), and if hoverState were still set to this same
+          // path that revert would fire a moment later and silently erase
+          // the value the click just committed.
+          dropPreview(path);
+          settings.apply({ [path]: !item.on });
+        }));
+        // Hover preview is scoped to exactly the twelve layer toggles --
+        // their ids ARE `layers.<key>`, which is also the schema path, so
+        // this is the same "id starts with layers." check that selects them
+        // everywhere else in this file. Requires a `preview` applier; a menu
+        // built without one (most tests) attaches no listeners at all.
+        if (preview && item.id.startsWith('layers.')) {
+          wireHoverPreview(row, path, !item.on);
+        }
       }
       return row;
     }

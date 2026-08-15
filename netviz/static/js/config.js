@@ -245,6 +245,19 @@ export const CONFIG = {
     lock: false,
   },
 
+  // ----------------------------------------------------------------- menu --
+
+  menu: {
+    // With this on, hovering a layer toggle in the menu's Layers submenu
+    // applies it live -- through the raw, non-persisting applier, never
+    // localStorage -- so a passer-by can see what a layer looks like before
+    // committing to it with a click. Moving off the row reverts to whatever
+    // was actually on screen before the hover started. Off by default: a
+    // sweep of the mouse down the menu must not repaint the wall for anyone
+    // who is not deliberately trying layers on.
+    testMode: false,
+  },
+
   // --------------------------------------------------------------- layers --
   //
   // Turn off anything you do not want drawn. Each is independent.

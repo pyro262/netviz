@@ -164,6 +164,10 @@ export const HANDLERS = {
   // holding a copy, so writing CONFIG is the whole of the work -- same as
   // the other configOnly entries above.
   'input.lock': configOnly,
+  // createMenu reads cfg('menu.testMode') fresh on every open, same as
+  // input.lock above -- flipping the mode itself never touches the live
+  // display, only whether a later hover does.
+  'menu.testMode': configOnly,
   // Owned by camera.js and campath.js, not by input.js: the zoom clamp, the
   // framing it returns to and the idle countdown all live with the rig.
   // A pair, never one end at a time. Both of these compose the same final pair

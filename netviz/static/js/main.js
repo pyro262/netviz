@@ -590,7 +590,9 @@ async function boot() {
       },
     });
   } : null;
-  const menu = createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, root: document.body });
+  const menu = createMenu({
+    rig, settings, preview, rulesPanel, settingsPanel, onReset, root: document.body,
+  });
   input = startInput({ canvas: renderer.domElement, rig, menu, rulesPanel, settingsPanel });
   ctx.input = input;
   // The rest of the stored patch (arcs.rules and rail.enabled were already

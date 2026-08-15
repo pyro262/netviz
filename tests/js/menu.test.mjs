@@ -30,7 +30,7 @@ test('the menu offers the handful of things worth one gesture', () => {
   // Not all 82 settings. A menu that lists everything is a panel with worse
   // ergonomics, and the panel is a later step.
   const ids = menuModel(STATE).map((i) => i.id);
-  assert.deepEqual(ids, ['lookHere', 'rail', 'layers', 'settings']);
+  assert.deepEqual(ids, ['lookHere', 'rail', 'testMode', 'layers', 'settings']);
 });
 
 test('a toggle reports the state it is actually in', () => {
@@ -39,6 +39,17 @@ test('a toggle reports the state it is actually in', () => {
   assert.equal(on.on, true);
   assert.equal(off.on, false);
   assert.equal(on.kind, 'toggle');
+});
+
+test('the Test mode row reflects state.testMode and sits directly above Layers', () => {
+  const on = byId(menuModel({ ...STATE, testMode: true }), 'testMode');
+  const off = byId(menuModel({ ...STATE, testMode: false }), 'testMode');
+  assert.equal(on.on, true);
+  assert.equal(off.on, false);
+  assert.equal(on.kind, 'toggle');
+  const ids = menuModel(STATE).map((i) => i.id);
+  assert.equal(ids.indexOf('testMode') + 1, ids.indexOf('layers'),
+    'Test mode must sit directly above Layers');
 });
 
 test('every layer toggle mirrors its layer', () => {
@@ -304,13 +315,20 @@ function findByDataId(node, id) {
   return null;
 }
 
-function withFakeGlobals(dom, fn) {
+// `async` so a caller whose body needs to `await` (the hover-preview tests
+// below, which wait out a real setTimeout) keeps the fake document/window
+// installed across those awaits -- `fn()` is awaited before the `finally`
+// restores the real globals, rather than restoring them the instant a
+// still-pending promise is returned. A synchronous caller is unaffected: its
+// body -- assertions included -- runs to completion before this function
+// ever reaches its own `await`, exactly as it did when this was synchronous.
+async function withFakeGlobals(dom, fn) {
   const realDoc = globalThis.document;
   const realWin = globalThis.window;
   globalThis.document = dom.document;
   globalThis.window = dom.window;
   try {
-    return fn();
+    return await fn();
   } finally {
     globalThis.document = realDoc;
     globalThis.window = realWin;
@@ -815,4 +833,245 @@ test('a fresh open forgets the previous dismissal', () => {
     menu.open(0, 0, { x: 0, y: 0 });
     assert.equal(menu.dismissedBy(ev), false, 'stale after a re-open');
   });
+});
+
+
+// -------------------------------------------------------- test mode hover --
+//
+// "there should be a 'test mode' where options we're highlighting with our
+// mouse such as lightning will propagate so we can see how they look."
+// Hovering a layer row previews it through the RAW `preview` applier --
+// never `settings`, which persists -- after a short delay, and reverts to
+// whatever was actually live before the hover on mouseleave or on any close
+// route. `hoverDelayMs` is injected small here so these tests do not
+// actually sleep 150ms apiece.
+
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+/** Every test below flips CONFIG.menu.testMode for the duration of one
+ *  check; this restores it no matter how the body exits, the same discipline
+ *  the input.lock test above uses. CONFIG is a shared module-level singleton
+ *  and this file's tests run in one process, in order. */
+async function withTestMode(on, fn) {
+  CONFIG.menu.testMode = on;
+  try {
+    await fn();
+  } finally {
+    CONFIG.menu.testMode = false;
+  }
+}
+
+test('with test mode OFF, hovering a layer row applies nothing', async () => {
+  const dom = fakeDom();
+  await withTestMode(false, () => withFakeGlobals(dom, async () => {
+    const previewLog = [];
+    const settingsLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: (p) => settingsLog.push(p) },
+      preview: { apply: (p) => previewLog.push(p) },
+      root: dom.root,
+      hoverDelayMs: 5,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    starsRow.dispatch('mouseenter', {});
+    await sleep(20);
+    assert.deepEqual(previewLog, [], 'a hover applied something with test mode off');
+    assert.deepEqual(settingsLog, [], 'a hover must never touch the persisting applier');
+  }));
+});
+
+test('with test mode ON, hovering a layer row applies the flipped value through preview, not settings', async () => {
+  const dom = fakeDom();
+  await withTestMode(true, () => withFakeGlobals(dom, async () => {
+    const previewLog = [];
+    const settingsLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: (p) => settingsLog.push(p) },
+      preview: { apply: (p) => previewLog.push(p) },
+      root: dom.root,
+      hoverDelayMs: 5,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    starsRow.dispatch('mouseenter', {});
+    // Nothing yet -- the delay has not elapsed.
+    assert.deepEqual(previewLog, []);
+    await sleep(20);
+    // stars defaults true, so the previewed value is the flip: false.
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }]);
+    assert.deepEqual(settingsLog, [], 'the preview must never reach the persisting applier');
+  }));
+});
+
+test('leaving a previewed row reverts it to the value that was live before the hover', async () => {
+  const dom = fakeDom();
+  await withTestMode(true, () => withFakeGlobals(dom, async () => {
+    const previewLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      preview: { apply: (p) => previewLog.push(p) },
+      root: dom.root,
+      hoverDelayMs: 5,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    starsRow.dispatch('mouseenter', {});
+    await sleep(20);
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }]);
+    starsRow.dispatch('mouseleave', {});
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }, { 'layers.stars': true }],
+      'leaving must revert to the value that was actually live, not the config default');
+  }));
+});
+
+test('leaving a row before the delay elapses cancels the preview -- it never applied', async () => {
+  const dom = fakeDom();
+  await withTestMode(true, () => withFakeGlobals(dom, async () => {
+    const previewLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      preview: { apply: (p) => previewLog.push(p) },
+      root: dom.root,
+      hoverDelayMs: 30,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    starsRow.dispatch('mouseenter', {});
+    starsRow.dispatch('mouseleave', {});
+    await sleep(50);
+    assert.deepEqual(previewLog, [], 'the delayed apply fired anyway after a quick pass-through');
+  }));
+});
+
+test('closing the menu while a preview is live reverts it', async () => {
+  const dom = fakeDom();
+  await withTestMode(true, () => withFakeGlobals(dom, async () => {
+    const previewLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      preview: { apply: (p) => previewLog.push(p) },
+      root: dom.root,
+      hoverDelayMs: 5,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    starsRow.dispatch('mouseenter', {});
+    await sleep(20);
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }]);
+    menu.close();
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }, { 'layers.stars': true }],
+      'the menu closed with a preview still live and nothing put it back');
+  }));
+});
+
+test('clicking a previewed row commits through settings, not preview, and the close-revert does not undo it', async () => {
+  const dom = fakeDom();
+  await withTestMode(true, () => withFakeGlobals(dom, async () => {
+    const previewLog = [];
+    const settingsLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: (p) => settingsLog.push(p) },
+      preview: { apply: (p) => previewLog.push(p) },
+      root: dom.root,
+      hoverDelayMs: 5,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    starsRow.dispatch('mouseenter', {});
+    await sleep(20);
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }]);
+    starsRow.dispatch('click', { target: starsRow });
+    assert.deepEqual(settingsLog, [{ 'layers.stars': false }], 'the click must commit through the persisting applier');
+    // act()'s own close() runs synchronously inside the click dispatch above,
+    // so by now any revert it might have fired has already happened -- and it
+    // must not have, or the committed value has been silently erased.
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }],
+      'a revert fired after the commit and undid it');
+    assert.equal(menu.isOpen(), false);
+  }));
+});
+
+test('moving from one layer row to another reverts the first before previewing the second', async () => {
+  const dom = fakeDom();
+  await withTestMode(true, () => withFakeGlobals(dom, async () => {
+    const previewLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      preview: { apply: (p) => previewLog.push(p) },
+      root: dom.root,
+      hoverDelayMs: 5,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    const auroraRow = findByDataId(dom.root, 'layers.aurora');
+    starsRow.dispatch('mouseenter', {});
+    await sleep(20);
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }]);
+    // No mouseleave on starsRow -- moving straight to a sibling must still
+    // revert the first on its own.
+    auroraRow.dispatch('mouseenter', {});
+    assert.deepEqual(previewLog, [{ 'layers.stars': false }, { 'layers.stars': true }],
+      'entering a second row did not revert the first');
+    await sleep(20);
+    assert.deepEqual(previewLog, [
+      { 'layers.stars': false }, { 'layers.stars': true }, { 'layers.aurora': false },
+    ]);
+  }));
+});
+
+test('the rail toggle does not preview on hover, even with test mode on', async () => {
+  const dom = fakeDom();
+  await withTestMode(true, () => withFakeGlobals(dom, async () => {
+    const previewLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      preview: { apply: (p) => previewLog.push(p) },
+      root: dom.root,
+      hoverDelayMs: 5,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    const railRow = findByDataId(dom.root, 'rail');
+    railRow.dispatch('mouseenter', {});
+    await sleep(20);
+    assert.deepEqual(previewLog, [],
+      'the rail toggle previewed on hover -- it resizes the renderer and must not');
+  }));
+});
+
+test('a menu built with no `preview` option attaches no hover listeners and behaves as before', async () => {
+  const dom = fakeDom();
+  await withTestMode(true, () => withFakeGlobals(dom, async () => {
+    const settingsLog = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: (p) => settingsLog.push(p) },
+      // preview intentionally omitted
+      root: dom.root,
+      hoverDelayMs: 5,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    // Must not throw for lack of a preview applier, and must apply nothing.
+    starsRow.dispatch('mouseenter', {});
+    await sleep(20);
+    starsRow.dispatch('mouseleave', {});
+    assert.deepEqual(settingsLog, []);
+  }));
 });

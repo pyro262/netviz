@@ -407,6 +407,15 @@ export const SCHEMA = {
         + 'where the globe is the point and the controls are not.',
   },
 
+  // ------------------------------------------------------------------ menu --
+  'menu.testMode': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Hover a layer toggle in the menu and it applies live, so you can '
+        + 'see it before you click. Move away and it reverts. Only the '
+        + 'twelve layer toggles preview -- not the stats rail, which resizes '
+        + 'the renderer, and not the actions.',
+  },
+
   // -------------------------------------------------------------- layers --
   ...layers([
     ['cityLights', 'The bright city sprites that bloom. The dimmer night-lights '
