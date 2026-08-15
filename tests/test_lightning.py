@@ -91,3 +91,84 @@ def test_sample_thins_evenly_and_keeps_both_ends():
 def test_sample_leaves_a_small_bucket_alone():
     strokes = [(i, 1.0, 2.0) for i in range(10)]
     assert lightning.sample(strokes, 6000) == strokes
+
+
+def test_cache_before_any_fetch_is_empty_but_not_absent():
+    cache = lightning.LightningCache()
+    state = cache.state(lightning.bucket_start("20260815_0700"))
+    assert state["bucket"] is None
+    assert state["age"] is None
+    assert state["count"] == 0
+    assert state["strokes"] == []
+
+
+def test_cache_rounds_coordinates_to_three_decimals():
+    cache = lightning.LightningCache()
+    cache.update("20260815_0650", [(0, 35.544954, -73.302341)])
+    state = cache.state(lightning.bucket_start("20260815_0650") + 60)
+    assert state["strokes"] == [[0, 35.545, -73.302]]
+    assert state["bucket"] == "2026-08-15T06:50:00Z"
+    assert state["age"] == 60.0
+    assert state["count"] == 1
+
+
+def test_refresh_installs_the_newest_ready_bucket():
+    cache = lightning.LightningCache()
+    seen = []
+
+    def fetcher(name, timeout=30.0):
+        seen.append(name)
+        return [(5, 1.0, 2.0)]
+
+    now = lightning.bucket_start("20260815_0700") + 22 * 60
+    assert lightning.refresh(cache, now=now, fetcher=fetcher) is True
+    assert seen == ["20260815_0650"]
+    assert cache.state(now)["bucket"] == "2026-08-15T06:50:00Z"
+
+
+def test_refresh_does_not_refetch_the_bucket_it_already_has():
+    cache = lightning.LightningCache()
+    calls = []
+
+    def fetcher(name, timeout=30.0):
+        calls.append(name)
+        return [(5, 1.0, 2.0)]
+
+    now = lightning.bucket_start("20260815_0700") + 22 * 60
+    lightning.refresh(cache, now=now, fetcher=fetcher)
+    assert lightning.refresh(cache, now=now + 30, fetcher=fetcher) is False
+    assert calls == ["20260815_0650"]
+
+
+def test_refresh_survives_a_failed_fetch_and_keeps_the_old_bucket():
+    cache = lightning.LightningCache()
+    now = lightning.bucket_start("20260815_0700") + 22 * 60
+    lightning.refresh(cache, now=now, fetcher=lambda name, timeout=30.0: [(5, 1.0, 2.0)])
+    before = cache.state(now)
+
+    def dead(name, timeout=30.0):
+        return None
+
+    later = now + lightning.BUCKET_SECONDS
+    assert lightning.refresh(cache, now=later, fetcher=dead) is False
+    assert cache.state(later)["bucket"] == before["bucket"]
+
+
+def test_refresh_caps_a_huge_bucket():
+    cache = lightning.LightningCache()
+    huge = [(i % 600, float(i % 90), float(i % 180)) for i in range(20000)]
+    huge.sort(key=lambda s: s[0])
+    now = lightning.bucket_start("20260815_0700") + 22 * 60
+    lightning.refresh(cache, now=now, fetcher=lambda name, timeout=30.0: huge)
+    assert cache.state(now)["count"] == lightning.MAX_STROKES
+
+
+def test_next_poll_delay_lands_after_the_publish_deadline():
+    start = lightning.bucket_start("20260815_0700")
+    for offset in range(0, 600, 37):
+        delay = lightning.next_poll_delay(start + offset)
+        assert 0 < delay <= lightning.BUCKET_SECONDS
+        landed = (start + offset + delay) % lightning.BUCKET_SECONDS
+        # Fires at 2 minutes past a boundary: 32 minutes of lag is three whole
+        # buckets plus two minutes, so the useful phase is 120s.
+        assert abs(landed - 120) < 1.0

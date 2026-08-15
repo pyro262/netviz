@@ -31,9 +31,12 @@ exists to stop somebody 'cleaning this up' back into the json module.
 display can use. Dropped.
 """
 import calendar
+import gzip
 import logging
 import re
 import time
+import urllib.error
+import urllib.request
 from typing import Optional
 
 log = logging.getLogger("netviz")
@@ -120,3 +123,106 @@ def sample(strokes: list, cap: int = MAX_STROKES) -> list:
     # both kept: a bucket that visibly starts late or ends early would read as
     # a gap in the weather.
     return [strokes[round(i * (n - 1) / (cap - 1))] for i in range(cap)]
+
+
+def fetch(name: str, timeout: float = 30.0) -> Optional[list]:
+    """One bucket, downloaded and parsed. None on any failure. Never raises.
+
+    Blocking urllib and a blocking gunzip, so the caller runs it in a thread:
+    a slow volunteer server must not stall the event loop any more than a slow
+    NOAA may.
+    """
+    url = f"{URL_BASE}/{name}.json.gz"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "netviz"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read()
+    except (urllib.error.URLError, OSError, ValueError) as err:
+        log.warning("lightning: fetch %s failed: %s", name, err)
+        return None
+    try:
+        text = gzip.decompress(body).decode("utf-8", "replace")
+    except (OSError, EOFError) as err:
+        log.warning("lightning: %s is not readable gzip: %s", name, err)
+        return None
+    strokes, skipped = parse(text)
+    if not strokes:
+        log.warning("lightning: %s parsed to nothing (%d lines skipped)", name, skipped)
+        return None
+    if skipped:
+        log.info("lightning: %s skipped %d unparsable lines", name, skipped)
+    return strokes
+
+
+class LightningCache:
+    """One bucket, in memory.
+
+    In memory rather than on disk, which is the opposite of CloudCache and for
+    the opposite reason: a cloud field recovered across a restart is still the
+    current weather, while a lightning bucket recovered across a restart is
+    already expired. There is nothing worth keeping.
+    """
+
+    def __init__(self, cap: int = MAX_STROKES) -> None:
+        self._cap = cap
+        self._name: Optional[str] = None
+        self._start: Optional[float] = None
+        self._strokes: list = []
+
+    @property
+    def name(self) -> Optional[str]:
+        return self._name
+
+    def update(self, name: str, strokes: list) -> None:
+        kept = sample(strokes, self._cap)
+        # Rounded once here rather than on every request: 3 decimals is 110 m,
+        # far below one pixel of a globe on a wall, and it takes the payload
+        # from ~125 KB to ~95 KB.
+        self._strokes = [[int(s), round(lat, 3), round(lon, 3)] for s, lat, lon in kept]
+        self._name = name
+        self._start = bucket_start(name)
+
+    def state(self, now: float) -> dict:
+        """What /lightning.json serves.
+
+        `bucket` is null before the first successful fetch -- not absent, and
+        not a bucket recovered from disk. The renderer has to be able to tell
+        'nothing fetched yet' from 'a quiet sky', and unlike clouds, a quiet
+        sky is a real and common state.
+        """
+        return {
+            "bucket": (None if self._start is None
+                       else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._start))),
+            "age": None if self._start is None else now - self._start,
+            "count": len(self._strokes),
+            "window": BUCKET_SECONDS,
+            "strokes": self._strokes,
+        }
+
+
+def next_poll_delay(now: float, period: float = float(BUCKET_SECONDS),
+                    offset: float = float(PUBLISH_LAG)) -> float:
+    """Seconds until just after the next publication. Never 0 -- see aurora.
+
+    Polling every 600s from an arbitrary start sits up to a full period behind
+    the data; aligning to the boundary plus the publish lag asks once, just
+    after there is something new to ask for.
+    """
+    since = (now - offset) % period
+    delay = period - since
+    return delay if delay > 1.0 else period
+
+
+def refresh(cache: LightningCache, now: Optional[float] = None,
+            fetcher=fetch) -> bool:
+    """One poll cycle. Never raises; returns whether the cache moved."""
+    now = time.time() if now is None else now
+    name = latest_ready(now)
+    if name == cache.name:
+        return False
+    strokes = fetcher(name)
+    if not strokes:
+        return False
+    cache.update(name, strokes)
+    log.info("lightning: playing %s (%d strokes)", name, len(strokes))
+    return True
