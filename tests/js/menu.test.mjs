@@ -591,6 +591,31 @@ test('Layers expansion survives a full close/reopen of the menu', () => {
   });
 });
 
+test('clicking a rendered group header does nothing: no apply, no expansion change, menu stays open', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const log = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: (patch) => log.push(patch) },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    assert.ok(findByDataId(dom.root, 'layers.stars'), 'did not expand for the header lookup below');
+
+    const skyHeader = findByDataId(dom.root, 'layers-group-sky');
+    assert.ok(skyHeader, 'no row with data-id=layers-group-sky');
+
+    skyHeader.dispatch('click', { target: skyHeader });
+
+    assert.deepEqual(log, [], 'a group header must never call settings.apply');
+    assert.ok(findByDataId(dom.root, 'layers.stars'),
+      'the Layers submenu must stay expanded -- a header click is not a collapse');
+    assert.equal(menu.isOpen(), true, 'a group header click must not close the menu');
+  });
+});
+
 test('lookHere calls rig.lookHere (NOT rig.visit) with the lat/lon it was opened at, and closes', () => {
   // rig.lookHere, specifically -- not rig.visit, which is the automatic
   // block-burst detour's own path and must never override a held view (see
