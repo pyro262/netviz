@@ -240,15 +240,35 @@
       }
       .menu-item.disabled { color: #6b6880; cursor: default; }
       .menu-item:not(.disabled):hover { background: #251f3a; }
-      /* The submenu's own header row does nothing on click -- only its
-         children do -- so it gets no hover affordance either. */
-      .menu-submenu-wrap > .menu-item:hover { background: none; cursor: default; }
+      /* The submenu header used to do nothing on click -- only its children
+         did -- so it got no hover affordance either. That stopped being true
+         when Layers went click-to-expand (12 layers made an always-expanded
+         submenu ~17 rows tall on every open): the header IS the expand
+         control now, so it needs the same hover cue as every other clickable
+         row. Left as a distinct selector rather than folded into
+         `.menu-item:not(.disabled):hover` because a group header row lives
+         inside a submenu too and must stay non-interactive -- see
+         `.menu-group-header` below. */
+      .menu-submenu-wrap > .menu-item:hover { background: #251f3a; cursor: pointer; }
       .menu-submenu {
         padding-left: 14px;
         border-top: 1px solid #2a2540; border-bottom: 1px solid #2a2540;
       }
       .menu-check { width: 1.2em; text-align: center; color: #7cf0c2; }
       .menu-note { font-size: 11px; opacity: 0.7; max-width: 9em; text-align: right; }
+      /* Layers group headers (SKY, WEATHER, MAP, EVENTS): a label, not a
+         control. Small and dimmed so it reads as structure rather than as
+         one more row to click, and explicitly non-interactive so it never
+         picks up the hover cue the real rows around it have. */
+      .menu-group-header {
+        padding: 6px 14px 2px; font-size: 11px; letter-spacing: 0.06em;
+        color: #6b6880; cursor: default; user-select: none;
+      }
+      .menu-group-header:first-child { padding-top: 2px; }
+      /* The expand marker (▸ collapsed / ▾ expanded) rides in the same
+         trailing slot a toggle's checkmark uses, so the header lines up with
+         the rows it controls. */
+      .menu-expand-mark { width: 1.2em; text-align: center; color: #9c96b8; }
 
       /* --------------------------------------------------------- rules panel --
          Opened from the menu's "Color rules…" item. Mounted on document.body,

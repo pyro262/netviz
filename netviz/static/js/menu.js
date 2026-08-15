@@ -29,18 +29,57 @@ export function isDoubleTap(prev, now, opts) {
 }
 
 /**
+ * The twelve layers, grouped for the submenu. A group is a label, not a
+ * control -- SKY/WEATHER/MAP/EVENTS are how a person reading the list finds
+ * a layer, not a schema concept, so a header's id is deliberately NOT a
+ * `layers.*` path (it starts `layers-group-`) and nothing ever
+ * `settings.apply()`s it. Order and labels are exactly the ones named for
+ * this task; the five that already had a friendlier label than their key
+ * (`bordersWatched` → "Watched countries", `cityLights` → "City lights",
+ * `ripples` → "Impact ripples") keep it, everything new is titlecased from
+ * the key.
+ */
+const LAYER_GROUPS = [
+  { header: 'SKY', rows: [
+    ['stars', 'Stars'],
+    ['aurora', 'Aurora'],
+    ['atmosphere', 'Atmosphere'],
+  ] },
+  { header: 'WEATHER', rows: [
+    ['clouds', 'Clouds'],
+    ['lightning', 'Lightning'],
+  ] },
+  { header: 'MAP', rows: [
+    ['coastline', 'Coastline'],
+    ['bordersWatched', 'Watched countries'],
+    ['bordersWorld', 'World borders'],
+    ['admin1', 'States and provinces'],
+    ['cityLights', 'City lights'],
+  ] },
+  { header: 'EVENTS', rows: [
+    ['ripples', 'Impact ripples'],
+    ['countryFlash', 'Country flash'],
+  ] },
+];
+
+/**
  * menuModel(state) → Array<Item>
  *
  * Builds the menu structure given the display's current state.
- * state is {railOn, layers: {...}, canLookHere, settingsPanel, rulesPanel, canReset}.
+ * state is {railOn, layers: {...twelve keys...}, layersExpanded,
+ * canLookHere, settingsPanel, rulesPanel, canReset}.
  *
  * Returns an array of top-level menu items in this order:
  * - lookHere: action, enabled only when pointer was on globe
  * - rail: toggle, reflects current rail state
- * - layers: submenu with toggles for visible layers
+ * - layers: submenu, click-to-expand, with a group header (kind: 'group',
+ *   non-interactive) before each of the four groups and a toggle for each
+ *   of the twelve layers -- present only while state.layersExpanded is
+ *   true, so a collapsed submenu carries no child items at all rather than
+ *   twelve items with nothing rendering them.
  * - settings: action, enabled when settings panel exists, with note when disabled
  *
- * Each item is {id, label, kind, on?, enabled, note?, items?}.
+ * Each item is {id, label, kind, on?, enabled, note?, items?, expanded?}.
  */
 export function menuModel(state) {
   return [
@@ -62,43 +101,19 @@ export function menuModel(state) {
       label: 'Layers',
       kind: 'submenu',
       enabled: true,
-      items: [
-        {
-          id: 'layers.stars',
-          label: 'Stars',
-          kind: 'toggle',
-          on: state.layers.stars,
-          enabled: true,
-        },
-        {
-          id: 'layers.aurora',
-          label: 'Aurora',
-          kind: 'toggle',
-          on: state.layers.aurora,
-          enabled: true,
-        },
-        {
-          id: 'layers.bordersWatched',
-          label: 'Watched countries',
-          kind: 'toggle',
-          on: state.layers.bordersWatched,
-          enabled: true,
-        },
-        {
-          id: 'layers.cityLights',
-          label: 'City lights',
-          kind: 'toggle',
-          on: state.layers.cityLights,
-          enabled: true,
-        },
-        {
-          id: 'layers.ripples',
-          label: 'Impact ripples',
-          kind: 'toggle',
-          on: state.layers.ripples,
-          enabled: true,
-        },
-      ],
+      expanded: !!state.layersExpanded,
+      items: state.layersExpanded
+        ? LAYER_GROUPS.flatMap((g) => [
+            { id: `layers-group-${g.header.toLowerCase()}`, label: g.header, kind: 'group' },
+            ...g.rows.map(([key, label]) => ({
+              id: `layers.${key}`,
+              label,
+              kind: 'toggle',
+              on: state.layers[key],
+              enabled: true,
+            })),
+          ])
+        : [],
     },
     // Absent, not disabled, when the display is locked: the lock says
     // configuring is not on offer, and a greyed row advertises a control
@@ -211,7 +226,80 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
   // the only thing that separates the two cases; no timing heuristic can.
   let dismissEvent = null;
 
+  // Whether the Layers group is expanded. A closure variable, not a module
+  // global and not read/written through settings.apply -- it is transient
+  // UI state ("did this operator already open the list"), not a display
+  // setting, and it must not ride localStorage the way every schema path
+  // does. It lives here rather than at module scope because ONE createMenu
+  // instance is the whole lifetime the brief means by "the life of the
+  // page" -- main.js builds exactly one -- so a closure already remembers it
+  // across every open()/close() cycle without leaking between separate
+  // createMenu instances (tests build a fresh one per case, and each starts
+  // collapsed as a result, with no reset needed).
+  let layersExpanded = false;
+  // The (x, y, point) the menu is currently drawn at, so the Layers header
+  // can rebuild the menu IN PLACE at the same position when clicked, without
+  // going through open() again -- open() forgets the last dismissal and
+  // re-registers the outside-click/esc/blur listeners, neither of which an
+  // expand/collapse should touch.
+  let lastOpen = null;
+
   function isOpen() { return node !== null; }
+
+  /** The live state menuModel() is built from, re-read fresh every time
+   *  (including on an expand/collapse) so a layer flipped elsewhere -- by
+   *  this menu a moment ago, or by anything else that calls settings.apply
+   *  -- is never stale by the time it is redrawn. */
+  function currentState(point) {
+    return {
+      railOn: cfg('rail.enabled', false),
+      layers: {
+        cityLights: cfg('layers.cityLights', true),
+        coastline: cfg('layers.coastline', true),
+        bordersWatched: cfg('layers.bordersWatched', true),
+        bordersWorld: cfg('layers.bordersWorld', true),
+        admin1: cfg('layers.admin1', true),
+        stars: cfg('layers.stars', true),
+        aurora: cfg('layers.aurora', true),
+        atmosphere: cfg('layers.atmosphere', true),
+        ripples: cfg('layers.ripples', true),
+        countryFlash: cfg('layers.countryFlash', true),
+        clouds: cfg('layers.clouds', true),
+        lightning: cfg('layers.lightning', false),
+      },
+      layersExpanded,
+      canLookHere: point !== null,
+      // Enabled when this menu was built with a panel to open. A menu
+      // constructed without one -- as some tests still are -- must not draw
+      // a row whose click handler is guarded out. Same rule as rulesPanel.
+      settingsPanel: !!settingsPanel,
+      rulesPanel: !!rulesPanel,
+      canReset: !!onReset,
+    };
+  }
+
+  function buildNode(point) {
+    const n = el('div', 'menu');
+    for (const item of menuModel(currentState(point))) n.append(renderItem(item, point));
+    return n;
+  }
+
+  /** The Layers header's click handler. Flips the remembered expand state
+   *  and redraws the menu at its current position -- it must NOT close the
+   *  menu (that is the whole point of making this click-to-expand rather
+   *  than an ordinary action) and so it is never passed through act(), which
+   *  closes unconditionally in a `finally`. See the header's own
+   *  addEventListener call below for the guard against this being undone by
+   *  accident. */
+  function toggleLayersExpand() {
+    layersExpanded = !layersExpanded;
+    if (!node || !lastOpen) return;   // nothing open to redraw
+    const fresh = buildNode(lastOpen.point);
+    node.remove();
+    root.appendChild(fresh);
+    node = fresh;
+    clampPosition(node, lastOpen.x, lastOpen.y);
+  }
 
   /** Was THIS event the press that dismissed the menu? Identity, not shape --
    *  two presses in the same place are different events and only one of them
@@ -252,6 +340,15 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
   }
 
   function renderItem(item, point) {
+    // A group header (SKY/WEATHER/MAP/EVENTS) is a label, not a control: no
+    // `.menu-item` class (so it never picks up the item hover rule), no
+    // click listener, nothing else to build.
+    if (item.kind === 'group') {
+      const header = el('div', 'menu-group-header', item.label);
+      header.setAttribute('data-id', item.id);
+      return header;
+    }
+
     const row = el('div', `menu-item menu-${item.kind}${item.enabled ? '' : ' disabled'}`);
     // NOT `row.dataset.id = ...`: `dataset` is a getter with no setter on a
     // real HTMLElement, so assigning to it (or replacing it) throws in
@@ -300,15 +397,42 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
       return row;
     }
 
-    // 'submenu': a non-interactive header plus its children, indented.
-    // Always expanded rather than click-to-open -- the whole menu is a
-    // handful of items, and a second interaction to reveal five toggles
-    // would cost more on a touch wall than it saves.
+    // 'submenu': click-to-expand header plus, while expanded, its children
+    // (four group labels and twelve toggles), indented.
+    //
+    // This used to be always-expanded -- "the whole menu is a handful of
+    // items, and a second interaction to reveal five toggles would cost more
+    // on a touch wall than it saves" -- and that was true of five layers.
+    // It stopped being true once every layer got a row: with the rules and
+    // reset items present (the live-deployment case), the menu has 6
+    // top-level rows with Layers collapsed (lookHere, rail, layers, rules,
+    // settings, reset). Always-expanded at five layers added 5 more (11
+    // total); always-expanded at twelve layers plus their four group headers
+    // would add 16 (22 total) -- more than triple the collapsed count, most
+    // of it below the fold on a touch wall, to show toggles for layers
+    // nobody came to change today. Collapsed, the twelve-layer menu is still
+    // the same 6 rows it always was; expanding it is one tap, same cost as
+    // the double-tap that opened the menu in the first place.
+    const mark = item.expanded ? '▾' : '▸';
+    row.append(el('span', 'menu-expand-mark', mark));
+    // Deliberately a bare addEventListener, NOT act(toggleLayersExpand):
+    // act() closes the menu in a `finally` after every click, which is right
+    // for a toggle or an action -- the thing you came to change has changed,
+    // so the menu's job here is done -- and wrong for this one row, whose
+    // entire purpose is to let you flip several layers without reopening the
+    // menu between them. This is the only click handler in this file not
+    // wrapped in act(); if a future edit "cleans it up" into
+    // row.addEventListener('click', act(toggleLayersExpand)), every layer
+    // toggle starts closing the menu on the click that was supposed to just
+    // reveal them.
+    row.addEventListener('click', () => toggleLayersExpand());
     const wrap = el('div', 'menu-submenu-wrap');
     wrap.append(row);
-    const sub = el('div', 'menu-submenu');
-    for (const child of item.items || []) sub.append(renderItem(child, point));
-    wrap.append(sub);
+    if (item.expanded) {
+      const sub = el('div', 'menu-submenu');
+      for (const child of item.items || []) sub.append(renderItem(child, point));
+      wrap.append(sub);
+    }
     return wrap;
   }
 
@@ -328,32 +452,8 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
     close();   // the opening gesture repeated: a fresh open replaces any old one
 
     const point = rig.pointAt(ndc);
-    const state = {
-      railOn: cfg('rail.enabled', false),
-      layers: {
-        stars: cfg('layers.stars', true),
-        aurora: cfg('layers.aurora', true),
-        bordersWatched: cfg('layers.bordersWatched', true),
-        cityLights: cfg('layers.cityLights', true),
-        ripples: cfg('layers.ripples', true),
-      },
-      canLookHere: point !== null,
-      // Enabled when this menu was built with a panel to open. A menu
-      // constructed without one -- as some tests still are -- must not draw
-      // a row whose click handler is guarded out. Same rule as rulesPanel.
-      settingsPanel: !!settingsPanel,
-      // The lock is already checked at the top of open(), so a menu that
-      // drew at all may offer this -- but only if this menu was actually
-      // built with a panel to open; a menu constructed without one (as some
-      // tests still do) must not draw a row whose handler is guarded out.
-      rulesPanel: !!rulesPanel,
-      // Same rule as rulesPanel: a menu built without a reset handler must not
-      // draw a row whose click does nothing.
-      canReset: !!onReset,
-    };
-
-    node = el('div', 'menu');
-    for (const item of menuModel(state)) node.append(renderItem(item, point));
+    lastOpen = { x, y, point };
+    node = buildNode(point);
     root.appendChild(node);
     clampPosition(node, x, y);
 

@@ -4,9 +4,16 @@ import assert from 'node:assert/strict';
 import { menuModel, isDoubleTap, DOUBLE_TAP, createMenu } from '../../netviz/static/js/menu.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
 
+const ALL_LAYERS_ON = {
+  cityLights: true, coastline: true, bordersWatched: true, bordersWorld: true,
+  admin1: true, stars: true, aurora: true, atmosphere: true, ripples: true,
+  countryFlash: true, clouds: true, lightning: true,
+};
+
 const STATE = {
   railOn: false,
-  layers: { stars: true, aurora: true, bordersWatched: true, cityLights: true, ripples: true },
+  layers: ALL_LAYERS_ON,
+  layersExpanded: false,
   canLookHere: true,
   settingsPanel: false,
 };
@@ -35,9 +42,67 @@ test('a toggle reports the state it is actually in', () => {
 });
 
 test('every layer toggle mirrors its layer', () => {
-  const state = { ...STATE, layers: { ...STATE.layers, stars: false } };
+  const state = { ...STATE, layersExpanded: true, layers: { ...STATE.layers, stars: false } };
   assert.equal(byId(menuModel(state), 'layers.stars').on, false);
   assert.equal(byId(menuModel(state), 'layers.aurora').on, true);
+});
+
+test('all twelve layers are present, each toggle id the schema path unchanged', () => {
+  const ids = [
+    'layers.cityLights', 'layers.coastline', 'layers.bordersWatched', 'layers.bordersWorld',
+    'layers.admin1', 'layers.stars', 'layers.aurora', 'layers.atmosphere', 'layers.ripples',
+    'layers.countryFlash', 'layers.clouds', 'layers.lightning',
+  ];
+  const model = menuModel({ ...STATE, layersExpanded: true });
+  for (const id of ids) {
+    const item = byId(model, id);
+    assert.ok(item, `missing layer row ${id}`);
+    assert.equal(item.kind, 'toggle');
+    assert.equal(item.on, STATE.layers[id.slice('layers.'.length)]);
+  }
+});
+
+test('layers group headers are present, labeled and grouped in order, and are not toggles', () => {
+  const model = menuModel({ ...STATE, layersExpanded: true });
+  const layers = model.find((i) => i.id === 'layers');
+  const groups = layers.items.filter((i) => i.kind === 'group').map((i) => i.label);
+  assert.deepEqual(groups, ['SKY', 'WEATHER', 'MAP', 'EVENTS']);
+  for (const g of layers.items.filter((i) => i.kind === 'group')) {
+    assert.equal(g.on, undefined, `group header ${g.label} looks like a toggle`);
+    assert.equal(g.enabled, undefined, `group header ${g.label} looks clickable`);
+  }
+  // A group's rows immediately follow its header, in the order given for
+  // this task.
+  const ids = layers.items.map((i) => i.id);
+  const idx = (id) => ids.indexOf(id);
+  assert.ok(idx('layers-group-sky') < idx('layers.stars'));
+  assert.ok(idx('layers.stars') < idx('layers.aurora'));
+  assert.ok(idx('layers.aurora') < idx('layers.atmosphere'));
+  assert.ok(idx('layers.atmosphere') < idx('layers-group-weather'));
+  assert.ok(idx('layers-group-weather') < idx('layers.clouds'));
+  assert.ok(idx('layers.clouds') < idx('layers.lightning'));
+  assert.ok(idx('layers.lightning') < idx('layers-group-map'));
+  assert.ok(idx('layers-group-map') < idx('layers.coastline'));
+  assert.ok(idx('layers.coastline') < idx('layers.bordersWatched'));
+  assert.ok(idx('layers.bordersWatched') < idx('layers.bordersWorld'));
+  assert.ok(idx('layers.bordersWorld') < idx('layers.admin1'));
+  assert.ok(idx('layers.admin1') < idx('layers.cityLights'));
+  assert.ok(idx('layers.cityLights') < idx('layers-group-events'));
+  assert.ok(idx('layers-group-events') < idx('layers.ripples'));
+  assert.ok(idx('layers.ripples') < idx('layers.countryFlash'));
+});
+
+test('the Layers submenu starts collapsed and carries no child items', () => {
+  const layers = menuModel(STATE).find((i) => i.id === 'layers');
+  assert.equal(layers.expanded, false);
+  assert.deepEqual(layers.items, []);
+});
+
+test('expanded, the Layers submenu carries exactly sixteen items: four group headers and twelve toggles', () => {
+  const layers = menuModel({ ...STATE, layersExpanded: true }).find((i) => i.id === 'layers');
+  assert.equal(layers.items.length, 16);
+  assert.equal(layers.items.filter((i) => i.kind === 'group').length, 4);
+  assert.equal(layers.items.filter((i) => i.kind === 'toggle').length, 12);
 });
 
 test('Look here is disabled when the pointer was not on the globe', () => {
@@ -406,7 +471,9 @@ test('open draws exactly the rows menuModel describes, not just SOMETHING', () =
     // this expected set is derived the same way the page derives it.
     const expectedState = {
       railOn: false,
-      layers: { stars: true, aurora: true, bordersWatched: true, cityLights: true, ripples: true },
+      layers: ALL_LAYERS_ON,
+      // layersExpanded omitted -- collapsed is the real default too, and
+      // menuModel's own `!!state.layersExpanded` treats undefined as false.
       canLookHere: false,
       settingsPanel: false,
       rulesPanel: true,
@@ -451,11 +518,76 @@ test('a layer toggle applies its own id unchanged, since layer ids ARE schema pa
       root: dom.root,
     });
     menu.open(0, 0, { x: 0, y: 0 });
+    // Layers starts collapsed -- expand it first, the same click a real
+    // operator makes, before the toggle row exists to click.
+    const layersHeader = findByDataId(dom.root, 'layers');
+    assert.ok(layersHeader, 'no row with data-id=layers');
+    layersHeader.dispatch('click', { target: layersHeader });
+    assert.equal(menu.isOpen(), true, 'expanding Layers must not close the menu');
     const starsRow = findByDataId(dom.root, 'layers.stars');
     assert.ok(starsRow, 'no row with data-id=layers.stars');
     starsRow.dispatch('click', { target: starsRow });
     // stars defaults true, so the flip is to false.
     assert.deepEqual(log, [{ 'layers.stars': false }]);
+    assert.equal(menu.isOpen(), false, 'a successful toggle must close the menu');
+  });
+});
+
+/** The mark lives in a child `<span>`, not on the header row's own
+ *  textContent -- the row also carries the "Layers" label span, so
+ *  concatenated textContent would read "Layers▸" and a substring check on
+ *  that is fragile against unrelated label wording. Find the mark span by
+ *  its class instead, the same way production CSS finds it. */
+function markOf(headerRow) {
+  return (headerRow.children || []).find((c) => c.className === 'menu-expand-mark');
+}
+
+test('clicking the Layers header expands it in place without closing the menu, and the marker flips', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => { throw new Error('must not be called'); } },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    assert.equal(findByDataId(dom.root, 'layers.stars'), null, 'started expanded');
+    assert.equal(markOf(findByDataId(dom.root, 'layers')).textContent, '▸');
+
+    // Each assertion below re-finds the header from the current tree rather
+    // than reusing the reference from before the click: the click handler
+    // rebuilds the menu's DOM (see toggleLayersExpand in menu.js), so the
+    // pre-click node is now a detached, stale copy that would never show the
+    // new marker no matter what the click actually did.
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    assert.equal(menu.isOpen(), true, 'expanding the header closed the menu');
+    assert.ok(findByDataId(dom.root, 'layers.stars'), 'expanding drew no toggles');
+    assert.equal(markOf(findByDataId(dom.root, 'layers')).textContent, '▾');
+
+    findByDataId(dom.root, 'layers').dispatch('click', { target: findByDataId(dom.root, 'layers') });
+    assert.equal(menu.isOpen(), true, 'collapsing the header closed the menu');
+    assert.equal(findByDataId(dom.root, 'layers.stars'), null, 'collapsing left toggles drawn');
+    assert.equal(markOf(findByDataId(dom.root, 'layers')).textContent, '▸');
+  });
+});
+
+test('Layers expansion survives a full close/reopen of the menu', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    const header = findByDataId(dom.root, 'layers');
+    header.dispatch('click', { target: header });
+    assert.ok(findByDataId(dom.root, 'layers.stars'), 'did not expand');
+    menu.close();
+    menu.open(0, 0, { x: 0, y: 0 });
+    assert.ok(findByDataId(dom.root, 'layers.stars'),
+      'Layers forgot it was expanded across a close/reopen -- it must be remembered for the ' +
+      'life of the page, not reset on every open');
   });
 });
 
