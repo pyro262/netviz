@@ -332,4 +332,10 @@ Map and star data are committed, so a normal checkout needs no network.
   not distributed here; `tools/fetch_dbip.sh` downloads it. If you publish
   screenshots or a fork that ships the database, the attribution is a licence
   condition
+- [Blitzortung.org](https://www.blitzortung.org/) — the lightning layer's stroke
+  data, from their public world archive at `data.lightningmaps.org`. Free for
+  private and non-commercial use **with attribution**, which is a licence
+  condition and not a courtesy: a commercial deployment of this layer needs
+  their permission, which this project neither grants nor can grant. Set
+  `NETVIZ_LIGHTNING=0` to fetch nothing at all.
 - NOAA SWPC planetary K-index — public domain
