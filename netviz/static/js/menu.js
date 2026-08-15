@@ -230,12 +230,16 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
   // global and not read/written through settings.apply -- it is transient
   // UI state ("did this operator already open the list"), not a display
   // setting, and it must not ride localStorage the way every schema path
-  // does. It lives here rather than at module scope because ONE createMenu
-  // instance is the whole lifetime the brief means by "the life of the
-  // page" -- main.js builds exactly one -- so a closure already remembers it
-  // across every open()/close() cycle without leaking between separate
-  // createMenu instances (tests build a fresh one per case, and each starts
-  // collapsed as a result, with no reset needed).
+  // does.
+  //
+  // RESET TO false ON EVERY open(), deliberately. It used to persist across
+  // opens, on the theory that somebody adjusting several layers should not
+  // re-open the group each visit. On the wall that read as the menu popping
+  // open at twelve rows tall every single time -- the group stays expanded
+  // for the rest of the page's life after one visit, and the common case is
+  // not adjusting layers at all. Collapsed-by-default costs one click to the
+  // person who wants layers and nothing to everybody else, which is the
+  // trade the other way round from the one first shipped.
   let layersExpanded = false;
   // The (x, y, point) the menu is currently drawn at, so the Layers header
   // can rebuild the menu IN PLACE at the same position when clicked, without
@@ -450,6 +454,9 @@ export function createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, 
     // reachable for as long as the page runs.
     dismissEvent = null;
     close();   // the opening gesture repeated: a fresh open replaces any old one
+    // Every open starts with the Layers group shut -- see its declaration for
+    // why this is a reset rather than remembered state.
+    layersExpanded = false;
 
     const point = rig.pointAt(ndc);
     lastOpen = { x, y, point };

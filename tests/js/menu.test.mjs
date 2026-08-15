@@ -571,7 +571,7 @@ test('clicking the Layers header expands it in place without closing the menu, a
   });
 });
 
-test('Layers expansion survives a full close/reopen of the menu', () => {
+test('Layers is collapsed again on every fresh open of the menu', () => {
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
     const menu = createMenu({
@@ -585,9 +585,17 @@ test('Layers expansion survives a full close/reopen of the menu', () => {
     assert.ok(findByDataId(dom.root, 'layers.stars'), 'did not expand');
     menu.close();
     menu.open(0, 0, { x: 0, y: 0 });
-    assert.ok(findByDataId(dom.root, 'layers.stars'),
-      'Layers forgot it was expanded across a close/reopen -- it must be remembered for the ' +
-      'life of the page, not reset on every open');
+    // Expansion was remembered for the life of the page when the submenu
+    // first shipped. On the wall that meant the menu opened twelve rows tall
+    // for the rest of the session after one visit to Layers, so it is reset
+    // per open: one click for the person who wants layers, nothing for
+    // everybody else.
+    assert.equal(findByDataId(dom.root, 'layers.stars'), null,
+      'Layers reopened already expanded -- it must start collapsed on every open');
+    // Still expandable after the reset, rather than stuck shut.
+    const reopened = findByDataId(dom.root, 'layers');
+    reopened.dispatch('click', { target: reopened });
+    assert.ok(findByDataId(dom.root, 'layers.stars'), 'could not expand after the reset');
   });
 });
 
