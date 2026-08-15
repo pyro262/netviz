@@ -410,7 +410,7 @@ async function boot() {
       railHandle = startRail(classCounts, () => ({
         block: `#${arcs.classColor('block').getHexString()}`,
         flow: `#${arcs.classColor('flow').getHexString()}`,
-      }));
+      }), () => (lightning ? lightning.state() : null));
     },
     unmount() {
       if (!railHandle) return;

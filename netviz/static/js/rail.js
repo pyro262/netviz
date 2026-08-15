@@ -380,7 +380,7 @@ export function fitRuleCap({ available, other, chrome, rowHeight, total, maxRule
   return Math.max(1, Math.min(cap, fits - 1));
 }
 
-export function panels(snapshot, extra, colors) {
+export function panels(snapshot, extra, colors, lightning) {
   const s = snapshot || {};
   const blocks = s.blocks || {};
   const netflow = s.netflow || {};
@@ -428,6 +428,22 @@ export function panels(snapshot, extra, colors) {
     }
   } else {
     health.push({ label: 'FEEDS', value: '—', muted: true });
+  }
+
+  // The lightning layer's delay, in the health panel rather than a panel of its
+  // own: it is one row, and the rail's rule fitter is already tight enough that
+  // a whole section for one line would cost a color rule its place.
+  //
+  // ABSENT rather than a placeholder when the layer is off or has no bucket.
+  // The row exists to stop somebody reading these strikes as current; with no
+  // strikes drawn there is nothing to misread, and a "LIGHTNING --" row on a
+  // display that never turned the layer on is just noise.
+  if (lightning && lightning.bucket) {
+    health.push({
+      label: 'LIGHTNING',
+      value: `${formatCount(lightning.count)} · ${formatAge(lightning.age)} behind`,
+      ok: true,
+    });
   }
 
   // The legend for the two built-in arc classes. A COLOR RULE already carries
@@ -616,7 +632,7 @@ function paint(root, data, clock, version) {
  *   rail cannot read them itself -- arcs.js imports three, and everything above
  *   start() is unit-tested without it.
  */
-export function start(counter, classColors) {
+export function start(counter, classColors, lightningState = () => null) {
   const root = document.getElementById('rail');
   if (!root) return null;
   document.body.classList.add('rail');
@@ -687,7 +703,7 @@ export function start(counter, classColors) {
       // the numbers their paint.
       colors = null;
     }
-    paint(root, panels(snapshot, extra, colors), formatClock(new Date()), version);
+    paint(root, panels(snapshot, extra, colors, lightningState()), formatClock(new Date()), version);
 
     // Then fit, at most once per draw. `capOverride !== undefined` is what
     // stops a second pass: the numbers `fitRuleCap` divides do not depend on

@@ -763,3 +763,24 @@ test('railContentHeight refuses what it cannot measure', () => {
   assert.equal(railContentHeight({ childHeights: [100], gap: 20, padding: 0 }), 100);
   assert.equal(railContentHeight({ childHeights: [100, 100], gap: 20, padding: 0 }), 220);
 });
+
+test('the health panel carries a lightning row when the layer is playing', () => {
+  const out = panels({ feeds: { netflow: { ok: true, age: 3 } } },
+                     null, null,
+                     { bucket: '2026-08-15T06:50:00Z', count: 6000, age: 2280 });
+  const health = out.find((p) => p.rows.some((r) => r.label === 'LIGHTNING'));
+  assert.ok(health, 'no lightning row');
+  const row = health.rows.find((r) => r.label === 'LIGHTNING');
+  // The delay is the whole point of the row: a viewer must not be able to read
+  // these strikes as current.
+  assert.match(row.value, /38m behind/);
+  assert.match(row.value, /6\.0k|6000/);
+});
+
+test('no lightning row at all when the layer is off or has no bucket', () => {
+  for (const state of [null, undefined, { bucket: null, count: 0, age: null }]) {
+    const out = panels({ feeds: { netflow: { ok: true, age: 3 } } }, null, null, state);
+    const found = out.some((p) => p.rows.some((r) => r.label === 'LIGHTNING'));
+    assert.equal(found, false);
+  }
+});
