@@ -3,8 +3,62 @@
 // (right-click, `s`, double-tap) into `createMenu`'s open()/close(); nothing
 // here decides WHEN to open.
 import { cfg } from './config.js';
+import { entry } from './settings.js';
 
 export const DOUBLE_TAP = { maxMs: 320, maxPx: 24 };
+
+/**
+ * firstSentence(text) → string
+ *
+ * The menu's row tooltips borrow the schema's own `help` text (see
+ * schemaTitle below) rather than a second, hand-shortened copy that could
+ * drift from it -- but that text is written for the tuning panel, where a
+ * row sits under a slider with room to read, and commonly runs two or three
+ * sentences. A hover tooltip on a twelve-row submenu wants one. This derives
+ * that one sentence at render time, from the live schema text, so there is
+ * nothing to keep in sync by hand.
+ *
+ * Splits on a period immediately followed by whitespace, not on any period.
+ * The obvious alternative -- split on every period -- breaks on the real
+ * text in settings.js: "magnitude 6.5", "1px crisp", "rules.js puts" are all
+ * periods with no sentence boundary. Every one of them is also a period with
+ * NO whitespace immediately after it (a digit, another word character, or
+ * nothing at all), so requiring the whitespace is enough to leave them alone
+ * without a decimal- or abbreviation-specific carve-out. Verified against
+ * the actual schema strings rather than assumed -- see menu.test.mjs.
+ *
+ * Text with no period-then-whitespace at all -- already one sentence, or a
+ * sentence that simply ends the string with no trailing space -- is returned
+ * unchanged rather than truncated on a guess.
+ */
+export function firstSentence(text) {
+  const s = String(text);
+  const m = /\.\s/.exec(s);
+  return m ? s.slice(0, m.index + 1) : s;
+}
+
+/**
+ * schemaTitle(path) → string | undefined
+ *
+ * The one source of truth for a schema-backed row's tooltip: `settings.js`'s
+ * own `help`, trimmed to its first sentence. Never a second, hand-written
+ * description -- the whole reason the submenu's layer ids ARE schema paths
+ * (see the module comment on LAYER_GROUPS) is so there is no second
+ * vocabulary to keep in sync, and a hand-copied tooltip would be exactly
+ * that: a second copy of prose that already lives in one place.
+ *
+ * Returns undefined, not an empty string, for a path with no schema entry or
+ * an entry declared with no `help` -- so a row silently gets no title rather
+ * than an empty tooltip that opens and shows nothing.
+ *
+ * Exported so the "no schema entry -> no title" case is testable directly,
+ * without having to smuggle a bogus path through menuModel's fixed
+ * LAYER_GROUPS to reach it.
+ */
+export function schemaTitle(path) {
+  const e = entry(path);
+  return e && e.help ? firstSentence(e.help) : undefined;
+}
 
 /**
  * isDoubleTap(prev, now, opts) → boolean
@@ -93,6 +147,9 @@ export function menuModel(state) {
       label: 'Look here',
       kind: 'action',
       enabled: state.canLookHere,
+      // Hand-written, not schema-derived: this is an action with no schema
+      // path behind it, so there is no `help` to borrow from.
+      title: 'Turns the globe to the point you clicked and holds it there.',
     },
     {
       id: 'rail',
@@ -100,6 +157,7 @@ export function menuModel(state) {
       kind: 'toggle',
       on: state.railOn,
       enabled: true,
+      title: schemaTitle('rail.enabled'),
     },
     {
       id: 'testMode',
@@ -107,6 +165,7 @@ export function menuModel(state) {
       kind: 'toggle',
       on: !!state.testMode,
       enabled: true,
+      title: schemaTitle('menu.testMode'),
     },
     {
       id: 'layers',
@@ -123,6 +182,7 @@ export function menuModel(state) {
               kind: 'toggle',
               on: state.layers[key],
               enabled: true,
+              title: schemaTitle(`layers.${key}`),
             })),
           ])
         : [],
@@ -135,6 +195,8 @@ export function menuModel(state) {
       label: 'Color rules…',
       kind: 'action',
       enabled: true,
+      title: 'Opens the editor that gives traffic matching a subnet, '
+           + 'country or port its own arc color.',
     }] : []),
     {
       id: 'settings',
@@ -142,6 +204,8 @@ export function menuModel(state) {
       kind: 'action',
       enabled: state.settingsPanel,
       note: state.settingsPanel ? undefined : 'Settings panel coming in a future build',
+      title: 'Opens the tuning panel: the settings that can only be judged '
+           + 'by eye, previewed live.',
     },
     // A display-wide control, so it lives beside the other display-wide ones
     // rather than in the rules editor -- which is where it started, under a
@@ -158,6 +222,12 @@ export function menuModel(state) {
       label: 'Reset to netviz defaults',
       kind: 'action',
       enabled: true,
+      // Says the rules are kept -- the exact misreading the row's own label
+      // was changed from "Discard my rules" to avoid (see the comment on
+      // this item just above). A tooltip that omitted it would reopen the
+      // same misreading one layer down.
+      title: 'Puts everything else this menu writes back to what netviz '
+           + 'ships. Your color rules are kept.',
     }] : []),
   ];
 }
@@ -486,6 +556,13 @@ export function createMenu({
     // any fake that bothers to implement it, which is the whole reason to
     // prefer it over the DOM's convenience accessors here.
     row.setAttribute('data-id', item.id);
+    // The native tooltip, same mechanism settings_panel.js and rules_panel.js
+    // already use -- no bespoke styled tooltip, which would be more surface
+    // for no gain on a display nobody normally hovers. `item.title` is
+    // undefined for a row with nothing to say (a schema path with no `help`,
+    // or one that does not exist), and `row.title` is simply never set in
+    // that case -- an empty string would still draw an empty tooltip box.
+    if (item.title) row.title = item.title;
     row.append(el('span', 'menu-label', item.label));
 
     if (item.kind === 'toggle') {

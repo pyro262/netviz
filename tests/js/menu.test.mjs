@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { menuModel, isDoubleTap, DOUBLE_TAP, createMenu } from '../../netviz/static/js/menu.js';
+import {
+  menuModel, isDoubleTap, DOUBLE_TAP, createMenu, firstSentence, schemaTitle,
+} from '../../netviz/static/js/menu.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
+import { entry } from '../../netviz/static/js/settings.js';
 
 const ALL_LAYERS_ON = {
   cityLights: true, coastline: true, bordersWatched: true, bordersWorld: true,
@@ -1074,4 +1077,160 @@ test('a menu built with no `preview` option attaches no hover listeners and beha
     starsRow.dispatch('mouseleave', {});
     assert.deepEqual(settingsLog, []);
   }));
+});
+
+// ------------------------------------------------------------ hover text --
+//
+// The menu was the one surface with no hover description at all -- the
+// tuning panel (`settings_panel.js`) sets `row.title = spec.help` and
+// `rules_panel.js` does the same, so a person could change a color rule or a
+// bloom setting and read why, but flipping a layer here or resetting the
+// display had nothing. This closes that gap with the SAME native-tooltip
+// mechanism (`row.title`), not a bespoke styled one.
+
+test('firstSentence: real schema strings with a decimal or an abbreviation-like period are not split early', () => {
+  // "magnitude 6.5" -- the period is followed by a digit, not whitespace.
+  assert.equal(
+    firstSentence(entry('layers.stars').help),
+    entry('layers.stars').help,
+    'a decimal point split the sentence early',
+  );
+  // "1px crisp" -- no sentence break to find at all; the coastline help is
+  // one sentence with no internal period, so the whole string comes back.
+  assert.equal(
+    firstSentence(entry('layers.coastline').help),
+    entry('layers.coastline').help,
+  );
+  // "rules.js puts" -- the period in a filename is followed by a letter, not
+  // whitespace, so it must not read as a sentence end either.
+  assert.ok(entry('arcs.flow.gain').help.includes('rules.js puts'),
+    'the fixture text this case depends on changed underneath it');
+  assert.ok(
+    !firstSentence(entry('arcs.flow.gain').help).includes('below it the class is black'),
+    'the sentence after "rules.js puts" leaked into the first sentence',
+  );
+});
+
+test('firstSentence: text with no terminal period comes back unchanged', () => {
+  assert.equal(firstSentence('no period at all'), 'no period at all');
+});
+
+test('firstSentence: text that is already exactly one sentence comes back unchanged', () => {
+  const one = 'Strike color is cold white-blue on purpose.';
+  assert.equal(firstSentence(one), one);
+});
+
+test('firstSentence: a multi-sentence string is cut at the first period-plus-whitespace', () => {
+  assert.equal(
+    firstSentence('First bit. Second bit. Third bit.'),
+    'First bit.',
+  );
+});
+
+test('schemaTitle: a path with no schema entry gets no title, not undefined-as-a-string or empty', () => {
+  assert.equal(schemaTitle('layers.doesNotExist'), undefined);
+  assert.equal(schemaTitle('not.a.real.path.at.all'), undefined);
+});
+
+test('schemaTitle: every one of the fourteen schema-backed menu rows has a schema help string', () => {
+  // If any of these ever lost its `help` in settings.js, this menu row would
+  // silently go tooltip-less -- catch that here rather than on the wall.
+  const paths = [
+    'rail.enabled', 'menu.testMode',
+    'layers.cityLights', 'layers.coastline', 'layers.bordersWatched',
+    'layers.bordersWorld', 'layers.admin1', 'layers.stars', 'layers.aurora',
+    'layers.atmosphere', 'layers.ripples', 'layers.countryFlash',
+    'layers.clouds', 'layers.lightning',
+  ];
+  assert.equal(paths.length, 14);
+  for (const path of paths) {
+    const e = entry(path);
+    assert.ok(e, `no schema entry for ${path}`);
+    assert.ok(e.help && e.help.length > 0, `${path} has no help text`);
+    assert.equal(schemaTitle(path), firstSentence(e.help),
+      `${path}'s menu title is not derived from its schema help`);
+  }
+});
+
+test('every layer toggle row carries a title matching the first sentence of its schema help', () => {
+  const model = menuModel({ ...STATE, layersExpanded: true });
+  const layerKeys = [
+    'cityLights', 'coastline', 'bordersWatched', 'bordersWorld', 'admin1',
+    'stars', 'aurora', 'atmosphere', 'ripples', 'countryFlash', 'clouds', 'lightning',
+  ];
+  for (const key of layerKeys) {
+    const path = `layers.${key}`;
+    const item = byId(model, path);
+    assert.ok(item, `no menu row for ${path}`);
+    assert.ok(item.title, `${path} row has no title`);
+    assert.equal(item.title, firstSentence(entry(path).help));
+  }
+});
+
+test('the rail and Test mode rows carry a title from their own schema paths', () => {
+  const model = menuModel(STATE);
+  const rail = byId(model, 'rail');
+  const testMode = byId(model, 'testMode');
+  assert.ok(rail.title, 'rail row has no title');
+  assert.equal(rail.title, firstSentence(entry('rail.enabled').help));
+  assert.ok(testMode.title, 'testMode row has no title');
+  assert.equal(testMode.title, firstSentence(entry('menu.testMode').help));
+});
+
+test('every action row -- Look here, Color rules, Settings, Reset -- has a hand-written one-sentence title', () => {
+  const model = menuModel({ ...STATE, rulesPanel: true, canReset: true });
+  for (const id of ['lookHere', 'rules', 'settings', 'reset']) {
+    const item = byId(model, id);
+    assert.ok(item, `no row for ${id}`);
+    assert.ok(item.title && item.title.length > 0, `${id} row has no title`);
+  }
+});
+
+test('the reset row title says the color rules are kept -- the exact misreading its label was changed to avoid', () => {
+  const item = byId(menuModel({ ...STATE, canReset: true }), 'reset');
+  assert.match(item.title, /color rules.*kept/i);
+});
+
+test('group headers (SKY/WEATHER/MAP/EVENTS) carry no title -- they are labels, not controls', () => {
+  const model = menuModel({ ...STATE, layersExpanded: true });
+  const layers = model.find((i) => i.id === 'layers');
+  const groups = layers.items.filter((i) => i.kind === 'group');
+  assert.equal(groups.length, 4, 'expected the four group headers');
+  for (const g of groups) {
+    assert.ok(!('title' in g) || g.title === undefined, `${g.label} group header was given a title`);
+  }
+});
+
+test('a rendered layer row really carries its title as a DOM attribute, not just on the model', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    const layersHeader = findByDataId(dom.root, 'layers');
+    layersHeader.dispatch('click', { target: layersHeader });
+    const starsRow = findByDataId(dom.root, 'layers.stars');
+    assert.ok(starsRow, 'no row with data-id=layers.stars');
+    assert.equal(starsRow.title, firstSentence(entry('layers.stars').help));
+  });
+});
+
+test('a rendered group header carries no title as a DOM attribute either', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      root: dom.root,
+    });
+    menu.open(0, 0, { x: 0, y: 0 });
+    const layersHeader = findByDataId(dom.root, 'layers');
+    layersHeader.dispatch('click', { target: layersHeader });
+    const skyHeader = findByDataId(dom.root, 'layers-group-sky');
+    assert.ok(skyHeader, 'no SKY group header rendered');
+    assert.equal(skyHeader.title, undefined, 'a group header was given a title');
+  });
 });
