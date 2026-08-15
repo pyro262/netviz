@@ -1,3 +1,4 @@
+import http.client
 import json
 
 import pytest
@@ -172,3 +173,77 @@ def test_next_poll_delay_lands_after_the_publish_deadline():
         # Fires at 2 minutes past a boundary: 32 minutes of lag is three whole
         # buckets plus two minutes, so the useful phase is 120s.
         assert abs(landed - 120) < 1.0
+
+
+# A real gzip magic header (1f 8b) plus a valid method/flags byte, followed by
+# garbage: passes the "is this gzip at all" check and only fails once zlib
+# actually inflates the deflate stream -- the shape a truncated or corrupted
+# download over the wire takes, distinct from "not gzip at all".
+_CORRUPT_GZIP = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff" + b"\x00" * 40
+
+
+class _FakeResponse:
+    """Stands in for the object `with urlopen(...) as r:` binds to."""
+
+    def __init__(self, body=None, read_raises=None):
+        self._body = body
+        self._read_raises = read_raises
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def read(self):
+        if self._read_raises is not None:
+            raise self._read_raises
+        return self._body
+
+
+def test_fetch_survives_a_corrupt_gzip_stream_without_raising(monkeypatch):
+    monkeypatch.setattr(
+        lightning.urllib.request, "urlopen",
+        lambda req, timeout=None: _FakeResponse(body=_CORRUPT_GZIP),
+    )
+    assert lightning.fetch("20260815_0650") is None
+
+
+def test_fetch_survives_an_incomplete_read_without_raising(monkeypatch):
+    incomplete = http.client.IncompleteRead(partial=b"", expected=100)
+    monkeypatch.setattr(
+        lightning.urllib.request, "urlopen",
+        lambda req, timeout=None: _FakeResponse(read_raises=incomplete),
+    )
+    assert lightning.fetch("20260815_0650") is None
+
+
+def test_refresh_survives_a_corrupt_gzip_stream_and_keeps_the_old_bucket(monkeypatch):
+    cache = lightning.LightningCache()
+    now = lightning.bucket_start("20260815_0700") + 22 * 60
+    lightning.refresh(cache, now=now, fetcher=lambda name, timeout=30.0: [(5, 1.0, 2.0)])
+    before = cache.state(now)
+
+    monkeypatch.setattr(
+        lightning.urllib.request, "urlopen",
+        lambda req, timeout=None: _FakeResponse(body=_CORRUPT_GZIP),
+    )
+    later = now + lightning.BUCKET_SECONDS
+    assert lightning.refresh(cache, now=later, fetcher=lightning.fetch) is False
+    assert cache.state(later)["bucket"] == before["bucket"]
+
+
+def test_refresh_survives_an_incomplete_read_and_keeps_the_old_bucket(monkeypatch):
+    cache = lightning.LightningCache()
+    now = lightning.bucket_start("20260815_0700") + 22 * 60
+    lightning.refresh(cache, now=now, fetcher=lambda name, timeout=30.0: [(5, 1.0, 2.0)])
+    before = cache.state(now)
+
+    incomplete = http.client.IncompleteRead(partial=b"", expected=100)
+    monkeypatch.setattr(
+        lightning.urllib.request, "urlopen",
+        lambda req, timeout=None: _FakeResponse(read_raises=incomplete),
+    )
+    later = now + lightning.BUCKET_SECONDS
+    assert lightning.refresh(cache, now=later, fetcher=lightning.fetch) is False
+    assert cache.state(later)["bucket"] == before["bucket"]

@@ -32,11 +32,13 @@ display can use. Dropped.
 """
 import calendar
 import gzip
+import http.client
 import logging
 import re
 import time
 import urllib.error
 import urllib.request
+import zlib
 from typing import Optional
 
 log = logging.getLogger("netviz")
@@ -137,12 +139,19 @@ def fetch(name: str, timeout: float = 30.0) -> Optional[list]:
         req = urllib.request.Request(url, headers={"User-Agent": "netviz"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read()
-    except (urllib.error.URLError, OSError, ValueError) as err:
+    # http.client.IncompleteRead (a response that ends short of its declared
+    # Content-Length) is HTTPException -> Exception, not OSError, so it slips
+    # past a bare OSError catch and must be named.
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as err:
         log.warning("lightning: fetch %s failed: %s", name, err)
         return None
     try:
         text = gzip.decompress(body).decode("utf-8", "replace")
-    except (OSError, EOFError) as err:
+    # zlib.error is what a valid gzip magic header with a corrupted stream
+    # actually raises -- it is not a subclass of OSError, and the failure it
+    # names ("invalid code lengths set" etc.) is exactly a truncated or
+    # tampered download, not a code bug. Do not "tidy" this back out.
+    except (OSError, EOFError, zlib.error) as err:
         log.warning("lightning: %s is not readable gzip: %s", name, err)
         return None
     strokes, skipped = parse(text)
