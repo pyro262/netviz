@@ -1161,10 +1161,20 @@ def case9_randomize(page, cx, cy) -> bool:
           # A randomize that moved one row and left 16 alone is not a
           # randomize. Not `== len(look)`: a roll can legitimately land a row
           # back on the value it already held.
-          and len(look) == 29 and len(held) == 9
+          #
+          # THESE TWO NUMBERS ARE A TRIPWIRE AND MUST BE UPDATED WHENEVER THE
+          # PANEL GAINS OR LOSES A ROW. They are hardcoded on purpose -- derived
+          # from the same schema the panel is built from, they would agree with
+          # a panel that had silently lost half its rows. That is also why they
+          # go stale: 29/9 was correct until the clouds layer added three look
+          # sliders (32) and lightning added four more (36), and the clouds
+          # commit updated tests/js/tuner.test.mjs without updating this. The
+          # symptom is this case failing while every behavioural signal on its
+          # own report line is correct, which is what happened on 2026-08-15.
+          and len(look) == 36 and len(held) == 9
           and moved >= len(look) - 2
           # Only the look rows may be marked, so the mark count is bounded on
-          # BOTH sides -- a panel that dirtied all 38 fails here as well.
+          # BOTH sides -- a panel that dirtied all 48 fails here as well.
           and len(look) - 2 <= after["dirty"] <= len(look)
           and reverted_click and revert_dialog and revert_answered
           and not restored and store_after == store_base)
