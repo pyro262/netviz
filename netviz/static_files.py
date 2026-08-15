@@ -84,6 +84,7 @@ def make_process_request(
     display_config: Any = None,
     release: Any = None,
     clouds: Any = None,
+    lightning: Any = None,
 ) -> Callable[[Any, Any], Optional[Response]]:
     """`health` is the collector's Health object, or None.
 
@@ -149,6 +150,20 @@ def make_process_request(
             if clouds is None:
                 return connection.respond(404, "not found\n")
             return _json(method, clouds.state(clock()))
+
+        # The bucket the wall is currently replaying. Live state, so no-store:
+        # a cached answer would replay a bucket the display has already
+        # finished, which is the one failure this layer's whole design avoids.
+        #
+        # 404 ONLY when the layer is disabled. Before the first successful
+        # fetch it serves an empty bucket instead, because "the collector is
+        # running and has nothing yet" and "this build has no lightning layer"
+        # are different answers -- the renderer stops polling on the second and
+        # must not stop on the first.
+        if raw == "/lightning.json":
+            if lightning is None:
+                return connection.respond(404, "not found\n")
+            return _json(method, lightning.state(clock()))
 
         # The cloud field itself, hourly and ~640 KB.
         #

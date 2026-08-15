@@ -85,6 +85,11 @@ class Config:
     # which is a cost a deployment is entitled to decline; with it off nothing
     # is requested, /clouds.png 404s and the renderer draws no shell.
     clouds_enabled: bool = os.environ.get("NETVIZ_CLOUDS", "1").strip() not in ("0", "false", "no")
+    # Off with NETVIZ_LIGHTNING=0. The fetch is ~80 KB per 10 minutes from
+    # Blitzortung's public archive -- an order of magnitude less than the cloud
+    # mosaic -- but it is somebody else's volunteer bandwidth, so a deployment
+    # that does not draw the layer should not be asking for it.
+    lightning_enabled: bool = os.environ.get("NETVIZ_LIGHTNING", "1").strip() not in ("0", "false", "no")
     influx_url: str = os.environ.get("INFLUX_URL", "http://influxdb:8086")
     influx_org: str = os.environ.get("INFLUX_ORG", "home")
     influx_bucket: str = os.environ.get("INFLUX_BUCKET", "netviz")

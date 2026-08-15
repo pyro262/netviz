@@ -484,3 +484,47 @@ def test_clouds_json_404s_without_a_cache(root):
     conn = _FakeConnection()
     handler(conn, _FakeRequest("/clouds.json"))
     assert conn.responded[0] == 404
+
+
+# --- the lightning layer -------------------------------------------------------
+
+class _FakeLightning:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def state(self, now):
+        return self._payload
+
+
+def test_lightning_json_serves_the_cache_state(root):
+    payload = {"bucket": "2026-08-15T06:50:00Z", "age": 2214.0,
+               "count": 2, "window": 600,
+               "strokes": [[0, 35.545, -73.302], [599, 0.0, -0.5]]}
+    handler = make_process_request(
+        root, lightning=_FakeLightning(payload), clock=lambda: 1000.0)
+    resp = handler(_FakeConnection(), _FakeRequest("/lightning.json"))
+    assert resp.status_code == 200
+    assert json.loads(resp.body) == payload
+    # Live state: a cached answer would replay a bucket the wall has finished.
+    assert resp.headers["Cache-Control"] == "no-store"
+
+
+def test_lightning_json_404s_only_when_the_layer_is_absent(root):
+    handler = make_process_request(root, clock=lambda: 1000.0)
+    conn = _FakeConnection()
+    handler(conn, _FakeRequest("/lightning.json"))
+    assert conn.responded[0] == 404
+
+
+def test_lightning_json_serves_the_empty_state_before_the_first_fetch(root):
+    """404 and 'nothing fetched yet' are different answers.
+
+    A 404 means this build has no lightning layer at all, which the renderer
+    responds to by never asking again. An empty bucket means keep asking.
+    """
+    empty = {"bucket": None, "age": None, "count": 0, "window": 600, "strokes": []}
+    handler = make_process_request(
+        root, lightning=_FakeLightning(empty), clock=lambda: 1000.0)
+    resp = handler(_FakeConnection(), _FakeRequest("/lightning.json"))
+    assert resp.status_code == 200
+    assert json.loads(resp.body)["bucket"] is None

@@ -16,6 +16,7 @@ import websockets
 from . import __version__
 from .aurora import KpCache, fetch_kp, next_poll_delay
 from . import clouds as clouds_mod
+from . import lightning as lightning_mod
 from .config import Config
 from .enrich import Enricher, load_centroids
 from .events import Event
@@ -269,6 +270,32 @@ async def cloud_poller(cache: "clouds_mod.CloudCache", cfg: Config) -> None:
         await asyncio.sleep(clouds_mod.next_poll_delay(time.time()))
 
 
+async def lightning_poller(cache: "lightning_mod.LightningCache", cfg: Config) -> None:
+    """Refresh the played bucket, once per publication.
+
+    Blitzortung publishes a 10-minute bucket about 31 minutes after the minute
+    it starts, so the delay is aligned just after that -- the same argument as
+    the aurora and cloud pollers. The unhealthy retry is 120s rather than the
+    cloud layer's 300: a bucket only stays useful for the 600 seconds it takes
+    to play, so noticing a recovered upstream after five minutes would mean
+    noticing it with most of the bucket already spent.
+
+    Blocking urllib and gzip, so it runs in a thread.
+    """
+    if not cfg.lightning_enabled:
+        log.info("lightning: disabled")
+        return
+    while True:
+        healthy = False
+        try:
+            healthy = await asyncio.wait_for(
+                asyncio.to_thread(lightning_mod.refresh, cache), timeout=120.0)
+        except (asyncio.TimeoutError, Exception) as err:   # noqa: BLE001
+            log.warning("lightning: poll failed: %s", err)
+        delay = (lightning_mod.next_poll_delay(time.time()) if healthy else 120.0)
+        await asyncio.sleep(delay)
+
+
 async def alerter(health: Health, geoip_alert: Optional[RatioAlert] = None,
                    enricher: Optional[Enricher] = None) -> None:
     while True:
@@ -441,9 +468,11 @@ async def run(cfg: Config, synthetic: bool) -> None:
     loop = asyncio.get_running_loop()
     kp_cache = KpCache()
     cloud_cache = clouds_mod.CloudCache(cfg.cloud_path)
+    lightning_cache = lightning_mod.LightningCache()
     tasks = [asyncio.create_task(alerter(health, geoip_alert, enricher)),
              asyncio.create_task(aurora_poller(kp_cache)),
-             asyncio.create_task(cloud_poller(cloud_cache, cfg))]
+             asyncio.create_task(cloud_poller(cloud_cache, cfg)),
+             asyncio.create_task(lightning_poller(lightning_cache, cfg))]
 
     if synthetic:
         # No store, no flusher in synthetic mode, so "influx" is not a feed
@@ -483,6 +512,7 @@ async def run(cfg: Config, synthetic: bool) -> None:
                                         static_root, health=health,
                                         kp_cache=kp_cache, stats=stats,
                                         release=release, clouds=cloud_cache,
+                                        lightning=lightning_cache,
                                         # Built by Config so there is one
                                         # whitelist, not two. Hand-rolling the
                                         # dict here is how the home position
