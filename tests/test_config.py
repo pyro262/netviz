@@ -132,3 +132,19 @@ class TestUpdateCheck:
     def test_a_fork_can_be_watched_instead(self, monkeypatch):
         mod = _reload(monkeypatch, NETVIZ_UPDATE_REPO="someone/their-fork")
         assert mod.Config().update_repo == "someone/their-fork"
+
+
+class TestLightningEnabled:
+    """The wiring half of the disabled-layer contract: main.py only hands
+    static_files a None cache (which 404s /lightning.json) when this flag is
+    False. A handler-level test already pins the None-cache 404 itself; this
+    pins that NETVIZ_LIGHTNING=0 is what produces False here."""
+
+    def test_defaults_on(self, monkeypatch):
+        monkeypatch.delenv("NETVIZ_LIGHTNING", raising=False)
+        mod = _reload(monkeypatch)
+        assert mod.Config().lightning_enabled is True
+
+    def test_zero_disables_it(self, monkeypatch):
+        mod = _reload(monkeypatch, NETVIZ_LIGHTNING="0")
+        assert mod.Config().lightning_enabled is False

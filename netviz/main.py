@@ -468,7 +468,14 @@ async def run(cfg: Config, synthetic: bool) -> None:
     loop = asyncio.get_running_loop()
     kp_cache = KpCache()
     cloud_cache = clouds_mod.CloudCache(cfg.cloud_path)
-    lightning_cache = lightning_mod.LightningCache()
+    # None, not an eternal empty cache, when the layer is disabled: static_files
+    # treats a None cache as "this build has no lightning layer" and 404s
+    # /lightning.json, which is the signal that stops the renderer polling.
+    # A live cache with no bucket yet 200s with an empty bucket instead -- the
+    # renderer keeps asking on that path, so handing it a cache regardless of
+    # cfg.lightning_enabled would make a disabled layer poll forever for
+    # nothing, the same distinction the endpoint's own docstring makes.
+    lightning_cache = lightning_mod.LightningCache() if cfg.lightning_enabled else None
     tasks = [asyncio.create_task(alerter(health, geoip_alert, enricher)),
              asyncio.create_task(aurora_poller(kp_cache)),
              asyncio.create_task(cloud_poller(cloud_cache, cfg)),
