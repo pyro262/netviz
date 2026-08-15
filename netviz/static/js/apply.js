@@ -103,10 +103,11 @@ function layerHandlers(names) {
   const out = {};
   for (const name of names) {
     if (name === 'stars') out[`layers.${name}`] = (v, ctx) => ctx.stars.setVisible(v);
-    // The clouds are their own object, not one of the globe's baked layers:
-    // the field arrives over the network long after the globe is built.
-    else if (name === 'clouds') {
-      out[`layers.${name}`] = (v, ctx) => ctx.clouds && ctx.clouds.setVisible(v);
+    // Clouds and lightning are their own objects, not one of the globe's
+    // baked layers: both arrive over the network long after the globe is
+    // built, clouds as a fetched field and lightning as a replayed feed.
+    else if (name === 'clouds' || name === 'lightning') {
+      out[`layers.${name}`] = (v, ctx) => ctx[name] && ctx[name].setVisible(v);
     } else out[`layers.${name}`] = (v, ctx) => ctx.globe.setLayer(name, v);
   }
   return out;
@@ -184,7 +185,7 @@ export const HANDLERS = {
 
   ...layerHandlers(['cityLights', 'coastline', 'bordersWatched', 'bordersWorld',
                     'admin1', 'stars', 'aurora', 'atmosphere', 'ripples',
-                    'countryFlash', 'clouds']),
+                    'countryFlash', 'clouds', 'lightning']),
 
   'ripples.cooldownSeconds': (v, ctx) => ctx.ripples.setCooldown(v),
 
@@ -204,6 +205,15 @@ export const HANDLERS = {
   'clouds.threshold': (v, ctx) => ctx.clouds && ctx.clouds.setUniform('threshold', v),
   'clouds.nightDim': (v, ctx) => ctx.clouds && ctx.clouds.setUniform('nightDim', v),
   'clouds.tint': (v, ctx) => ctx.clouds && ctx.clouds.setUniform('tint', v),
+
+  // No-ops when the layer never mounted -- off at boot, or a collector that
+  // serves no /lightning.json -- rather than a throw that would take the whole
+  // settings apply with it. Same rule as the cloud rows.
+  'lightning.flashLife': (v, ctx) => ctx.lightning && ctx.lightning.setUniform('flashLife', v),
+  'lightning.glowLife': (v, ctx) => ctx.lightning && ctx.lightning.setUniform('glowLife', v),
+  'lightning.size': (v, ctx) => ctx.lightning && ctx.lightning.setUniform('size', v),
+  'lightning.brightness': (v, ctx) => ctx.lightning && ctx.lightning.setUniform('brightness', v),
+  'lightning.color': (v, ctx) => ctx.lightning && ctx.lightning.setUniform('color', v),
 
   'rail.enabled': (v, ctx) => {
     if (v && !ctx.rail.mounted()) ctx.rail.mount();

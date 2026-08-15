@@ -18,11 +18,11 @@ test('every row names a path the schema actually declares', () => {
   }
 });
 
-test('the panel shows 43 rows in five groups', () => {
+test('the panel shows 48 rows in six groups', () => {
   const rows = tunerRows();
-  assert.equal(rows.length, 43);
+  assert.equal(rows.length, 48);
   assert.deepEqual([...new Set(rows.map((r) => r.group))],
-                   ['appearance', 'clouds', 'arcs', 'arcshape', 'camera']);
+                   ['appearance', 'clouds', 'lightning', 'arcs', 'arcshape', 'camera']);
 });
 
 test('no path appears twice, and no label repeats inside a group', () => {
@@ -138,10 +138,10 @@ test('tunerRows refuses a slider with no randomize flag', () => {
   } finally {
     good.randomize = saved;
   }
-  assert.equal(tunerRows().length, 43, 'the table was not put back');
+  assert.equal(tunerRows().length, 48, 'the table was not put back');
 });
 
-test('the randomized set is 32 sliders, and the excluded ones are named', () => {
+test('the randomized set is 36 sliders, and the excluded ones are named', () => {
   // A count alone is passed by a swap. The names are what hold the rule: the
   // camera's distance is IN despite living in "Camera pacing" (it is how big
   // the globe is, visible in the first frame), the star ramp is OUT despite
@@ -150,7 +150,7 @@ test('the randomized set is 32 sliders, and the excluded ones are named', () => 
   const rows = tunerRows();
   const on = rows.filter((r) => r.control === 'slider' && r.randomize);
   const off = rows.filter((r) => r.control === 'slider' && !r.randomize);
-  assert.equal(on.length, 32, `randomized ${on.length} sliders`);
+  assert.equal(on.length, 36, `randomized ${on.length} sliders`);
   assert.deepEqual(off.map((r) => r.path).sort(), [...RANDOMIZE_EXCLUDED].sort());
   assert.ok(on.some((r) => r.path === 'camera.distance'),
             'camera.distance is a look setting and must be randomized');
@@ -207,8 +207,8 @@ test('randomizeScope partitions every row, and rolled matches the flag', () => {
   assert.deepEqual([...scope.rolled, ...scope.held].map((r) => r.path).sort(),
                    rows.map((r) => r.path).sort());
   // Today's numbers, stated so a change is deliberate rather than unnoticed.
-  assert.equal(scope.count, 32);
-  assert.equal(scope.heldCount, 11);
+  assert.equal(scope.count, 36);
+  assert.equal(scope.heldCount, 12);
 });
 
 test('the scope moves with the table rather than being written down', () => {
@@ -217,11 +217,11 @@ test('the scope moves with the table rather than being written down', () => {
   const group = GROUPS.find((g) => g.id === 'arcs');
   const removed = group.rows.pop();
   try {
-    assert.equal(randomizeScope().count, 31);
+    assert.equal(randomizeScope().count, 35);
   } finally {
     group.rows.push(removed);
   }
-  assert.equal(randomizeScope().count, 32, 'the table was not put back');
+  assert.equal(randomizeScope().count, 36, 'the table was not put back');
 });
 
 // ------------------------------------------------- the rows that rebuild --

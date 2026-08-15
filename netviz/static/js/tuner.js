@@ -129,6 +129,21 @@ export const GROUPS = [
     ],
   },
   {
+    // Kept out of Appearance for the same reason the clouds are: every row
+    // here does nothing at all on a display whose collector has never reached
+    // Blitzortung, and one heading that explains why beats five dead rows
+    // scattered among ones that work.
+    id: 'lightning',
+    label: 'Lightning',
+    rows: [
+      { path: 'lightning.flashLife', label: 'Flash length', randomize: true },
+      { path: 'lightning.glowLife', label: 'Afterglow length', randomize: true },
+      { path: 'lightning.size', label: 'Strike size', randomize: true },
+      { path: 'lightning.brightness', label: 'Strike brightness', randomize: true },
+      { path: 'lightning.color', label: 'Strike color', randomize: false },
+    ],
+  },
+  {
     id: 'arcs',
     label: 'Arcs',
     rows: [

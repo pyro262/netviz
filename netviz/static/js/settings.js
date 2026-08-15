@@ -438,6 +438,11 @@ export const SCHEMA = {
     ['clouds', 'Real cloud cover, from NOAA\u2019s hourly global mosaic of every '
       + 'geostationary weather satellite. Off, or with no field fetched, the '
       + 'globe shows its baked surface alone \u2014 there is no invented weather.'],
+    ['lightning', 'Real lightning strokes from Blitzortung\u2019s volunteer '
+      + 'network, replayed at normal speed about 40 minutes behind now -- the '
+      + 'archive is published on that delay and no amount of polling closes '
+      + 'it. Off by default: it is the one layer a viewer is likely to read as '
+      + 'happening right now, so the rail says how far behind it is.'],
   ]),
 
   'ripples.cooldownSeconds': {
@@ -534,6 +539,37 @@ export const SCHEMA = {
     type: 'color', strategy: 'uniform',
     help: 'The cloud color. Near-white with a violet cast, so the layer belongs '
         + 'to the plasma scheme instead of looking like a photograph pasted on.',
+  },
+
+  // ----------------------------------------------------------- lightning --
+  'lightning.flashLife': {
+    type: 'number', min: 0.05, max: 2, strategy: 'uniform',
+    help: 'How long a strike’s bright flash lasts, in seconds. Short is '
+        + 'the point: a strike that lingers stops reading as a strike and '
+        + 'starts reading as a lamp somebody left on.',
+  },
+  'lightning.glowLife': {
+    type: 'number', min: 0.2, max: 20, strategy: 'uniform',
+    help: 'How long the dim afterglow lasts. This is the row that decides '
+        + 'whether a storm has a shape: at 11.5 strokes a second over a whole '
+        + 'planet, flashes alone average about two lit pixels and read as '
+        + 'sensor noise rather than as weather.',
+  },
+  'lightning.size': {
+    type: 'number', min: 0.5, max: 12, strategy: 'uniform',
+    help: 'Strike size in pixels, scaled to the drawing buffer like the city '
+        + 'lights -- so it stays the same apparent size at 1080p and 4K.',
+  },
+  'lightning.brightness': {
+    type: 'number', min: 0, max: 3, strategy: 'uniform',
+    help: 'Overall gain on the layer. It is additive and it feeds the bloom, '
+        + 'so past about 1.5 a busy squall line blooms into one white smear.',
+  },
+  'lightning.color': {
+    type: 'color', strategy: 'uniform',
+    help: 'Strike color. Cold white-blue on purpose: amber is the block arcs '
+        + 'and violet is the flows, and lightning is the one thing on the '
+        + 'globe that is not network traffic. It must not join that vocabulary.',
   },
 
   // ---------------------------------------------------------------- rail --
