@@ -329,6 +329,16 @@ export const CONFIG = {
   // ------------------------------------------------------------ appearance --
 
   appearance: {
+    // The active ramp. Plasma is the default and always has been; the other
+    // four are its matplotlib siblings. `custom` reads appearance.customRamp.
+    theme: 'plasma',
+    // Ten stops, only consulted when theme is 'custom'. Seeded from whatever
+    // ramp was active when the user first edited a stop -- editing a preset
+    // FORKS it rather than modifying it, because a preset the user can damage
+    // stops being a way back.
+    customRamp: ['#0d0887', '#46039f', '#7201a8', '#9c179e', '#bd3786',
+                 '#d8576b', '#ed7953', '#fb9f3a', '#fdca26', '#f0f921'],
+
     // `auto` = the active theme's sky. Under the default plasma theme this
     // resolves to #0b0916, the literal it replaces, so a fresh kiosk is
     // unchanged. A display that has already persisted a background keeps it:

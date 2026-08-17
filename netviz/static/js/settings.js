@@ -543,6 +543,21 @@ export const SCHEMA = {
     help: 'The aurora’s upper band. #c56cff is 630 nm red over violet -- '
         + 'the same caveat as the lower band.',
   },
+  'appearance.theme': {
+    type: 'enum', values: ['plasma', 'viridis', 'magma', 'inferno', 'cividis',
+                           'custom'],
+    strategy: 'uniform',
+    help: 'The color ramp every element follows unless it has been given a '
+        + 'color of its own. Plasma is the default and is what this display '
+        + 'has always drawn. Changing it also sets the sky, unless the sky has '
+        + 'been set explicitly.',
+  },
+  'appearance.customRamp': {
+    type: 'list', of: 'string', length: 10, elementType: 'color', strategy: 'uniform',
+    help: 'Ten stops, dark end first, used when the theme is `custom`. Editing '
+        + 'a stop on any preset copies it here and switches the theme to '
+        + 'custom, so a preset is never modified in place.',
+  },
   'appearance.bloom.strength': {
     type: 'number', min: 0, max: 2.0, strategy: 'uniform',
     help: 'UnrealBloomPass strength. Raising it cannot rescue a base pass that '
@@ -860,6 +875,17 @@ export function coerce(path, value) {
           return { ok: false,
                    why: `element ${bad} is ${typeof value[bad]}, not ${e.of}` };
         }
+      }
+      // A wrong length or a bad element shape is the same class of silent
+      // failure as a number outside its bounds -- a stored value that looks
+      // fine and behaves wrong. Checked after the element-type pass above,
+      // shape before color-specificity.
+      if (e.length && value.length !== e.length) {
+        return { ok: false, why: `needs exactly ${e.length} entries, got ${value.length}` };
+      }
+      if (e.elementType === 'color') {
+        const bad = value.findIndex((el) => typeof el !== 'string' || !HEX.test(el));
+        if (bad >= 0) return { ok: false, why: `entry ${bad} is not a color` };
       }
       return { ok: true, value };
     }

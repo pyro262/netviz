@@ -22,7 +22,12 @@
 import * as THREE from '../vendor/three/three.module.js';
 import { validate, planApply, paths, defaultOf } from './settings.js';
 import { CONFIG } from './config.js';
-import { resolveColor, isAuto } from './elements.js';
+import { resolveColor, isAuto, ELEMENT_T, ELEMENT_LITERAL } from './elements.js';
+// THEME_SKIES lives in ramp.js, not here -- per-ramp data belongs with the
+// ramps, and ramp.js is three-free so it can be imported under `node --test`.
+// Do NOT define a second copy of this table; two copies of one table drift,
+// and the drift shows up as a sky that is illegal on the wall.
+import { setActiveRamp, THEME_SKIES } from './ramp.js';
 // burst.js is three-free and its thresholds live in one exported object that
 // createBurstDetector() closes over by default, so the detour thresholds are
 // reached by mutating that object rather than through ctx. Importing it keeps
@@ -167,6 +172,29 @@ function setAurora(ctx, patch, low, high) {
   ctx.aurora.setColors(lo, hi);
 }
 
+/** One patch, not twelve. The theme fans out here so the whole recolor is one
+ *  pass and one relayout, preserving the uniform -> rebuild -> one relayout
+ *  ordering the executor guarantees. */
+function applyTheme(id, ctx, patch) {
+  setActiveRamp(id === 'custom' ? finalValue(patch, 'appearance.customRamp') : id);
+  for (const key of [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)]) {
+    const stored = finalValue(patch, `appearance.colors.${key}`);
+    if (!isAuto(stored)) continue;          // an override holds
+    HANDLERS[`appearance.colors.${key}`](stored, ctx, patch);
+  }
+  // Arcs already in the air hold the OLD ramp's color: an arc's color is
+  // resolved from rampAt(colorAt) at spawn and copied into the slot's uniform.
+  // Without this re-push a theme change leaves up to 18 seconds of stale block
+  // arcs on screen -- block arcs live 18s and arrive rarely -- which reads as a
+  // theme switch that half worked. setSpec already pushes colorAt into live
+  // slots, so re-writing the same value is what forces the re-resolve.
+  for (const cls of ['flow', 'block', 'highlight']) {
+    ctx.arcs.setSpec(cls, 'colorAt', defaultOf(`arcs.${cls}.colorAt`));
+  }
+  const sky = finalValue(patch, 'appearance.background');
+  if (isAuto(sky)) ctx.scene.background = new THREE.Color(THEME_SKIES[id]);
+}
+
 export const HANDLERS = {
   'traffic.flowsPerSecond': (v, ctx) => ctx.arcs.setUniform('flowsPerSecond', v),
   'traffic.dropDns': configOnly,
@@ -247,7 +275,17 @@ export const HANDLERS = {
 
   'ripples.cooldownSeconds': (v, ctx) => ctx.ripples.setCooldown(v),
 
-  'appearance.background': (v, ctx) => ctx.scene.background.set(v),
+  // `auto` follows the active theme's sky; an explicit hex holds against
+  // future theme changes (see applyTheme, which checks this same value before
+  // ever touching the sky).
+  'appearance.background': (v, ctx) => {
+    ctx.scene.background.set(isAuto(v) ? THEME_SKIES[defaultOf('appearance.theme')] : v);
+  },
+  'appearance.theme': (v, ctx, patch) => applyTheme(v, ctx, patch),
+  // Only meaningful when the theme is 'custom', but recomputing the whole
+  // fan-out here rather than a narrower path keeps one function owning "what
+  // does the ramp look like right now" -- see applyTheme.
+  'appearance.customRamp': (v, ctx, patch) => applyTheme(defaultOf('appearance.theme'), ctx, patch),
   'appearance.bloom.strength': (v, ctx) => ctx.post.setBloom('strength', v),
   'appearance.bloom.radius': (v, ctx) => ctx.post.setBloom('radius', v),
   'appearance.bloom.threshold': (v, ctx) => ctx.post.setBloom('threshold', v),

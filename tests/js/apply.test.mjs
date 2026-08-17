@@ -5,13 +5,19 @@ import { createApplier, HANDLERS, ARC_REBUILD_KEYS } from '../../netviz/static/j
 import { paths, entry } from '../../netviz/static/js/settings.js';
 import { validateZoomRange } from '../../netviz/static/js/orbit.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
+// Same vendored module apply.js itself imports (by relative path, not the
+// bare specifier -- see apply.js's own comment on why). Used only to give
+// fakeCtx.scene.background a real Color so applyTheme's reassignment and the
+// existing handler's .set() both land on an object that actually behaves
+// like the one main.js hands the executor.
+import * as THREE from '../../netviz/static/vendor/three/three.module.js';
 
 /** Records what the executor did, in order.
  *
  *  Every method a handler calls has to be here, or the coverage the schema
  *  tests give would stop at "a handler exists" and say nothing about whether it
  *  can run. */
-function fakeCtx(log) {
+function fakeCtx(log = []) {
   return {
     setConfig: (p, v) => log.push(`config ${p}=${v}`),
     arcs: {
@@ -36,7 +42,11 @@ function fakeCtx(log) {
       setRampMinutes: (v) => log.push(`stars rampMinutes=${v}`),
     },
     post: { setBloom: (p, v) => log.push(`bloom ${p}=${v}`) },
-    scene: { background: { set: (v) => log.push(`background=${v}`) } },
+    // A real Color, not a log stub: applyTheme reassigns this property
+    // wholesale (ctx.scene.background = new THREE.Color(...)) while the
+    // ordinary handler mutates it in place (.set(v)) -- both need to leave
+    // behind something getHexString() can read back.
+    scene: { background: new THREE.Color('#0b0916') },
     ripples: {
       setCooldown: (v) => log.push(`ripples cooldown=${v}`),
       setColor: (cls, c, ex) => log.push(`ripples ${cls}=${c.getHexString()},${ex}`),
@@ -326,4 +336,56 @@ test('no schema path is left without a handler', () => {
   // The orphan check the applier already does at construction. This asserts it
   // passes now that the twelve are wired -- the previous commit failed it.
   assert.doesNotThrow(() => createApplier(fakeCtx([])));
+});
+
+test('a theme change recolors every auto element and none of the overridden', (t) => {
+  // setConfig: null forces the real writeConfig (see fakeRangeCtx above for
+  // the same pattern) -- applyTheme's "is this element overridden" check
+  // reads CONFIG back through defaultOf(), and a patch applied through the
+  // log-only stub would never actually persist there.
+  t.after(() => {
+    CONFIG.appearance.colors.coastline = 'auto';
+    CONFIG.appearance.theme = 'plasma';
+  });
+  const seen = {};
+  const ctx = fakeCtx();
+  ctx.setConfig = null;
+  ctx.globe.setColor = (k, c) => { seen[k] = c.getHexString(); };
+  const applier = createApplier(ctx);
+  applier.apply({ 'appearance.colors.coastline': '#ff0088' });   // override one
+  const held = seen.coastline;
+  applier.apply({ 'appearance.theme': 'viridis' });
+  assert.equal(seen.coastline, held, 'an overridden element must hold');
+  assert.notEqual(seen.admin1, undefined, 'an auto element must be recolored');
+});
+
+test('a theme change sets the sky when the sky is auto', (t) => {
+  t.after(() => { CONFIG.appearance.theme = 'plasma'; });
+  const ctx = fakeCtx();
+  ctx.setConfig = null;
+  const applier = createApplier(ctx);
+  applier.apply({ 'appearance.theme': 'inferno' });
+  assert.equal(ctx.scene.background.getHexString(), '0d0604');
+});
+
+test('a theme change leaves an explicitly-set sky alone', (t) => {
+  t.after(() => {
+    CONFIG.appearance.background = 'auto';
+    CONFIG.appearance.theme = 'plasma';
+  });
+  const ctx = fakeCtx();
+  ctx.setConfig = null;
+  const applier = createApplier(ctx);
+  applier.apply({ 'appearance.background': '#020104' });
+  applier.apply({ 'appearance.theme': 'inferno' });
+  assert.equal(ctx.scene.background.getHexString(), '020104');
+});
+
+test('a theme change recolors arcs already in the air', () => {
+  const pushed = [];
+  const ctx = fakeCtx();
+  ctx.arcs.setSpec = (cls, key, v) => pushed.push([cls, key, v]);
+  createApplier(ctx).apply({ 'appearance.theme': 'magma' });
+  assert.deepEqual(pushed.map((p) => p[0]).sort(),
+                   ['block', 'flow', 'highlight']);
 });

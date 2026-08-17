@@ -7,7 +7,7 @@ import {
 } from '../../netviz/static/js/settings.js';
 import { cfg } from '../../netviz/static/js/config.js';
 import { withPersistence } from '../../netviz/static/js/rulestore.js';
-import { setActiveRamp, RAMPS } from '../../netviz/static/js/ramp.js';
+import { setActiveRamp, RAMPS, THEME_SKIES } from '../../netviz/static/js/ramp.js';
 import { ELEMENT_T, ELEMENT_LITERAL, AUTO } from '../../netviz/static/js/elements.js';
 
 test('every declared path exists in config.js', () => {
@@ -440,14 +440,10 @@ test('every preset sky sits under its own theme cap', (t) => {
   // the loop skips the trailing line and leaks the ramp into every later
   // test.
   t.after(() => setActiveRamp('plasma'));
-  const SKIES = {
-    plasma: '#0b0916', viridis: '#050d10', magma: '#0a0510',
-    inferno: '#0d0604', cividis: '#060a14',
-  };
   for (const id of Object.keys(RAMPS)) {
     setActiveRamp(id);
     const cap = maxBackgroundLuminance();
-    const L = relativeLuminance(SKIES[id]);
+    const L = relativeLuminance(THEME_SKIES[id]);
     assert.ok(L <= cap, `${id}: sky L ${L.toFixed(5)} over cap ${cap.toFixed(5)}`);
   }
 });
@@ -476,4 +472,22 @@ test('an element color refuses a non-color, and accepts auto', () => {
   assert.equal(validate({ 'appearance.colors.coastline': 'teal' }).rejected.length, 1);
   assert.equal(validate({ 'appearance.colors.coastline': AUTO }).rejected.length, 0);
   assert.equal(validate({ 'appearance.colors.coastline': '#ff0088' }).rejected.length, 0);
+});
+
+test('customRamp must be ten colors', () => {
+  assert.equal(validate({ 'appearance.customRamp': ['#fff'] }).rejected.length, 1);
+  assert.equal(
+    validate({ 'appearance.customRamp': Array(10).fill('#112233') }).rejected.length, 0);
+});
+
+test('customRamp refuses a non-color element even at the right length', () => {
+  const nine = Array(9).fill('#112233');
+  assert.equal(
+    validate({ 'appearance.customRamp': [...nine, 'not-a-color'] }).rejected.length, 1);
+});
+
+test('appearance.theme refuses an unknown ramp id', () => {
+  assert.equal(validate({ 'appearance.theme': 'plasma' }).rejected.length, 0);
+  assert.equal(validate({ 'appearance.theme': 'custom' }).rejected.length, 0);
+  assert.equal(validate({ 'appearance.theme': 'sepia' }).rejected.length, 1);
 });
