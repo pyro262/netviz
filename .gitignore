@@ -22,3 +22,4 @@ docs/
 # the files as absent rather than failing to boot.
 netviz/static/data/borders.bin
 netviz/static/data/borders-index.json
+node_modules/
