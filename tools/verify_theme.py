@@ -58,21 +58,26 @@ Eight cases, from spec section 11:
      `appearance.customRamp` afterward, read back live, proving "restores it
      intact" describes the preset's own colors and not a discarded edit.
 
-PROVE EVERY CASE RED FIRST. Six of the eight cases below (1, 2, 5, 6, 7, 8)
-were measured against a deliberately broken build during development and
-restored, with the exact edit and the exact failed output recorded in each
-case's own docstring. Case 3 was NOT re-measured after its metric was
-rewritten from a hue delta to an RGB distance -- its docstring says so
-plainly rather than dressing up a predicted failure as a measured one. Case
-4 needed no injected break at all: it is RED against the shipped,
-unmodified tree right now, having found a real pre-existing defect in
-`theme_panel.js` (see its own docstring) rather than a synthetic one --
-which is arguably the strongest kind of red-first evidence this file has,
-even though it means this script does not currently return 8/8 against
-`main`. This project has shipped a guard that passed everything twice (a
-quoted rev-list range that scanned nothing, and a CSS rule that never
-parsed) -- a verifier that cannot fail is indistinguishable from a clean
-run.
+PROVE EVERY CASE RED FIRST. Every case below has now been measured against
+a genuinely broken state and restored, with the exact break and the exact
+failed output recorded in each case's own docstring:
+
+  - Cases 1, 2, 5, 6, 7, 8 against a deliberately broken BUILD (one small
+    edit to the relevant source file, reverted after).
+  - Case 3 against a deliberately broken RUN of this case itself (its own
+    `PRESET_IDS` collapsed to five copies of the same preset -- the
+    observable effect of a no-op ramp selector -- with no source file
+    touched at all). Its floor, `CASE3_RGB_DIST_MIN`, is set from measured
+    noise and measured signal, not from taste; see that constant's own
+    comment for both numbers and how thin the margin actually is.
+  - Case 4 needed no injected break: it was found RED against the shipped,
+    unmodified tree (a real pre-existing defect in `theme_panel.js`'s
+    `syncRow`, since fixed upstream) rather than a synthetic one, arguably
+    the strongest evidence this file produced.
+
+This project has shipped a guard that passed everything twice (a quoted
+rev-list range that scanned nothing, and a CSS rule that never parsed) --
+a verifier that cannot fail is indistinguishable from a clean run.
 
     python3 tools/verify_theme.py
     python3 tools/verify_theme.py --url http://HOST:8099/
@@ -449,15 +454,39 @@ def canvas_regions(page):
 # under CASE3_RGB_DIST_MIN).
 CASE3_WARMUP_SECONDS = 30
 CASE3_SETTLE_MS = 800
-CASE3_SAMPLES = 2
+# MEASURED: raising this from 2 to 4 nudged the same-preset noise ceiling
+# down slightly (6 repeats of plasma, post-warmup: max pairwise distance 3.42
+# at 2 samples/preset, 3.31 at 4 -- diminishing returns, since the residual
+# noise is mostly TEMPORAL (which arcs happen to be in flight at the moment
+# of the shot), not spatial undersampling, and averaging a few more frames a
+# few hundred ms apart only shaves a little off a Poisson-driven signal).
+# Kept at 4 anyway: it is free correctness (the floor below is set against
+# what this actually measures) and any reduction in the noise ceiling is
+# real margin.
+CASE3_SAMPLES = 4
 CASE3_SAMPLE_GAP_MS = 350
 # Euclidean distance between two presets' mean RGB (0..255 per channel).
-# MEASURED live, post-warmup, all 10 pairs among the 5 presets: minimum 4.7
-# (inferno vs cividis -- the two closest ramps once every element's colors
-# are aggregated together), maximum 22.5 (plasma vs viridis). Same-preset
-# repeat-sample noise floor, post-warmup: 1-3. 3.0 sits above the noise floor
-# with real margin below the tightest real pair.
-CASE3_RGB_DIST_MIN = 3.0
+#
+# MEASURED, same day, same box, same warmup, both numbers from THIS
+# configuration (CASE3_SAMPLES=4):
+#   - same-preset noise ceiling: plasma sampled 5 independent times (each a
+#     fresh CASE3_SETTLE_MS + CASE3_SAMPLES-averaged shot, exactly as case 3
+#     samples a real preset), all 10 pairwise distances among them --
+#     maximum observed 3.31, mean 1.66. A second run at CASE3_SAMPLES=2
+#     (the value this constant shipped with before) gave max 3.42 on 6
+#     repeats -- so the noise ceiling sits at roughly 3.3-3.5 regardless of
+#     which of the two sample counts is used.
+#   - closest real pair: magma vs inferno, 5.08 (measured in the same run
+#     that found the full 10-pair spread 4.7-22.5 across the 5 presets).
+#
+# 4.0 sits almost exactly between the two: ~0.6-0.7 above the measured noise
+# ceiling, ~1.0-1.1 below the closest real pair. That margin is real but not
+# large -- this project's own history is why it is being written down this
+# plainly rather than picked to merely look safe. If a future preset pair
+# ever lands closer together than magma/inferno's 5.08, or the noise ceiling
+# creeps up, RE-MEASURE both sides with the harness this comment describes
+# before moving this number.
+CASE3_RGB_DIST_MIN = 4.0
 CASE3_VAL_MARGIN = 0.02      # globe box brighter than the sky box by this much
 PRESET_IDS = ["plasma", "viridis", "magma", "inferno", "cividis"]
 
@@ -661,21 +690,26 @@ def case3_presets_recolor(page, cx, cy) -> bool:
     that does this become a same-window comparison, which is what keeps the
     per-preset settle short.
 
-    RED FIRST -- NOT EMPIRICALLY RE-VERIFIED AFTER THE LAST REDESIGN. An
-    earlier hue-delta version of this case WAS broken and restored live (see
-    the project history for that run); breaking `js/ramp.js`'s
-    `setActiveRamp` into a no-op made every consecutive hue delta read under
-    2 degrees against the CASE3_HUE_DELTA_MIN=15 bar that version used. This
-    case was then rewritten to the RGB-distance metric documented above
-    (the hue-based version was too easily fooled by cividis's low
-    saturation -- see the metric's own comment), and that rewrite was NOT
-    re-run against the same broken `setActiveRamp` before this file was
-    committed, because each attempt costs a CASE3_WARMUP_SECONDS=30s wait
-    that did not fit the remaining time. The reasoning stands (a no-op ramp
-    selector cannot move a mean-RGB distance built from that ramp), but this
-    is a predicted failure mode, not a measured one, and is recorded as such
-    rather than dressed up as red-first evidence this script does not
-    actually have."""
+    RED FIRST, MEASURED, against the CURRENT RGB-distance metric (an earlier
+    hue-delta version of this case was separately broken and restored during
+    an even earlier draft; that evidence no longer applies to this metric
+    and was replaced by this one rather than left standing in for it).
+
+    The lever used was the one the metric itself validates against: with
+    `PRESET_IDS` collapsed to `['plasma'] * 5` (every "preset" the same
+    value -- the observable effect of a no-op `setActiveRamp`, with no
+    source file touched or restored), this case's own sampling and
+    assertion logic ran unmodified and produced:
+      `closest pair ('plasma', 'plasma') dist=0.00 (min required 4.0, ...
+      all distinguishable=False)`, `case3 result: False`.
+    `brightness sanity` still passed (the globe box was still brighter than
+    the sky box -- that half of the check does not depend on the ramp
+    varying at all, which is why it survives as a second guard even here).
+
+    CASE3_RGB_DIST_MIN and CASE3_SAMPLES were both re-measured for this
+    fix -- see CASE3_RGB_DIST_MIN's own comment for the noise-ceiling
+    (3.31-3.42) and closest-real-pair (5.08) numbers the floor of 4.0 sits
+    between, and why that margin is real but not large."""
     ok_open = open_theme_panel(page, cx, cy)
     if not ok_open:
         return report("3: each preset visibly recolors the globe", False,
