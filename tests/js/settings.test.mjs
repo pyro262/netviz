@@ -491,3 +491,62 @@ test('appearance.theme refuses an unknown ramp id', () => {
   assert.equal(validate({ 'appearance.theme': 'custom' }).rejected.length, 0);
   assert.equal(validate({ 'appearance.theme': 'sepia' }).rejected.length, 1);
 });
+
+// ---------------------------------------- atmosphere shape and the surface --
+//
+// Seven settings that were hardcoded until 0.6.0: the limb glow's rim
+// falloff/brightness/shell radius, and the surface's tints/terminator
+// softness/day-side ambient. All seven default to the value that was already
+// on the wall, so a fresh kiosk draws exactly what it always has.
+
+test('the new numeric settings declare bounds containing their default', () => {
+  const NEW = [
+    ['appearance.atmosphere.power', 0.5, 8],
+    ['appearance.atmosphere.strength', 0, 2],
+    ['appearance.atmosphere.thickness', 1.005, 1.15],
+    ['appearance.surface.softness', 0, 0.5],
+    ['appearance.surface.dayAmbient', 0, 1],
+  ];
+  for (const [path, min, max] of NEW) {
+    const e = entry(path);
+    assert.ok(e, `${path} missing`);
+    assert.equal(e.min, min, `${path} min`);
+    assert.equal(e.max, max, `${path} max`);
+    const d = defaultOf(path);
+    assert.ok(d >= min && d <= max, `${path} default ${d} outside bounds`);
+  }
+});
+
+test('the surface tints ship as white, so the display is unchanged', () => {
+  // A tint is a multiply and white is the identity. A default that shifted
+  // the baked map would move the one layer everything else is registered
+  // against.
+  assert.equal(defaultOf('appearance.surface.dayTint'), '#ffffff');
+  assert.equal(defaultOf('appearance.surface.nightTint'), '#ffffff');
+});
+
+test('thickness is the only new rebuild strategy', () => {
+  // Not an arc key -- see apply.js's ARC_REBUILD_KEYS, which is scoped to
+  // `arcs.*` paths and does not, and must not, cover this one.
+  assert.equal(entry('appearance.atmosphere.thickness').strategy, 'rebuild');
+  assert.equal(entry('appearance.atmosphere.power').strategy, 'uniform');
+  assert.equal(entry('appearance.atmosphere.strength').strategy, 'uniform');
+  assert.equal(entry('appearance.surface.dayTint').strategy, 'uniform');
+  assert.equal(entry('appearance.surface.nightTint').strategy, 'uniform');
+  assert.equal(entry('appearance.surface.softness').strategy, 'uniform');
+  assert.equal(entry('appearance.surface.dayAmbient').strategy, 'uniform');
+});
+
+test('dayAmbient reproduces the old fixed 0.55 + 0.45*lit at the shipped default', () => {
+  // The algebraic identity the whole setting rests on: dayAmbient + (1 -
+  // dayAmbient) * lit === 0.55 + 0.45 * lit when dayAmbient is 0.55, because
+  // 1 - 0.55 === 0.45. Checked at several `lit` values, not just the
+  // endpoints, since a term that only agrees at 0 and 1 would still be wrong.
+  const dayAmbient = defaultOf('appearance.surface.dayAmbient');
+  assert.equal(dayAmbient, 0.55);
+  for (const lit of [0, 0.25, 0.5, 0.75, 1]) {
+    const now = dayAmbient + (1 - dayAmbient) * lit;
+    const old = 0.55 + 0.45 * lit;
+    assert.ok(Math.abs(now - old) < 1e-12, `lit=${lit}: ${now} != ${old}`);
+  }
+});

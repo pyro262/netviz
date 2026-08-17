@@ -602,6 +602,50 @@ export const SCHEMA = {
         + 'from sunrise and again from sunset, so the change lands while the '
         + 'sky on the globe is already moving.',
   },
+  'appearance.atmosphere.power': {
+    type: 'number', min: 0.5, max: 8, strategy: 'uniform',
+    help: 'Rim falloff. Higher is a tighter edge; lower spreads the glow '
+        + 'further from the limb.',
+  },
+  'appearance.atmosphere.strength': {
+    type: 'number', min: 0, max: 2, strategy: 'uniform',
+    help: 'Brightness of the rim at its brightest, where the view grazes the '
+        + 'limb.',
+  },
+  'appearance.atmosphere.thickness': {
+    // The shell radius is baked into SphereGeometry at construction, so this
+    // is the one setting here that cannot be pushed -- the setter disposes
+    // the old geometry and builds a new one. Not an arc key: ARC_REBUILD_KEYS
+    // in apply.js is scoped to `arcs.*` and does not cover this path.
+    type: 'number', min: 1.005, max: 1.15, strategy: 'rebuild',
+    help: 'Shell radius as a multiple of the globe\'s. Too close and the glow '
+        + 'reads as a drawn outline; too far and it visibly separates from '
+        + 'the limb.',
+  },
+  'appearance.surface.dayTint': {
+    // Multiplies the day-map sample, so #ffffff is the identity and the
+    // shipped display is unchanged by this setting existing.
+    type: 'color', strategy: 'uniform',
+    help: 'Tints the daylit surface texture. White leaves the baked map '
+        + 'exactly as shipped.',
+  },
+  'appearance.surface.nightTint': {
+    type: 'color', strategy: 'uniform',
+    help: 'Tints the night-lights surface texture. White leaves the baked '
+        + 'map exactly as shipped.',
+  },
+  'appearance.surface.softness': {
+    type: 'number', min: 0, max: 0.5, strategy: 'uniform',
+    help: 'Terminator blend width, in radians. Narrow is a hard day/night '
+        + 'line; wide softens it into a long dusk band.',
+  },
+  'appearance.surface.dayAmbient': {
+    type: 'number', min: 0, max: 1, strategy: 'uniform',
+    help: 'How lit the day side is where the sun grazes the limb. The shader '
+        + 'computes day * (dayAmbient + (1 - dayAmbient) * lit), which '
+        + 'reproduces the old fixed 0.55 + 0.45 * lit exactly at the shipped '
+        + 'default.',
+  },
 
   // -------------------------------------------------------------- clouds --
   'clouds.opacity': {

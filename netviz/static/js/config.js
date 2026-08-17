@@ -384,6 +384,21 @@ export const CONFIG = {
     // while the sky on the globe is already moving. 1.0 disables it.
     starDayGain: 2.0,
     starRampMinutes: 30,
+
+    // The limb glow. All three were hardcoded in js/atmosphere.js until 0.6.0.
+    atmosphere: {
+      power: 3.2,        // rim falloff -- higher is a tighter edge
+      strength: 0.85,    // brightness of the rim at its brightest
+      thickness: 1.045,  // shell radius as a multiple of the globe's
+    },
+    // The textured surface. The tints are multiplies, so #ffffff is the
+    // identity and the shipped display is unchanged by their existence.
+    surface: {
+      dayTint: '#ffffff',
+      nightTint: '#ffffff',
+      softness: 0.09,     // terminator blend in radians, ~5 degrees
+      dayAmbient: 0.55,   // how lit the day side is where the sun grazes
+    },
   },
 
   // ----------------------------------------------------------------- rail --

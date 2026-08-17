@@ -201,6 +201,20 @@ export const GROUPS = [
     ],
   },
   {
+    id: 'surface',
+    label: 'Atmosphere & surface',
+    rows: [
+      // All five change the current frame, so all five are randomized. The
+      // two tints are colors, not sliders, and Randomize is sliders-only --
+      // they are not on this panel at all, only the five numeric fields are.
+      { path: 'appearance.atmosphere.power', label: 'Rim falloff', randomize: true },
+      { path: 'appearance.atmosphere.strength', label: 'Rim brightness', randomize: true },
+      { path: 'appearance.atmosphere.thickness', label: 'Shell thickness', randomize: true },
+      { path: 'appearance.surface.softness', label: 'Terminator softness', randomize: true },
+      { path: 'appearance.surface.dayAmbient', label: 'Day-side ambient', randomize: true },
+    ],
+  },
+  {
     id: 'camera',
     label: 'Camera pacing',
     rows: [

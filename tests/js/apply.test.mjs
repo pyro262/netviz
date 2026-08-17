@@ -32,8 +32,13 @@ function fakeCtx(log = []) {
       setLayer: (n, v) => log.push(`layer ${n}=${v}`),
       setColor: (k, c) => log.push(`globe ${k}=${c.getHexString()}`),
       setCityColor: (c) => log.push(`globe cities=${c ? c.getHexString() : 'auto'}`),
+      setSurface: (k, v) => log.push(`surface ${k}=${v && v.getHexString ? v.getHexString() : v}`),
     },
-    atmosphere: { setGlow: (c) => log.push(`atmosphere=${c.getHexString()}`) },
+    atmosphere: {
+      setGlow: (c) => log.push(`atmosphere=${c.getHexString()}`),
+      setParam: (k, v) => log.push(`atmosphere ${k}=${v}`),
+      setThickness: (v) => log.push(`atmosphere.thickness=${v}`),
+    },
     aurora: { setColors: (lo, hi) => log.push(`aurora=${lo.getHexString()},${hi.getHexString()}`) },
     stars: {
       setVisible: (v) => log.push(`stars visible=${v}`),
@@ -94,6 +99,39 @@ test('the arc keys that clear the pool are exactly the ones declared rebuild', (
     .filter((p) => p.startsWith('arcs.') && entry(p).strategy === 'rebuild')
     .map((p) => p.split('.')[2]);
   assert.deepEqual([...new Set(declaredRebuild)].sort(), [...ARC_REBUILD_KEYS].sort());
+});
+
+test('the seven atmosphere/surface settings reach their live objects', () => {
+  const log = [];
+  const applier = createApplier(fakeCtx(log));
+  applier.apply({
+    'appearance.atmosphere.power': 4,
+    'appearance.atmosphere.strength': 1.2,
+    'appearance.surface.softness': 0.15,
+    'appearance.surface.dayAmbient': 0.6,
+  });
+  assert.ok(log.includes('atmosphere power=4'), `no power: ${log}`);
+  assert.ok(log.includes('atmosphere strength=1.2'), `no strength: ${log}`);
+  assert.ok(log.includes('surface softness=0.15'), `no softness: ${log}`);
+  assert.ok(log.includes('surface dayAmbient=0.6'), `no dayAmbient: ${log}`);
+});
+
+test('atmosphere.thickness pushes the value AND rebuilds the shell', () => {
+  const log = [];
+  const applier = createApplier(fakeCtx(log));
+  applier.apply({ 'appearance.atmosphere.thickness': 1.08 });
+  assert.ok(log.includes('atmosphere.thickness=1.08'), `no setThickness: ${log}`);
+});
+
+test('the surface tints reach setSurface as THREE colors, not strings', () => {
+  const log = [];
+  const applier = createApplier(fakeCtx(log));
+  applier.apply({
+    'appearance.surface.dayTint': '#ff8800',
+    'appearance.surface.nightTint': '#0088ff',
+  });
+  assert.ok(log.includes('surface dayTint=ff8800'), `no dayTint: ${log}`);
+  assert.ok(log.includes('surface nightTint=0088ff'), `no nightTint: ${log}`);
 });
 
 test('a rebuild arc key pushes the value AND clears the pool', () => {
@@ -388,4 +426,43 @@ test('a theme change recolors arcs already in the air', () => {
   createApplier(ctx).apply({ 'appearance.theme': 'magma' });
   assert.deepEqual(pushed.map((p) => p[0]).sort(),
                    ['block', 'flow', 'highlight']);
+});
+
+test('a theme AND a customRamp in one patch end on the new ramp either way', (t) => {
+  // applyTheme runs once per member key present in the patch (theme, then
+  // customRamp) -- see the comment above applyTheme. Both calls have to
+  // compose the SAME final answer from the whole patch, or which key the
+  // executor happens to reach first would be observable on the wall.
+  t.after(() => {
+    CONFIG.appearance.theme = 'plasma';
+    CONFIG.appearance.colors.coastline = 'auto';
+  });
+  const customRamp = ['#000000', '#111111', '#222222', '#333333', '#444444',
+                       '#555555', '#666666', '#777777', '#888888', '#ffffff'];
+  const seenA = {};
+  const ctxA = fakeCtx();
+  ctxA.setConfig = null;
+  ctxA.globe.setColor = (k, c) => { seenA[k] = c.getHexString(); };
+  createApplier(ctxA).apply({
+    'appearance.theme': 'custom',
+    'appearance.customRamp': customRamp,
+  });
+
+  CONFIG.appearance.theme = 'plasma';
+  CONFIG.appearance.colors.coastline = 'auto';
+
+  const seenB = {};
+  const ctxB = fakeCtx();
+  ctxB.setConfig = null;
+  ctxB.globe.setColor = (k, c) => { seenB[k] = c.getHexString(); };
+  // Reversed key order in the same patch -- Object.entries order is what the
+  // executor iterates, so this is the ordering the test actually varies.
+  createApplier(ctxB).apply({
+    'appearance.customRamp': customRamp,
+    'appearance.theme': 'custom',
+  });
+
+  assert.equal(CONFIG.appearance.theme, 'custom');
+  assert.equal(seenA.coastline, seenB.coastline,
+               'the two key orders must resolve to the same color');
 });

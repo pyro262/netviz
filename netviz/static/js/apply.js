@@ -172,9 +172,13 @@ function setAurora(ctx, patch, low, high) {
   ctx.aurora.setColors(lo, hi);
 }
 
-/** One patch, not twelve. The theme fans out here so the whole recolor is one
- *  pass and one relayout, preserving the uniform -> rebuild -> one relayout
- *  ordering the executor guarantees. */
+/** The theme fans out here so one function owns "what does the ramp look
+ *  like right now" -- both `appearance.theme` and `appearance.customRamp`
+ *  call it. A patch carrying BOTH keys runs it twice, once per member handler,
+ *  the same shape as `input.zoomRange`: each call composes the same final
+ *  value from the whole patch via `finalValue`/`defaultOf`, so a second run is
+ *  idempotent and the executor's key order is never observable in the
+ *  result. */
 function applyTheme(id, ctx, patch) {
   setActiveRamp(id === 'custom' ? finalValue(patch, 'appearance.customRamp') : id);
   for (const key of [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)]) {
@@ -293,6 +297,15 @@ export const HANDLERS = {
   'appearance.starBrightness': (v, ctx) => ctx.stars.setBrightness(v),
   'appearance.starDayGain': (v, ctx) => ctx.stars.setDayGain(v),
   'appearance.starRampMinutes': (v, ctx) => ctx.stars.setRampMinutes(v),
+  'appearance.atmosphere.power': (v, ctx) => ctx.atmosphere.setParam('power', v),
+  'appearance.atmosphere.strength': (v, ctx) => ctx.atmosphere.setParam('strength', v),
+  'appearance.atmosphere.thickness': (v, ctx) => ctx.atmosphere.setThickness(v),
+  'appearance.surface.softness': (v, ctx) => ctx.globe.setSurface('softness', v),
+  'appearance.surface.dayAmbient': (v, ctx) => ctx.globe.setSurface('dayAmbient', v),
+  'appearance.surface.dayTint': (v, ctx) =>
+    ctx.globe.setSurface('dayTint', new THREE.Color(v)),
+  'appearance.surface.nightTint': (v, ctx) =>
+    ctx.globe.setSurface('nightTint', new THREE.Color(v)),
 
   // Every cloud row is a no-op when the layer never mounted -- no field
   // fetched, or a collector without one -- rather than a thrown handler that

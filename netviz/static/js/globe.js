@@ -44,7 +44,10 @@ const FRAG = /* glsl */`
   uniform sampler2D dayMap;
   uniform sampler2D nightMap;
   uniform vec3 sunDir;
-  uniform float softness;   // radians of blend, ~5 degrees
+  uniform float softness;     // radians of blend, ~5 degrees
+  uniform vec3 dayTint;
+  uniform vec3 nightTint;
+  uniform float dayAmbient;   // how lit the day side is at a grazing sun
   varying vec2 vUv;
   varying vec3 vNormalW;
   void main() {
@@ -54,9 +57,9 @@ const FRAG = /* glsl */`
     // u = (lon+180)/360 now that latLonToVec3 uses theta = -lon. An earlier
     // build flipped this instead of fixing the sign, which mirrored the whole
     // globe while keeping the layers agreeing with each other.
-    vec3 day = texture2D(dayMap, vUv).rgb;
-    vec3 night = texture2D(nightMap, vUv).rgb;
-    vec3 c = mix(night, day * (0.55 + 0.45 * lit), lit);
+    vec3 day = texture2D(dayMap, vUv).rgb * dayTint;
+    vec3 night = texture2D(nightMap, vUv).rgb * nightTint;
+    vec3 c = mix(night, day * (dayAmbient + (1.0 - dayAmbient) * lit), lit);
     gl_FragColor = vec4(c, 1.0);
   }
 `;
@@ -336,7 +339,10 @@ export async function createGlobe(radius) {
       dayMap: { value: dayMap },
       nightMap: { value: nightMap },
       sunDir: { value: new THREE.Vector3(1, 0, 0) },
-      softness: { value: 0.09 },   // ~5 degrees
+      softness: { value: cfg('appearance.surface.softness', 0.09) },
+      dayTint: { value: new THREE.Color(cfg('appearance.surface.dayTint', '#ffffff')) },
+      nightTint: { value: new THREE.Color(cfg('appearance.surface.nightTint', '#ffffff')) },
+      dayAmbient: { value: cfg('appearance.surface.dayAmbient', 0.55) },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
@@ -437,10 +443,18 @@ export async function createGlobe(radius) {
     else obj.visible = !!on;
   }
 
+  /** Straight uniform writes. Named rather than generic so a typo is a
+   *  missing function instead of a silently ignored key. */
+  function setSurface(key, value) {
+    const u = material.uniforms[key];
+    if (!u) throw new Error(`globe: no surface uniform ${key}`);
+    if (u.value && u.value.isColor) u.value.copy(value); else u.value = value;
+  }
+
   return {
     group, material, coastlines, admin1, allBorders,
     borders: borders && borders.lines, cityPoints, surface,
     flashCountry, updateFlashes, setLayer, registerLayer,
-    setColor, setCityColor,
+    setColor, setCityColor, setSurface,
   };
 }
