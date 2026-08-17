@@ -329,7 +329,34 @@ export const CONFIG = {
   // ------------------------------------------------------------ appearance --
 
   appearance: {
-    background: '#0b0916',
+    // `auto` = the active theme's sky. Under the default plasma theme this
+    // resolves to #0b0916, the literal it replaces, so a fresh kiosk is
+    // unchanged. A display that has already persisted a background keeps it:
+    // a stored value is an override by definition.
+    background: 'auto',
+
+    // Every colored element on the globe. `auto` means "follow the theme":
+    // sample the active ramp at this element's own position, which is declared
+    // in js/elements.js and not here. A hex holds against theme changes.
+    //
+    // Shipping all twelve as `auto` is what keeps a default kiosk identical to
+    // every build before themes existed.
+    colors: {
+      coastline: 'auto',
+      bordersWorld: 'auto',
+      admin1: 'auto',
+      bordersWatched: 'auto',
+      countryFlash: 'auto',
+      cities: 'auto',
+      atmosphere: 'auto',
+      rippleFlow: 'auto',
+      rippleBlock: 'auto',
+      // Not on the ramp -- see ELEMENT_LITERAL in js/elements.js.
+      rippleHighlight: 'auto',
+      auroraLow: 'auto',
+      auroraHigh: 'auto',
+    },
+
     // UnrealBloomPass(strength, radius, threshold), then a Reinhard knee on the
     // bloom term. Raising strength cannot rescue a base pass that is already
     // blown out -- lower flowsPerSecond instead.

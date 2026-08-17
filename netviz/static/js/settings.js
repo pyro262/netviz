@@ -478,6 +478,71 @@ export const SCHEMA = {
         + 'additively, so a bright ground swallows them whatever its hue. The '
         + 'cap moves with the theme, because a darker ramp needs a darker sky.',
   },
+  'appearance.colors.coastline': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'Coastlines. `auto` puts them at 0.42 on the theme ramp.',
+  },
+  'appearance.colors.bordersWorld': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'Every international border. Deliberately dim: a second full line '
+        + 'system competing with the coastlines says nothing from across a '
+        + 'room. `auto` is 0.24 on the ramp.',
+  },
+  'appearance.colors.admin1': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'US state and Canadian province boundaries -- dimmest of the three '
+        + 'line layers, because home is in North America and this layer must '
+        + 'not out-shout the borders around it. `auto` is 0.26.',
+  },
+  'appearance.colors.bordersWatched': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'Outlines of the geo-blocked countries. `auto` is the block hue '
+        + '(0.86) knocked back to 0.62 of it, so it reads as an outline '
+        + 'rather than an arc; an explicit color is used at full strength.',
+  },
+  'appearance.colors.countryFlash': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: "The 2s flash on a blocked country's outline when a block lands in "
+        + 'it. Shares the block hue on purpose: the outline, the arc, the '
+        + 'ripple and the flash are one visual language.',
+  },
+  'appearance.colors.cities': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'City lights. `auto` samples a WINDOW of the ramp (0.72 to 0.97) so '
+        + 'population weight rides it -- big cities brighter and warmer. An '
+        + 'explicit color goes flat in hue but keeps the brightness ranking.',
+  },
+  'appearance.colors.atmosphere': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The limb glow. `auto` is 0.20 on the ramp -- the dark end, so the '
+        + 'edge reads as atmosphere rather than as a drawn outline.',
+  },
+  'appearance.colors.rippleFlow': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The ring a flow arc leaves where it lands. `auto` is 0.34.',
+  },
+  'appearance.colors.rippleBlock': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The ring a block arc leaves. Bigger and longer-lived than the flow '
+        + 'ring -- that is the one worth walking over for.',
+  },
+  'appearance.colors.rippleHighlight': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The ring a highlighted arc leaves. NOT on the ramp: it matches the '
+        + 'highlight arc class cyan, and moving it onto the ramp would make a '
+        + 'rule-colored arc read as ordinary traffic.',
+  },
+  'appearance.colors.auroraLow': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The aurora’s lower band. #38ffa8 is 557.7 nm oxygen green -- a '
+        + 'real emission line, not a taste. Changing it draws an aurora that '
+        + 'does not occur in nature, which is allowed and worth knowing.',
+  },
+  'appearance.colors.auroraHigh': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The aurora’s upper band. #c56cff is 630 nm red over violet -- '
+        + 'the same caveat as the lower band.',
+  },
   'appearance.bloom.strength': {
     type: 'number', min: 0, max: 2.0, strategy: 'uniform',
     help: 'UnrealBloomPass strength. Raising it cannot rescue a base pass that '

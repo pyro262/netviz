@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
   SCHEMA, paths, entry, defaultOf, coerce, validate, planApply, settingLabel,
-  relativeLuminance,
+  relativeLuminance, maxBackgroundLuminance,
 } from '../../netviz/static/js/settings.js';
 import { cfg } from '../../netviz/static/js/config.js';
 import { withPersistence } from '../../netviz/static/js/rulestore.js';
+import { setActiveRamp, RAMPS } from '../../netviz/static/js/ramp.js';
+import { ELEMENT_T, ELEMENT_LITERAL, AUTO } from '../../netviz/static/js/elements.js';
 
 test('every declared path exists in config.js', () => {
   // The schema is a description of config.js, not a second copy of it. A path
@@ -301,13 +303,24 @@ test('a shipped color default is inside its own luminance cap', () => {
   // The same protection the numeric bounds already have: catches a cap
   // written from memory, and catches a future palette change that darkens
   // the arcs without moving the ground.
+  //
+  // appearance.background now ships as `auto`, not a literal, so it cannot be
+  // measured directly -- but the property under test has always been "the
+  // shipped sky is legal", and `auto` still resolves to one under the
+  // default plasma theme. Assert the RESOLVED sky rather than skipping the
+  // path outright, or a future dark-ramp regression on the default theme
+  // would pass silently.
   for (const p of paths()) {
     const e = entry(p);
     if (e.type !== 'color') continue;
     const cap = e.derivedLuminanceCap ? maxBackgroundLuminance() : e.maxLuminance;
     if (typeof cap !== 'number') continue;
-    const d = defaultOf(p);
-    if (d === undefined || d === 'auto') continue;
+    let d = defaultOf(p);
+    if (d === AUTO) {
+      if (p !== 'appearance.background') continue; // no resolver wired yet
+      d = '#0b0916';                                // plasma's sky, verified above
+    }
+    if (d === undefined) continue;
     const L = relativeLuminance(d);
     assert.ok(L <= cap,
       `${p}: shipped ${d} has luminance ${L.toFixed(4)}, over ${cap}`);
@@ -405,9 +418,6 @@ test('a mixed patch persists only the persistable half', () => {
   assert.doesNotMatch(written[0][1], /extraResolvers/);
 });
 
-import { maxBackgroundLuminance } from '../../netviz/static/js/settings.js';
-import { setActiveRamp, RAMPS } from '../../netviz/static/js/ramp.js';
-
 test('the derived cap reproduces the shipped 0.0088 on plasma', () => {
   // This is the test that pins LIFT = 2.85. The constant is empirical --
   // back-solved from a cap that has been on a real wall -- so if someone
@@ -425,7 +435,11 @@ test('the old derivation is wrong and the right numbers are asserted', () => {
   assert.ok(Math.abs(relativeLuminance('#3b0f70') - 0.0244) < 0.0002);
 });
 
-test('every preset sky sits under its own theme cap', () => {
+test('every preset sky sits under its own theme cap', (t) => {
+  // Restore in a hook, never as a trailing line: a failed assertion inside
+  // the loop skips the trailing line and leaks the ramp into every later
+  // test.
+  t.after(() => setActiveRamp('plasma'));
   const SKIES = {
     plasma: '#0b0916', viridis: '#050d10', magma: '#0a0510',
     inferno: '#0d0604', cividis: '#060a14',
@@ -436,13 +450,30 @@ test('every preset sky sits under its own theme cap', () => {
     const L = relativeLuminance(SKIES[id]);
     assert.ok(L <= cap, `${id}: sky L ${L.toFixed(5)} over cap ${cap.toFixed(5)}`);
   }
-  setActiveRamp('plasma');
 });
 
-test('a darker ramp tightens the cap', () => {
+test('a darker ramp tightens the cap', (t) => {
+  t.after(() => setActiveRamp('plasma'));
   setActiveRamp('plasma');
   const plasma = maxBackgroundLuminance();
   setActiveRamp('inferno');           // darkest flow arc of the five
   assert.ok(maxBackgroundLuminance() < plasma);
-  setActiveRamp('plasma');
+});
+
+test('every element has a schema path defaulting to auto', () => {
+  const keys = [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)];
+  assert.equal(keys.length, 12);
+  for (const k of keys) {
+    const path = `appearance.colors.${k}`;
+    assert.ok(paths().includes(path), `${path} missing from schema`);
+    assert.equal(entry(path).type, 'color', `${path} type`);
+    assert.equal(entry(path).allowAuto, true, `${path} must accept auto`);
+    assert.equal(defaultOf(path), AUTO, `${path} must ship as auto`);
+  }
+});
+
+test('an element color refuses a non-color, and accepts auto', () => {
+  assert.equal(validate({ 'appearance.colors.coastline': 'teal' }).rejected.length, 1);
+  assert.equal(validate({ 'appearance.colors.coastline': AUTO }).rejected.length, 0);
+  assert.equal(validate({ 'appearance.colors.coastline': '#ff0088' }).rejected.length, 0);
 });
