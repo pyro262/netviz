@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { cfg } from './config.js';
 import { plasmaAt } from './palette.js';
+import { ELEMENT_T } from './elements.js';
+import { rampHexAt, activeRampStops } from './ramp.js';
 
 /** Geographic to cartesian. Lon 0 faces +X, north pole is +Y, and longitude
  *  runs NEGATIVE around +Y -- i.e. theta = -lon.
@@ -59,6 +61,56 @@ const FRAG = /* glsl */`
   }
 `;
 
+// The line materials, kept so a color change reaches what is already drawn.
+// Built as they are loaded; a layer that was off at boot is absent here and
+// setColor throws for it, which is the honest answer -- see the layer setter's
+// own note in docs/notes/settings-and-panels.md.
+const _mats = {};
+
+// bordersWatched ONLY. rippleBlock's own 0.74 lives in ripples.setColor, with the
+// call site that owns that element -- a knock-back listed here for an element this
+// file cannot colour is a constant that silently never applies, and the block ripple
+// would ship brighter than it does today.
+const KNOCKBACK = { bordersWatched: 0.62 };
+
+/** One color, pushed to the material that draws it. The knock-back scalars
+ *  stay HERE and not in the setting: bordersWatched at 0.62 of the block hue
+ *  is a relationship between two elements, and folding it into a stored color
+ *  means a theme swap recomputes the hue and loses the knock-back. An explicit
+ *  override is used raw -- somebody who typed a color meant that color. */
+export function setColor(key, color, explicit) {
+  const m = _mats[key];
+  if (!m) throw new Error(`globe: no material for ${key} (layer off at boot?)`);
+  const scale = explicit ? 1 : (KNOCKBACK[key] ?? 1);
+  const list = Array.isArray(m) ? m : [m];
+  for (const mat of list) mat.color.copy(color).multiplyScalar(scale);
+}
+
+let _cityGeom = null;
+let _cityWeights = null;
+
+/** Cities carry their color per-vertex, not on a material, so this rewrites
+ *  the attribute. ~4k vertices, one pass, on a control nobody drags.
+ *
+ *  `color` null means auto: sample the ramp WINDOW so population weight rides
+ *  it, exactly as the original inline expression did. An explicit color keeps
+ *  the ranking by modulating brightness instead -- the hue goes flat, the
+ *  ordering does not, because that ordering is real information. */
+export function setCityColor(color) {
+  if (!_cityGeom) return;
+  const attr = _cityGeom.getAttribute('color');
+  for (let i = 0; i < _cityWeights.length; i += 1) {
+    const w = _cityWeights[i];
+    const col = color
+      ? color.clone().multiplyScalar(0.55 + 0.45 * w)
+      : new THREE.Color(rampHexAt(ELEMENT_T.cities + 0.25 * w, activeRampStops()));
+    attr.array[i * 3] = col.r;
+    attr.array[i * 3 + 1] = col.g;
+    attr.array[i * 3 + 2] = col.b;
+  }
+  attr.needsUpdate = true;
+}
+
 async function loadTexture(url) {
   const tex = await new THREE.TextureLoader().loadAsync(url);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -80,6 +132,7 @@ async function loadCoastlines(radius) {
   const mat = new THREE.LineBasicMaterial({
     color: plasmaAt(0.42), transparent: true, opacity: 0.85,
   });
+  _mats.coastline = mat;
   return new THREE.LineSegments(geom, mat);
 }
 
@@ -129,6 +182,7 @@ async function loadBorders(radius) {
     opacity: 0.5, depthWrite: false,
   });
   const lines = new THREE.LineSegments(geom, mat);
+  _mats.bordersWatched = mat;
 
   // Flash overlays share the ONE border geometry and address a single country
   // through drawRange -- which is why the bake emits segments grouped by
@@ -145,6 +199,7 @@ async function loadBorders(radius) {
     seg.frustumCulled = false;     // drawRange confuses the computed bounds
     flashes.push({ seg, mat: fmat, age: 0, active: false });
   }
+  _mats.countryFlash = flashes.map((f) => f.mat);
   return { lines, flashes, index };
 }
 
@@ -167,6 +222,7 @@ async function loadAllBorders(radius) {
   const mat = new THREE.LineBasicMaterial({
     color: plasmaAt(0.24), transparent: true, opacity: 0.20, depthWrite: false,
   });
+  _mats.bordersWorld = mat;
   return new THREE.LineSegments(geom, mat);
 }
 
@@ -187,6 +243,7 @@ async function loadAdmin1(radius) {
   const mat = new THREE.LineBasicMaterial({
     color: plasmaAt(0.26), transparent: true, opacity: 0.22, depthWrite: false,
   });
+  _mats.admin1 = mat;
   return new THREE.LineSegments(geom, mat);
 }
 
@@ -195,17 +252,21 @@ async function loadCityPoints(radius) {
   const positions = new Float32Array(cities.length * 3);
   const colors = new Float32Array(cities.length * 3);
   const sizes = new Float32Array(cities.length);
+  const weights = new Float32Array(cities.length);
   cities.forEach((c, i) => {
     const v = latLonToVec3(c.lat, c.lon, radius * 1.003);
     positions[i * 3] = v.x; positions[i * 3 + 1] = v.y; positions[i * 3 + 2] = v.z;
     const col = plasmaAt(0.72 + 0.25 * c.w);
     colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
     sizes[i] = 1.5 + 5.0 * c.w;
+    weights[i] = c.w;
   });
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geom.setAttribute('psize', new THREE.BufferAttribute(sizes, 1));
+  _cityGeom = geom;
+  _cityWeights = weights;
 
   const mat = new THREE.ShaderMaterial({
     uniforms: {
@@ -380,5 +441,6 @@ export async function createGlobe(radius) {
     group, material, coastlines, admin1, allBorders,
     borders: borders && borders.lines, cityPoints, surface,
     flashCountry, updateFlashes, setLayer, registerLayer,
+    setColor, setCityColor,
   };
 }

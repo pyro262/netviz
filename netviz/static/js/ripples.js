@@ -55,6 +55,22 @@ const FRAG = /* glsl */`
 // than an event worth looking at.
 const COOLDOWN_SECONDS = cfg('ripples.cooldownSeconds', 120);
 
+// MUTATES the class object in place, never replaces it. ripples and arcs both
+// identity-compare against these objects (slot.spec === CLASS.block is how
+// update() counts live blocks for the density gain), so a fresh object
+// orphans everything already in the air. Same trap as arcs.setSpec.
+const RIPPLE_KNOCKBACK = { block: 0.74, highlight: 0.51 };
+
+export function setColor(cls, color, explicit) {
+  if (!RIPPLE[cls]) return;
+  // The knock-backs the inline expressions carried: block at 0.74 of the block hue,
+  // highlight at 0.51 of its cyan. They belong here, with the call site that owns
+  // these elements. An explicit override is used RAW -- somebody who typed a color
+  // meant that color, not that color times 0.74.
+  const scale = explicit ? 1 : (RIPPLE_KNOCKBACK[cls] ?? 1);
+  RIPPLE[cls].color.copy(color).multiplyScalar(scale);
+}
+
 export function createRipples(radius, capacity = 48) {
   const group = new THREE.Group();
   const pool = [];
@@ -159,7 +175,7 @@ export function createRipples(radius, capacity = 48) {
   }
 
   return {
-    group, spawn, update, liveCount,
+    group, spawn, update, liveCount, setColor,
     setCooldown(v) { cooldown.setSeconds(v); },
     /** Diagnostics only -- tools/verify_walk.py reads the color the most
      *  recent ring was actually drawn in, and WHERE, because the live feed

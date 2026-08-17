@@ -8,8 +8,17 @@
 // Order is uniform -> rebuild -> at most one relayout. A resize rebuilds the
 // composer's render targets, so toggling three things that each want one must
 // still cost one.
+// A relative import, not the bare 'three' every other three-facing module
+// uses -- those resolve only through the browser import map (index.html) and
+// are never node-tested. apply.js is unlike them: settings.test.mjs and
+// tuner.test.mjs already import it under `node --test`, which has no import
+// map and cannot see a bare 'three' at all. The vendored module resolves
+// cleanly by relative path with no shim and no node_modules -- verified: a
+// plain `node --eval` import of it constructs a real THREE.Color correctly.
+import * as THREE from '../vendor/three/three.module.js';
 import { validate, planApply, paths, defaultOf } from './settings.js';
 import { CONFIG } from './config.js';
+import { resolveColor, isAuto } from './elements.js';
 // burst.js is three-free and its thresholds live in one exported object that
 // createBurstDetector() closes over by default, so the detour thresholds are
 // reached by mutating that object rather than through ctx. Importing it keeps
@@ -111,6 +120,47 @@ function layerHandlers(names) {
     } else out[`layers.${name}`] = (v, ctx) => ctx.globe.setLayer(name, v);
   }
   return out;
+}
+
+/** The twelve element colors. One generated handler each, because the schema
+ *  paths and the element keys are the same vocabulary on purpose. */
+function colorHandlers() {
+  const out = {};
+  const target = {
+    coastline: (c, ctx, ex) => ctx.globe.setColor('coastline', c, ex),
+    bordersWorld: (c, ctx, ex) => ctx.globe.setColor('bordersWorld', c, ex),
+    admin1: (c, ctx, ex) => ctx.globe.setColor('admin1', c, ex),
+    bordersWatched: (c, ctx, ex) => ctx.globe.setColor('bordersWatched', c, ex),
+    countryFlash: (c, ctx, ex) => ctx.globe.setColor('countryFlash', c, ex),
+    cities: (c, ctx, ex) => ctx.globe.setCityColor(ex ? c : null),
+    atmosphere: (c, ctx) => ctx.atmosphere.setGlow(c),
+    rippleFlow: (c, ctx, ex) => ctx.ripples.setColor('flow', c, ex),
+    rippleBlock: (c, ctx, ex) => ctx.ripples.setColor('block', c, ex),
+    rippleHighlight: (c, ctx, ex) => ctx.ripples.setColor('highlight', c, ex),
+    auroraLow: (c, ctx, ex, patch) => setAurora(ctx, patch, c, null),
+    auroraHigh: (c, ctx, ex, patch) => setAurora(ctx, patch, null, c),
+  };
+  for (const key of Object.keys(target)) {
+    out[`appearance.colors.${key}`] = (v, ctx, patch) => {
+      // resolveColor returns a HEX STRING -- elements.js is three-free so it can
+      // be unit-tested. apply.js may import three, so the wrap happens here, once,
+      // rather than in twelve module setters.
+      target[key](new THREE.Color(resolveColor(key, v)), ctx, !isAuto(v), patch);
+    };
+  }
+  return out;
+}
+
+/** The aurora takes both bands at once: its setter writes a pair, and a patch
+ *  may carry one or both. Composed from the patch plus live CONFIG for the
+ *  band this patch does not mention -- the same rule input.zoomRange follows,
+ *  so running it once per band is idempotent and ordering cannot be observed. */
+function setAurora(ctx, patch, low, high) {
+  const lo = low || new THREE.Color(resolveColor('auroraLow',
+    finalValue(patch, 'appearance.colors.auroraLow')));
+  const hi = high || new THREE.Color(resolveColor('auroraHigh',
+    finalValue(patch, 'appearance.colors.auroraHigh')));
+  ctx.aurora.setColors(lo, hi);
 }
 
 export const HANDLERS = {
@@ -230,6 +280,8 @@ export const HANDLERS = {
   'polling.buildSeconds': (v, ctx) => ctx.polling('build', v),
   'polling.sunSeconds': (v, ctx) => ctx.polling('sun', v),
   'polling.starResyncSeconds': (v, ctx) => ctx.polling('starResync', v),
+
+  ...colorHandlers(),
 };
 
 /**

@@ -37,6 +37,9 @@ let sunUpdateSeconds = cfg('polling.sunSeconds', 1.0);
 const sunVec = new THREE.Vector3();
 // Set in boot(); the sun updater runs before it exists on the very first call.
 let aurora = null;
+// Set in boot() when the layer is on at boot; stays null otherwise, same rule
+// as aurora/clouds/lightning -- an off-at-boot layer has nothing to colour.
+let atmosphere = null;
 const sunLocal = new THREE.Vector3();
 // Set at mount, always -- the field arrives over the network, so unlike the
 // baked layers this one is not part of globe. Mounted unconditionally now
@@ -359,7 +362,7 @@ async function boot() {
   scene.add(stars.group);
   // not in globe.group: must not rotate
   if (cfg('layers.atmosphere', true)) {
-    const atmosphere = createAtmosphere(GLOBE_RADIUS);
+    atmosphere = createAtmosphere(GLOBE_RADIUS);
     scene.add(atmosphere);
     globe.registerLayer('atmosphere', atmosphere);
   }
@@ -502,6 +505,7 @@ async function boot() {
   const ctx = {
     arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
     scene, input: null, polling, resize, rail, classCounts, clouds, lightning,
+    atmosphere, aurora,
   };
   // TWO appliers, on purpose. `preview` is the raw executor: the tuning panel
   // drives it while somebody drags a slider, so the wall changes and NOTHING

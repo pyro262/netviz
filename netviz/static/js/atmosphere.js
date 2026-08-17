@@ -36,5 +36,9 @@ export function createAtmosphere(radius) {
       }
     `,
   });
-  return new THREE.Mesh(new THREE.SphereGeometry(radius * 1.045, 96, 72), material);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.045, 96, 72), material);
+  /** Uniform write. The cheapest of the four setters -- this one is already a
+   *  shader uniform and needs nothing pushed. */
+  mesh.setGlow = (color) => { material.uniforms.glowColor.value.copy(color); };
+  return mesh;
 }

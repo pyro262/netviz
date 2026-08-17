@@ -121,6 +121,16 @@ export function createAurora(radius) {
   let kp = null;
   let stale = true;
 
+  // Held so apply() -- which re-asserts every poll -- can read the current
+  // choice back rather than a color setter's write being reverted on the
+  // next poll. apply() below never touches the color uniforms itself, so
+  // there is nothing to revert today, but the state lives here rather than
+  // as a write-only uniform so that stays true if apply() ever needs them.
+  const state = {
+    lowColor: material.uniforms.lowColor.value.clone(),
+    highColor: material.uniforms.highColor.value.clone(),
+  };
+
   async function poll() {
     let healthy = true;
     try {
@@ -162,6 +172,16 @@ export function createAurora(radius) {
 
   return {
     mesh,
+    /** Told, not overwritten. aurora.apply() recomputes its own uniforms on
+     *  every Kp poll, so writing the uniform directly is reverted within three
+     *  hours -- the exact failure layers.aurora already had. These are held as
+     *  fields that apply() reads. */
+    setColors(low, high) {
+      state.lowColor = low.clone();
+      state.highColor = high.clone();
+      material.uniforms.lowColor.value.copy(state.lowColor);
+      material.uniforms.highColor.value.copy(state.highColor);
+    },
     /** The `layers.aurora` toggle. Goes through here rather than through
      *  mesh.visible directly, or the next poll would put the oval back. */
     setVisible(on) { enabled = !!on; apply(); },

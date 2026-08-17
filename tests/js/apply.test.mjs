@@ -22,7 +22,13 @@ function fakeCtx(log) {
       setRulesCalls: [],
       setRules(v) { this.setRulesCalls.push(v); log.push(`arcs.setRules=${JSON.stringify(v)}`); },
     },
-    globe: { setLayer: (n, v) => log.push(`layer ${n}=${v}`) },
+    globe: {
+      setLayer: (n, v) => log.push(`layer ${n}=${v}`),
+      setColor: (k, c) => log.push(`globe ${k}=${c.getHexString()}`),
+      setCityColor: (c) => log.push(`globe cities=${c ? c.getHexString() : 'auto'}`),
+    },
+    atmosphere: { setGlow: (c) => log.push(`atmosphere=${c.getHexString()}`) },
+    aurora: { setColors: (lo, hi) => log.push(`aurora=${lo.getHexString()},${hi.getHexString()}`) },
     stars: {
       setVisible: (v) => log.push(`stars visible=${v}`),
       setBrightness: (v) => log.push(`stars brightness=${v}`),
@@ -31,7 +37,10 @@ function fakeCtx(log) {
     },
     post: { setBloom: (p, v) => log.push(`bloom ${p}=${v}`) },
     scene: { background: { set: (v) => log.push(`background=${v}`) } },
-    ripples: { setCooldown: (v) => log.push(`ripples cooldown=${v}`) },
+    ripples: {
+      setCooldown: (v) => log.push(`ripples cooldown=${v}`),
+      setColor: (cls, c, ex) => log.push(`ripples ${cls}=${c.getHexString()},${ex}`),
+    },
     camera: {},
     rig: { setParam: (p, v) => log.push(`rig ${p}=${v}`) },
     input: { setParam: (p, v) => log.push(`input ${p}=${v}`) },
@@ -288,4 +297,33 @@ test('a handler that throws does not cost the rest of the patch', () => {
   const out = applier.apply({ 'arcs.bodyOpacity': 0.2, 'appearance.background': '#000' });
   assert.ok(out.applied.includes('appearance.background'),
     'a later key was dropped because an earlier one threw');
+});
+
+test('every element color has a handler and reaches its module', () => {
+  const seen = [];
+  const ctx = fakeCtx([]);
+  ctx.globe.setColor = (k, c) => seen.push(['globe', k, c.getHexString()]);
+  ctx.atmosphere = { setGlow: (c) => seen.push(['atmo', c.getHexString()]) };
+  const apply = createApplier(ctx).apply;
+  apply({ 'appearance.colors.coastline': '#ff0088' });
+  assert.deepEqual(seen[0], ['globe', 'coastline', 'ff0088']);
+  seen.length = 0;
+  apply({ 'appearance.colors.atmosphere': '#00ff88' });
+  assert.deepEqual(seen[0], ['atmo', '00ff88']);
+});
+
+test('auto reaches the module as the ramp color, not the string', () => {
+  const seen = [];
+  const ctx = fakeCtx([]);
+  ctx.globe.setColor = (k, c) => seen.push(c.getHexString());
+  const apply = createApplier(ctx).apply;
+  apply({ 'appearance.colors.coastline': 'auto' });
+  assert.match(seen[0], /^[0-9a-f]{6}$/);
+  assert.notEqual(seen[0], 'auto');
+});
+
+test('no schema path is left without a handler', () => {
+  // The orphan check the applier already does at construction. This asserts it
+  // passes now that the twelve are wired -- the previous commit failed it.
+  assert.doesNotThrow(() => createApplier(fakeCtx([])));
 });
