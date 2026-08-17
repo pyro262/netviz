@@ -397,6 +397,34 @@ test('a theme change recolors every auto element and none of the overridden', (t
   assert.notEqual(seen.admin1, undefined, 'an auto element must be recolored');
 });
 
+test('a theme change survives one element throwing, and still recolors the rest', (t) => {
+  // ctx.atmosphere is nullable on a real page (see main.js) and globe.setColor
+  // throws by design for a layer that was off at boot. Either must not cost
+  // the elements that come after it in ELEMENT_T/ELEMENT_LITERAL order, nor
+  // the arc re-push, nor the sky assignment that follow the loop -- a
+  // deployment missing one layer must not pick a half-applied ramp.
+  t.after(() => { CONFIG.appearance.theme = 'plasma'; });
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (msg) => warnings.push(msg);
+  const pushedSpecs = [];
+  const ctx = fakeCtx();
+  ctx.setConfig = null;
+  ctx.atmosphere = null;   // throws: null.setGlow is not a function
+  ctx.arcs.setSpec = (c, k, v) => pushedSpecs.push([c, k, v]);
+  try {
+    const applier = createApplier(ctx);
+    const { applied } = applier.apply({ 'appearance.theme': 'viridis' });
+    assert.ok(applied.includes('appearance.theme'), 'the patch itself is not rejected');
+    // Elements after atmosphere in the iteration order still ran.
+    assert.deepEqual(pushedSpecs.map((p) => p[0]).sort(), ['block', 'flow']);
+    assert.equal(ctx.scene.background.getHexString(), '050d10', 'sky still moved');
+    assert.ok(warnings.some((w) => w.includes('atmosphere')), 'the failure was reported');
+  } finally {
+    console.warn = realWarn;
+  }
+});
+
 test('a theme change sets the sky when the sky is auto', (t) => {
   t.after(() => { CONFIG.appearance.theme = 'plasma'; });
   const ctx = fakeCtx();
@@ -419,13 +447,16 @@ test('a theme change leaves an explicitly-set sky alone', (t) => {
   assert.equal(ctx.scene.background.getHexString(), '020104');
 });
 
-test('a theme change recolors arcs already in the air', () => {
+test('a theme change recolors arcs already in the air, only the classes that own a colorAt', () => {
+  // arcs.highlight shares arcHandlers' shape but declares no colorAt of its
+  // own -- a color rule carries its own hex -- so re-pushing it would write
+  // `undefined` into a live slot. Only flow and block are re-pushed.
   const pushed = [];
   const ctx = fakeCtx();
   ctx.arcs.setSpec = (cls, key, v) => pushed.push([cls, key, v]);
   createApplier(ctx).apply({ 'appearance.theme': 'magma' });
-  assert.deepEqual(pushed.map((p) => p[0]).sort(),
-                   ['block', 'flow', 'highlight']);
+  assert.deepEqual(pushed.map((p) => p[0]).sort(), ['block', 'flow']);
+  assert.ok(pushed.every((p) => p[2] !== undefined), 'no undefined colorAt pushed');
 });
 
 test('a theme AND a customRamp in one patch end on the new ramp either way', (t) => {

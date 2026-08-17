@@ -20,7 +20,7 @@
 // to the bare specifier; it would silently break `node --test`. Same fix,
 // same reasoning, as palette.js.
 import * as THREE from '../vendor/three/three.module.js';
-import { validate, planApply, paths, defaultOf } from './settings.js';
+import { validate, planApply, paths, defaultOf, entry } from './settings.js';
 import { CONFIG } from './config.js';
 import { resolveColor, isAuto, ELEMENT_T, ELEMENT_LITERAL } from './elements.js';
 // THEME_SKIES lives in ramp.js, not here -- per-ramp data belongs with the
@@ -184,7 +184,17 @@ function applyTheme(id, ctx, patch) {
   for (const key of [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)]) {
     const stored = finalValue(patch, `appearance.colors.${key}`);
     if (!isAuto(stored)) continue;          // an override holds
-    HANDLERS[`appearance.colors.${key}`](stored, ctx, patch);
+    // One element's setter can throw -- a layer that was off at boot, or an
+    // atmosphere/ripples object that never mounted (see the guard pattern the
+    // layer handlers above already use). That must not cost the rest of the
+    // fan-out: the arc re-push and the sky assignment below still have to run,
+    // or a theme change on a deployment missing one layer leaves the ramp half
+    // applied on the wall with nothing telling the operator why.
+    try {
+      HANDLERS[`appearance.colors.${key}`](stored, ctx, patch);
+    } catch (err) {
+      console.warn(`netviz: theme could not recolor ${key} -- ${err.message}`);
+    }
   }
   // Arcs already in the air hold the OLD ramp's color: an arc's color is
   // resolved from rampAt(colorAt) at spawn and copied into the slot's uniform.
@@ -192,7 +202,16 @@ function applyTheme(id, ctx, patch) {
   // arcs on screen -- block arcs live 18s and arrive rarely -- which reads as a
   // theme switch that half worked. setSpec already pushes colorAt into live
   // slots, so re-writing the same value is what forces the re-resolve.
+  //
+  // Only classes that actually DECLARE colorAt: `arcs.highlight` shares this
+  // shape with flow/block (see HIGHLIGHT_KEYS above) but has no colorAt of
+  // its own -- a rule carries its own hex instead -- so `entry()` returns
+  // null for it and pushing anyway would write `defaultOf(...) === undefined`
+  // into a live slot. Harmless today only because spec.hex is always set on a
+  // highlight rule; it would throw inside rampHexAt(NaN) for a rule that
+  // omits its color.
   for (const cls of ['flow', 'block', 'highlight']) {
+    if (!entry(`arcs.${cls}.colorAt`)) continue;
     ctx.arcs.setSpec(cls, 'colorAt', defaultOf(`arcs.${cls}.colorAt`));
   }
   const sky = finalValue(patch, 'appearance.background');

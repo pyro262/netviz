@@ -255,16 +255,19 @@ async function boot() {
   // callback below does not have to know whether it exists.
   // The stub carries the whole interface, as the stars stub does and as
   // input.js's used to: the render loop and the arc-landing callback both call
-  // into it, and setCooldown is reachable from a settings patch. setCooldown
-  // throws rather than no-opping, so `ripples.cooldownSeconds` on a build with
-  // no ripple layer is REPORTED as rejected instead of appearing to work.
+  // into it, and setCooldown/setColor are both reachable from a settings
+  // patch. Both throw a NAMED error rather than no-opping or falling through
+  // to a bare "setColor is not a function", so `ripples.cooldownSeconds` and
+  // `appearance.colors.ripple*` on a build with no ripple layer are REPORTED
+  // as rejected instead of appearing to work or failing unreadably.
   const ripplesOff = () => {
     throw new Error('the ripple layer was off at boot and was never built; '
                   + 'set layers.ripples in config.js and reload');
   };
   const ripples = cfg('layers.ripples', true)
     ? createRipples(GLOBE_RADIUS)
-    : { group: new THREE.Group(), spawn() {}, update() {}, setCooldown: ripplesOff };
+    : { group: new THREE.Group(), spawn() {}, update() {},
+        setCooldown: ripplesOff, setColor: ripplesOff };
   globe.group.add(ripples.group);   // ripples sit on the surface, so they rotate
   // Registered with the globe so `layers.*` has one toggle path rather than one
   // per module. A layer that was off at boot is not registered at all, and
