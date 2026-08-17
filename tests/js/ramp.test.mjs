@@ -1,7 +1,9 @@
 // ramp.js is three-free by design (see the module's own header comment and
 // CLAUDE.md's node --check note) so it can be exercised directly under
-// `node --test` in a repo with no node_modules. Never import palette.js or
-// three here -- palette.js imports three and cannot run under node --test.
+// `node --test` in a repo with no node_modules. palette.js has its own test
+// file (palette.test.mjs) now that it resolves 'three' by relative path
+// instead of the bare specifier -- see that file for why. Keep this one free
+// of it anyway: ramp.js's own math needs no THREE.Color to verify.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { RAMPS, RAMP_IDS, rampHexAt, setActiveRamp, activeRampStops } from

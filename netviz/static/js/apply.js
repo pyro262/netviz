@@ -10,11 +10,15 @@
 // still cost one.
 // A relative import, not the bare 'three' every other three-facing module
 // uses -- those resolve only through the browser import map (index.html) and
-// are never node-tested. apply.js is unlike them: settings.test.mjs and
-// tuner.test.mjs already import it under `node --test`, which has no import
-// map and cannot see a bare 'three' at all. The vendored module resolves
-// cleanly by relative path with no shim and no node_modules -- verified: a
-// plain `node --eval` import of it constructs a real THREE.Color correctly.
+// are never node-tested. apply.js is unlike them: it is both three-facing
+// and unit-tested (apply.test.mjs and tuner.test.mjs already import it)
+// under `node --test`, which has no import map and cannot see a bare
+// 'three' at all. Both specifiers resolve to the SAME URL in the browser --
+// index.html maps 'three' to /vendor/three/three.module.js, which is this
+// file relative to it -- so there is no second three instance, only a
+// second way to name the one that already exists. Do not "tidy" this back
+// to the bare specifier; it would silently break `node --test`. Same fix,
+// same reasoning, as palette.js.
 import * as THREE from '../vendor/three/three.module.js';
 import { validate, planApply, paths, defaultOf } from './settings.js';
 import { CONFIG } from './config.js';

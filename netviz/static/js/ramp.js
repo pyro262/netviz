@@ -30,6 +30,19 @@ export const RAMPS = {
 
 export const RAMP_IDS = ['plasma', 'viridis', 'magma', 'inferno', 'cividis'];
 
+// Each ramp's sky. A dark ramp needs a darker ground: arcs blend additively, so
+// the sky is the floor everything else has to lift off. Every one of these sits
+// under its own ramp's derived luminance cap -- a test asserts it.
+// PROPOSED values: legal by test, not yet judged on a wall.
+export const THEME_SKIES = {
+  plasma: '#0b0916',   // unchanged -- what the display has always drawn
+  viridis: '#050d10',
+  magma: '#0a0510',
+  inferno: '#0d0604',
+  cividis: '#060a14',
+  custom: '#0b0916',
+};
+
 let _activeStops = RAMPS.plasma;
 
 /** Point the ramp at a named preset or at a raw list of stops (the custom
