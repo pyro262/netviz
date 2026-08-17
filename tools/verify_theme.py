@@ -767,23 +767,21 @@ def case4_override_survives_auto_does_not(page, cx, cy) -> bool:
     swatch to `resolveColor(AUTO_KEY, 'auto')` under the NEW theme -- read
     from the page's own function, never recomputed here.
 
-    RED AGAINST THE SHIPPED TREE, UNMODIFIED -- not a deliberate break. This
-    case fails right now against the current build: the auto row's swatch
-    does NOT move when the preset is switched from the panel's own selector.
+    FOUND RED, NOW GREEN -- this case was written against the spec rather
+    than against the code, and on first run it failed: the auto row's swatch
+    did NOT move when the preset was switched from the panel's own selector.
     Traced to `theme_panel.js`'s `syncRow()`: on `THEME_PATH` or `RAMP_PATH`
-    it calls `syncPreset()`/`syncGradient()` only and never re-syncs any of
-    the twelve element rows, so an `auto` row's on-screen swatch is stale
-    until the panel is closed and reopened -- even though `resolveColor()`
-    and the actual wall (via `applyTheme`'s fan-out in `js/apply.js`) are
-    both correct the whole time. This is a real, pre-existing defect this
-    case found by being written against the spec rather than against the
-    code, and it is left UNFIXED here: the fix belongs to `theme_panel.js`,
-    outside this task's file list, and is reported separately rather than
-    folded into this commit. The override half of this same case (does the
-    overridden row hold its exact hex) passes unchanged, which is the point
-    of testing both halves together: a version of this case that only
-    checked the override would report the panel healthy while this bug sits
-    in it."""
+    it called `syncPreset()`/`syncGradient()` only and never re-synced any of
+    the twelve element rows, so an `auto` row's on-screen swatch went stale
+    until the panel was closed and reopened -- even though `resolveColor()`
+    and the actual wall (via `applyTheme`'s fan-out in `js/apply.js`) were
+    both correct the whole time. Fixed in `dfef972` (theme panel: re-sync
+    every auto row when the ramp moves); this case now passes against the
+    shipped tree and stands as the regression guard for that fix. The
+    override half of this same case (does the overridden row hold its exact
+    hex) passed throughout, which is the point of testing both halves
+    together: a version of this case that only checked the override would
+    have reported the panel healthy while this bug sat in it."""
     keys = element_keys(page)
     OVERRIDE_KEY, AUTO_KEY = "coastline", "admin1"
     oi, ai = keys.index(OVERRIDE_KEY), keys.index(AUTO_KEY)
