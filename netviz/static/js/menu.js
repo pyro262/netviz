@@ -146,7 +146,7 @@ const LAYER_GROUPS = [
  *
  * Builds the menu structure given the display's current state.
  * state is {railOn, layers: {...twelve keys...}, layersExpanded, testMode,
- * canLookHere, settingsPanel, rulesPanel, canReset}.
+ * canLookHere, settingsPanel, rulesPanel, themePanel, canReset}.
  *
  * Returns an array of top-level menu items in this order:
  * - lookHere: action, enabled only when pointer was on globe
@@ -232,6 +232,17 @@ export function menuModel(state) {
       title: 'Opens the tuning panel: the settings that can only be judged '
            + 'by eye, previewed live.',
     },
+    // Enabled when this menu was built with a theme panel to open -- same
+    // rule as the rules and tuning panels just above: a menu built without
+    // one must not draw a row whose click handler is guarded out.
+    ...(state.themePanel ? [{
+      id: 'theme',
+      label: 'Theme…',
+      kind: 'action',
+      enabled: true,
+      title: 'Opens the theme panel: pick a color ramp or build your own, '
+           + 'and give any element its own color.',
+    }] : []),
     // A display-wide control, so it lives beside the other display-wide ones
     // rather than in the rules editor -- which is where it started, under a
     // label ("Reset to collector", then "Discard my rules") that read as
@@ -343,7 +354,7 @@ function clampPosition(node, x, y) {
  * settings.apply -- shows correctly the next time somebody opens it.
  */
 export function createMenu({
-  rig, settings, preview, rulesPanel, settingsPanel, onReset, root,
+  rig, settings, preview, rulesPanel, settingsPanel, themePanel, onReset, root,
   hoverDelayMs = HOVER_DELAY_MS,
 }) {
   let node = null;
@@ -457,6 +468,38 @@ export function createMenu({
 
   function isOpen() { return node !== null; }
 
+  /** Close whichever of the OTHER two panels are open before running
+   *  `openFn`, which is expected to open the third.
+   *
+   *  Sequential, through requestClose() for settingsPanel and themePanel --
+   *  each ASKS when it holds changes nobody has kept, and a Cancel on either
+   *  question stops the chain right there: `openFn` is never called and the
+   *  panel that asked stays open with its changes intact, exactly the
+   *  guarantee a single requestClose()/onClosed() pair gives one caller,
+   *  extended here to three panels instead of two. rulesPanel force-closes
+   *  instead -- it has no pending-changes concept of its own to lose, since
+   *  every edit there already reaches settings.apply() immediately (see
+   *  rules_panel.js's "opening the panel alone never calls settings.apply"
+   *  guarantee, which is the mirror image of why the other two need asking).
+   *
+   *  `skip` names the panel about to be opened, so it is never closed by its
+   *  own opener. */
+  function closeOtherPanelsThen(skip, openFn) {
+    const askers = [];
+    if (settingsPanel && skip !== 'settings') askers.push(settingsPanel);
+    if (themePanel && skip !== 'theme') askers.push(themePanel);
+    const closeRules = !!(rulesPanel && skip !== 'rules');
+    function next(i) {
+      if (i >= askers.length) {
+        if (closeRules) rulesPanel.close();
+        openFn();
+        return;
+      }
+      askers[i].requestClose(() => next(i + 1));
+    }
+    next(0);
+  }
+
   /** The live state menuModel() is built from, re-read fresh every time
    *  (including on an expand/collapse) so a layer flipped elsewhere -- by
    *  this menu a moment ago, or by anything else that calls settings.apply
@@ -486,6 +529,7 @@ export function createMenu({
       // a row whose click handler is guarded out. Same rule as rulesPanel.
       settingsPanel: !!settingsPanel,
       rulesPanel: !!rulesPanel,
+      themePanel: !!themePanel,
       canReset: !!onReset,
     };
   }
@@ -620,25 +664,21 @@ export function createMenu({
       if (item.enabled) {
         row.addEventListener('click', act(() => {
           if (item.id === 'lookHere' && point) rig.lookHere(point.lat, point.lon);
-          // Both panels are opened from this same menu, both mount at
-          // z-index 6 on document.body, and there is no reason to have both
-          // up at once -- so opening one closes the other rather than
-          // letting them overlap. The menu is what dispatches both actions,
-          // so it is the one place that knows about both panels; neither
-          // panel needs to know the other exists.
-          // ...and the tuning panel is closed through requestClose(), never
-          // close(), because it may hold changes nobody has kept: the
-          // force-close discarded them SILENTLY, which is the one case its own
-          // Close question exists to catch. requestClose asks when something is
-          // pending, closes at once when nothing is, and calls back only when
-          // the panel actually went -- so a cancel leaves the tuning panel open
-          // with its changes intact and the rules panel unopened, rather than
-          // this handler racing an answer it never waited for.
+          // All three panels are opened from this same menu, all three mount
+          // at z-index 6 on document.body, and there is no reason to have
+          // more than one up at once -- so opening one closes the other two
+          // rather than letting them overlap. The menu is what dispatches
+          // every action, so it is the one place that knows about all three
+          // panels; no panel needs to know another exists.
           if (item.id === 'rules' && rulesPanel) {
-            if (settingsPanel) settingsPanel.requestClose(() => rulesPanel.open());
-            else rulesPanel.open();
+            closeOtherPanelsThen('rules', () => rulesPanel.open());
           }
-          if (item.id === 'settings' && settingsPanel) { rulesPanel?.close(); settingsPanel.open(); }
+          if (item.id === 'settings' && settingsPanel) {
+            closeOtherPanelsThen('settings', () => settingsPanel.open());
+          }
+          if (item.id === 'theme' && themePanel) {
+            closeOtherPanelsThen('theme', () => themePanel.open());
+          }
           if (item.id === 'reset' && onReset) onReset();
         }));
       }

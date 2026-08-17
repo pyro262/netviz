@@ -37,6 +37,14 @@
            globe beats a blank wall. verify_tuner.py case 7 is the proof, at
            420x800. */
         --tuner-width: min(380px, 45vw);
+        /* The theme panel's own copy of the same number, for the same
+           reason: it is a LEFT RAIL too (see js/theme_panel.js), and never
+           open at the same time as the tuning panel -- the menu enforces
+           mutual exclusion between all three panels -- so the two rails
+           never have to share a viewport. A separate custom property rather
+           than reusing --tuner-width because the two panels are allowed to
+           diverge in width later without one silently resizing the other. */
+        --theme-panel-width: min(380px, 45vw);
       }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0916; }
       /* The canvas sizes itself to #stage, not to the window, so the optional
@@ -45,6 +53,7 @@
       #stage { position: fixed; inset: 0; }
       body.rail #stage { right: 26%; }
       body.tuner #stage { left: var(--tuner-width); }
+      body.theme #stage { left: var(--theme-panel-width); }
       /* width/height belt-and-braces against renderer.setSize's updateStyle:
          without a CSS size the canvas lays out at its intrinsic pixel size,
          which is viewport * devicePixelRatio -- correct only at dpr 1. */
@@ -543,6 +552,48 @@
       .tuner-panel input[type="color"],
       .tuner-panel input[type="checkbox"] { cursor: pointer; }
       .tuner-panel input[type="color"]:hover:not(:disabled) { border-color: #ffffff3d; }
+
+      /* The theme panel. It carries BOTH `tuner-panel` and `theme-panel` on
+         its root node -- the first is where the shared chrome lives (the
+         sticky header, the buttons, the row/label/color/hex layout, every
+         hover state), so this block only has to add what is actually new:
+         the width (a second custom property, not --tuner-width -- see the
+         comment on it in :root), the preset <select>, which the generic
+         `.tuner-panel input, .tuner-panel button` rule does not reach
+         because a <select> is neither, and the gradient bar. */
+      .theme-panel { width: var(--theme-panel-width); }
+      .theme-summary { color: #9c96b8; margin: 0.3rem 0 0; font-style: italic; }
+      .theme-preset {
+        font: inherit; color: inherit; background: #ffffff10;
+        border: 1px solid #ffffff22; border-radius: 3px; padding: 0.1rem 0.35rem;
+        cursor: pointer;
+      }
+      .theme-preset:hover { background: #ffffff20; border-color: #ffffff3d; }
+      /* The stop handles sit ABOVE the bar rather than inside a shared flex
+         row, because a <input type=color> has a fixed intrinsic size that a
+         flex track cannot spread evenly to ten even stops -- percentage
+         `left` on an absolutely positioned handle can. `transform:
+         translateX(-50%)` centers each handle on its own stop rather than
+         on its left edge, so stop 0 and stop 9 sit exactly on the bar's own
+         ends rather than hanging half off it. */
+      .theme-gradient-wrap { position: relative; margin: 0.7rem 0 1.1rem; height: 30px; }
+      .theme-gradient {
+        position: absolute; inset: 0; border-radius: 3px;
+        border: 1px solid #ffffff1a;
+      }
+      .theme-stops { position: absolute; inset: 0; }
+      .theme-stop {
+        position: absolute; top: -3px; width: 1.4rem; height: 1.4rem;
+        padding: 0; border: 1px solid #ffffff3d; border-radius: 3px;
+        background: none; cursor: pointer; transform: translateX(-50%);
+      }
+      .theme-stop:hover { border-color: #ffffff6b; }
+      /* The per-element return-to-auto button. Same lift-not-a-new-color
+         hover rule as every other control here -- it is a <button>, so the
+         generic `.tuner-panel button` rule already covers it; this only
+         narrows it to a glyph's width so it does not compete with the
+         swatch and the hex readout for the row's tight 347px. */
+      .theme-revert-el { flex: 0 0 auto; padding: 0.1rem 0.4rem; }
 
       .rules-panel button, .rules-panel select,
       .rules-panel input[type="color"] { cursor: pointer; }
