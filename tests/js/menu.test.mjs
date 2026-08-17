@@ -149,6 +149,18 @@ test('the rules editor is absent, not disabled, when input is locked', () => {
   assert.equal(ids.includes('rules'), false);
 });
 
+test('the menu offers the theme panel', () => {
+  const ids = menuModel({ ...STATE, themePanel: true }).map((i) => i.id);
+  assert.ok(ids.includes('theme'));
+});
+
+test('the theme row is absent, not disabled, with no themePanel to open', () => {
+  // Same rule as rulesPanel and settingsPanel: a menu built without one must
+  // not draw a row whose click handler is guarded out.
+  const ids = menuModel({ ...STATE, themePanel: false }).map((i) => i.id);
+  assert.equal(ids.includes('theme'), false);
+});
+
 test('nothing in the menu claims a change is saved', () => {
   // Nothing persists until step 2. A menu that says "saved" would be lying,
   // and the lie would only surface on the next reload.
@@ -458,6 +470,123 @@ test('the settings row opens the panel it was built with', () => {
     row.dispatch('click', { target: row });
     assert.deepEqual(opened, [true]);
     assert.equal(menu.isOpen(), false, 'the menu stayed open over its own action');
+  });
+});
+
+test('the theme row opens the theme panel it was built with', () => {
+  // Same pattern as "the settings row opens the panel it was built with"
+  // just above.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const opened = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      themePanel: { open: () => opened.push(true), isOpen: () => false },
+      root: dom.root,
+    });
+    menu.open(10, 10, { x: 0, y: 0 });
+    const row = findByDataId(dom.root, 'theme');
+    assert.ok(row, 'no theme row drawn');
+    row.dispatch('click', { target: row });
+    assert.deepEqual(opened, [true]);
+    assert.equal(menu.isOpen(), false, 'the menu stayed open over its own action');
+  });
+});
+
+test('opening Theme closes the tuning panel through requestClose(), never close()', () => {
+  // The interaction that already shipped as a real bug once between the
+  // rules and tuning panels: a force-close silently discards pending work.
+  // closeOtherPanelsThen() must go through requestClose() on settingsPanel,
+  // never close() directly.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const log = [];
+    const themeOpened = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      settingsPanel: {
+        open: () => log.push('settings.open'),
+        close: () => log.push('settings.close'),
+        // Nothing pending -- a real requestClose() would close at once with
+        // no dialog, so this fake does the same and calls back synchronously.
+        requestClose: (cb) => { log.push('settings.requestClose'); if (cb) cb(); },
+        isOpen: () => false,
+      },
+      themePanel: { open: () => themeOpened.push(true), isOpen: () => false },
+      root: dom.root,
+    });
+    menu.open(10, 10, { x: 0, y: 0 });
+    const row = findByDataId(dom.root, 'theme');
+    assert.ok(row, 'no theme row drawn');
+    row.dispatch('click', { target: row });
+    assert.deepEqual(log, ['settings.requestClose'],
+      'settingsPanel.close() was called instead of, or as well as, requestClose()');
+    assert.deepEqual(themeOpened, [true]);
+  });
+});
+
+test('a cancel on the tuning panel confirm leaves it open, with its changes pending, and never opens the theme panel', () => {
+  // requestClose()'s contract: it calls back ONLY when the panel actually
+  // closed. A real settingsPanel whose confirm dialog is answered "No" never
+  // calls the onClosed callback it was handed -- so this fake reproduces
+  // exactly that by taking the callback and never invoking it, the same way
+  // settings_panel.js's own askThen() behaves when confirm.js's Cancel button
+  // is clicked.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const log = [];
+    const themeOpened = [];
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      settingsPanel: {
+        open: () => log.push('settings.open'),
+        close: () => log.push('settings.close'),
+        requestClose: () => { log.push('settings.requestClose'); /* cancelled: no callback */ },
+        isOpen: () => true,
+      },
+      themePanel: { open: () => themeOpened.push(true), isOpen: () => false },
+      root: dom.root,
+    });
+    menu.open(10, 10, { x: 0, y: 0 });
+    const row = findByDataId(dom.root, 'theme');
+    row.dispatch('click', { target: row });
+    assert.deepEqual(log, ['settings.requestClose'],
+      'the tuning panel was force-closed despite the cancel');
+    assert.deepEqual(themeOpened, [],
+      'the theme panel opened even though the tuning panel refused to close');
+  });
+});
+
+test('an open/close cycle leaves no listener behind on document or window, with every panel wired', () => {
+  // The plain "no listener behind" case (below) never wires a rulesPanel,
+  // settingsPanel or themePanel in at all -- this proves the new three-way
+  // closeOtherPanelsThen() plumbing does not itself leak a document/window
+  // listener across an ordinary open/close that never even reaches it.
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const menu = createMenu({
+      rig: { pointAt: () => null, lookHere: () => {} },
+      settings: { apply: () => {} },
+      rulesPanel: { open: () => {}, close: () => {}, isOpen: () => false },
+      settingsPanel: {
+        open: () => {}, close: () => {}, requestClose: (cb) => { if (cb) cb(); }, isOpen: () => false,
+      },
+      themePanel: {
+        open: () => {}, close: () => {}, requestClose: (cb) => { if (cb) cb(); }, isOpen: () => false,
+      },
+      root: dom.root,
+    });
+    assert.equal(listenerCount(dom.docListeners), 0, 'listener present before any open');
+    assert.equal(listenerCount(dom.winListeners), 0, 'listener present before any open');
+    menu.open(0, 0, { x: 0, y: 0 });
+    assert.ok(listenerCount(dom.docListeners) > 0, 'open registered nothing on document');
+    assert.ok(listenerCount(dom.winListeners) > 0, 'open registered nothing on window');
+    menu.close();
+    assert.equal(listenerCount(dom.docListeners), 0, 'close left a document listener behind');
+    assert.equal(listenerCount(dom.winListeners), 0, 'close left a window listener behind');
   });
 });
 

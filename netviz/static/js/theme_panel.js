@@ -259,8 +259,22 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
 
   /** Put one row's controls back in step with what `current` says. */
   function syncRow(path) {
-    if (path === THEME_PATH) { syncPreset(); syncGradient(); return; }
-    if (path === RAMP_PATH) { syncGradient(); return; }
+    if (path === THEME_PATH || path === RAMP_PATH) {
+      syncPreset();
+      syncGradient();
+      // Every AUTO element row's displayed color is DERIVED from the active
+      // ramp (resolveColor(key, AUTO)), not stored -- so the instant the
+      // ramp moves, all twelve rows are stale, not just the one path this
+      // patch happened to name. Found live by verify_theme.py case 4: the
+      // wall recolored correctly (apply.js's own applyTheme fan-out pushes
+      // every auto element), but the panel kept showing the OLD swatches --
+      // an element the panel claims is following the theme while the wall
+      // disagrees, which is the exact drift this whole design exists to
+      // prevent. A wrong readout that looks confident is worse than no
+      // readout at all, because it is still believed.
+      for (const key of ELEMENT_KEYS) syncElementRow(key);
+      return;
+    }
     const key = ELEMENT_KEYS.find((k) => elementPath(k) === path);
     if (key) syncElementRow(key);
   }
@@ -348,10 +362,13 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
    *  dirty marks clear, with the panel left open. Without that, a later
    *  Revert would undo values that were deliberately kept while storage went
    *  on holding them. */
+  /** Only ever called from keep(), which already refuses with nothing kept
+   *  when `settings` is missing -- so this reads `settings` directly rather
+   *  than falling back to `preview`, which would silently apply the patch
+   *  live a second time without persisting it. */
   function doKeep(patch) {
     const n = Object.keys(patch).length;
-    const applier = settings || preview;
-    const out = applier.apply(patch) || {};
+    const out = settings.apply(patch) || {};
     if (out.rejected && out.rejected.length) {
       setNote(`could not keep: ${out.rejected[0].why}`);
       return;
