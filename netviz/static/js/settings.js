@@ -15,6 +15,8 @@
 // clamp has to apply to the UI, the API and the file.
 import { cfg } from './config.js';
 import { compileRules } from './rules.js';
+import { rampHexAt, activeRampStops } from './ramp.js';
+import { AUTO } from './elements.js';
 
 // DELIBERATELY NOT DECLARED: `home`.
 //
@@ -465,22 +467,16 @@ export const SCHEMA = {
 
   // ---------------------------------------------------------- appearance --
   'appearance.background': {
-    // 0.0088 is derived, not chosen. The dimmest thing the display draws is a
-    // flow arc: colorAt 0.30 on the plasma ramp is #3b0f70, relative luminance
-    // 0.0244, drawn at arcs.bodyOpacity 0.18 -- an additive contribution of
-    // about 0.0044. Requiring that arc to still lift its pixel by 1.5x gives
-    // 0.0044 / (1.5 - 1) = 0.0088. The shipped ground is 0.0032, so it keeps a
-    // 2.4x lift and this cap leaves two-thirds of that headroom.
-    //
-    // RE-DERIVE THIS if the plasma ramp, bodyOpacity or the flow class moves.
-    // A palette change that darkens the arcs without moving the cap makes the
-    // guard too generous, which is why the shipped default is tested against
-    // it rather than trusted.
-    type: 'color', maxLuminance: 0.0088, strategy: 'uniform',
-    help: 'The sky. #0b0916 once the bloom pass stopped adding the background '
-        + 'to itself; the wall wanted darker than the original. Capped at '
-        + 'luminance 0.0088 -- arcs blend additively, so a bright ground '
-        + 'swallows them whatever its hue.',
+    // The cap is DERIVED from the active ramp, not a literal -- see
+    // maxBackgroundLuminance(). It was 0.0088 here, correct for plasma and
+    // silently wrong for any other ramp, which is exactly what themes make
+    // reachable.
+    type: 'color', allowAuto: true, derivedLuminanceCap: true,
+    strategy: 'uniform',
+    help: 'The sky. `auto` follows the theme; a color of your own holds '
+        + 'against theme changes. Capped by luminance -- arcs blend '
+        + 'additively, so a bright ground swallows them whatever its hue. The '
+        + 'cap moves with the theme, because a darker ramp needs a darker sky.',
   },
   'appearance.bloom.strength': {
     type: 'number', min: 0, max: 2.0, strategy: 'uniform',
@@ -656,6 +652,40 @@ export function relativeLuminance(hex) {
   return 0.2126 * chan(0) + 0.7152 * chan(2) + 0.0722 * chan(4);
 }
 
+/** The lift a flow arc must still produce over the ground it is drawn on.
+ *
+ *  EMPIRICAL, NOT DERIVED. 2.85 is back-solved from the cap that has been
+ *  shipping (0.0088) using the ramp's real color, and the shipped cap is what a
+ *  real wall has been judged against for weeks.
+ *
+ *  The note this replaces claimed 1.5, derived from a flow arc of #3b0f70 at
+ *  luminance 0.0244 -- a color that is not on the plasma ramp at any t near
+ *  0.30. plasmaAt(0.30) interpolates stops 2 and 3 IN LINEAR SPACE (three.js
+ *  r152+ enables ColorManagement) and lands at #9112a1, luminance 0.0903,
+ *  3.7x brighter. tests/js/rail.test.mjs already used #9112a1 as the flow
+ *  swatch, so the correct value was in the suite the whole time. The arithmetic in that note was consistent
+ *  and its input was wrong, which is how it survived review: a number with a
+ *  worked chain in front of it reads as measured.
+ *
+ *  The error was CONSERVATIVE -- the shipped cap is stricter than the stated
+ *  rule would give -- so nothing on the wall was ever at risk. */
+const LIFT = 2.85;
+
+/** The brightest ground the sky may be, for the ramp that is active right now.
+ *
+ *  Was the literal 0.0088, with a shouted "RE-DERIVE THIS if the ramp, the
+ *  opacity or the flow class moves" beside it. Themes move the ramp on purpose,
+ *  so the instruction becomes a mechanism: this tracks arcs.flow.colorAt and
+ *  arcs.bodyOpacity too, which the literal never did and which could always
+ *  invalidate it silently. */
+export function maxBackgroundLuminance() {
+  const explicit = defaultOf('arcs.flow.color');
+  const hex = explicit
+    || rampHexAt(defaultOf('arcs.flow.colorAt'), activeRampStops());
+  const contrib = relativeLuminance(hex) * defaultOf('arcs.bodyOpacity');
+  return contrib / (LIFT - 1);
+}
+
 export function paths() { return Object.keys(SCHEMA); }
 
 export function entry(path) {
@@ -729,21 +759,24 @@ export function coerce(path, value) {
       }
       return { ok: true, value };
     case 'color': {
+      if (e.allowAuto && value === AUTO) return { ok: true, value };
       // Shape first. relativeLuminance('nope') returns a number out of NaN
       // arithmetic rather than throwing, so checking brightness first would
       // report a typo as a brightness problem.
       if (typeof value !== 'string' || !HEX.test(value)) {
         return { ok: false, why: 'not a #rgb or #rrggbb color' };
       }
-      if (typeof e.maxLuminance === 'number') {
+      const cap = e.derivedLuminanceCap
+        ? maxBackgroundLuminance()
+        : e.maxLuminance;
+      if (typeof cap === 'number') {
         const L = relativeLuminance(value);
-        if (L > e.maxLuminance) {
+        if (L > cap) {
           // Refused, not darkened: a color somebody picked is an intent, and
-          // silently scaling it down is how a control starts lying. The
-          // reason carries both numbers so it can be acted on.
+          // silently scaling it down is how a control starts lying.
           return { ok: false,
                    why: `too bright to draw on: luminance ${L.toFixed(4)}, `
-                      + `cap ${e.maxLuminance}` };
+                      + `cap ${cap.toFixed(4)}` };
         }
       }
       return { ok: true, value };

@@ -254,7 +254,7 @@ test('the refusal names the measured luminance and the cap', () => {
   assert.match(c.why, /too bright to draw on/);
   assert.ok(c.why.includes('0.2159'),
     `measured luminance not found in: ${c.why}`);
-  assert.ok(c.why.includes(String(entry('appearance.background').maxLuminance)),
+  assert.ok(c.why.includes(maxBackgroundLuminance().toFixed(4)),
     `cap not found in: ${c.why}`);
 });
 
@@ -303,11 +303,14 @@ test('a shipped color default is inside its own luminance cap', () => {
   // the arcs without moving the ground.
   for (const p of paths()) {
     const e = entry(p);
-    if (e.type !== 'color' || typeof e.maxLuminance !== 'number') continue;
+    if (e.type !== 'color') continue;
+    const cap = e.derivedLuminanceCap ? maxBackgroundLuminance() : e.maxLuminance;
+    if (typeof cap !== 'number') continue;
     const d = defaultOf(p);
+    if (d === undefined || d === 'auto') continue;
     const L = relativeLuminance(d);
-    assert.ok(L <= e.maxLuminance,
-      `${p}: shipped ${d} has luminance ${L.toFixed(4)}, over ${e.maxLuminance}`);
+    assert.ok(L <= cap,
+      `${p}: shipped ${d} has luminance ${L.toFixed(4)}, over ${cap}`);
   }
 });
 
@@ -400,4 +403,46 @@ test('a mixed patch persists only the persistable half', () => {
   wrapped.apply({ 'layers.stars': false, 'traffic.extraResolvers': ['203.0.113.53'] });
   assert.equal(written.length, 1);
   assert.doesNotMatch(written[0][1], /extraResolvers/);
+});
+
+import { maxBackgroundLuminance } from '../../netviz/static/js/settings.js';
+import { setActiveRamp, RAMPS } from '../../netviz/static/js/ramp.js';
+
+test('the derived cap reproduces the shipped 0.0088 on plasma', () => {
+  // This is the test that pins LIFT = 2.85. The constant is empirical --
+  // back-solved from a cap that has been on a real wall -- so if someone
+  // "corrects" it to the 1.5 the old note claimed, this goes red.
+  // 0.0903 * 0.18 / 1.85 = 0.00879.
+  setActiveRamp('plasma');
+  assert.ok(Math.abs(maxBackgroundLuminance() - 0.0088) < 0.0002,
+            `got ${maxBackgroundLuminance()}`);
+});
+
+test('the old derivation is wrong and the right numbers are asserted', () => {
+  // The note derived the cap from #3b0f70 at L 0.0244. plasmaAt(0.30) is not
+  // that color and never was.
+  assert.ok(Math.abs(relativeLuminance('#9112a1') - 0.0903) < 0.0002);
+  assert.ok(Math.abs(relativeLuminance('#3b0f70') - 0.0244) < 0.0002);
+});
+
+test('every preset sky sits under its own theme cap', () => {
+  const SKIES = {
+    plasma: '#0b0916', viridis: '#050d10', magma: '#0a0510',
+    inferno: '#0d0604', cividis: '#060a14',
+  };
+  for (const id of Object.keys(RAMPS)) {
+    setActiveRamp(id);
+    const cap = maxBackgroundLuminance();
+    const L = relativeLuminance(SKIES[id]);
+    assert.ok(L <= cap, `${id}: sky L ${L.toFixed(5)} over cap ${cap.toFixed(5)}`);
+  }
+  setActiveRamp('plasma');
+});
+
+test('a darker ramp tightens the cap', () => {
+  setActiveRamp('plasma');
+  const plasma = maxBackgroundLuminance();
+  setActiveRamp('inferno');           // darkest flow arc of the five
+  assert.ok(maxBackgroundLuminance() < plasma);
+  setActiveRamp('plasma');
 });
