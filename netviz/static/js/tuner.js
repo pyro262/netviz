@@ -17,7 +17,7 @@
 // Imports settings.js and nothing else -- no three, no DOM -- so which rows
 // exist is decided under `node --test` rather than by opening a browser.
 //
-// It is deliberately NOT all 89 settings. The panel is an instrument for
+// It is deliberately NOT all 122 settings. The panel is an instrument for
 // tuning the wall by eye, so it carries the values whose right answer can
 // only be found by looking at the display. `layers.*` are already toggles in
 // the menu, and `input.*` are set-and-forget rather than things anyone
@@ -204,14 +204,17 @@ export const GROUPS = [
     id: 'surface',
     label: 'Atmosphere & surface',
     rows: [
-      // All five change the current frame, so all five are randomized. The
-      // two tints are colors, not sliders, and Randomize is sliders-only --
-      // they are not on this panel at all, only the five numeric fields are.
+      // The five numeric fields all change the current frame, so all five are
+      // randomized. The two tints are colors, not sliders, so Randomize
+      // (sliders-only) leaves them alone -- same as clouds.tint and
+      // lightning.color above, which sit on this panel the same way.
       { path: 'appearance.atmosphere.power', label: 'Rim falloff', randomize: true },
       { path: 'appearance.atmosphere.strength', label: 'Rim brightness', randomize: true },
       { path: 'appearance.atmosphere.thickness', label: 'Shell thickness', randomize: true },
       { path: 'appearance.surface.softness', label: 'Terminator softness', randomize: true },
       { path: 'appearance.surface.dayAmbient', label: 'Day-side ambient', randomize: true },
+      { path: 'appearance.surface.dayTint', label: 'Day-side tint', randomize: false },
+      { path: 'appearance.surface.nightTint', label: 'Night-side tint', randomize: false },
     ],
   },
   {
@@ -281,11 +284,17 @@ export function isRandomized(row) {
  * wrong in the direction that matters: a row warning about a clear it does not
  * cause, or worse, a row that clears the wall with no warning on it.
  *
+ * `strategy: 'rebuild'` is not unique to arc geometry, though -- it also means
+ * "this shell gets rebuilt" for `appearance.atmosphere.thickness`, which is
+ * the atmosphere's mesh and touches no arc at all. So the predicate scopes to
+ * `arcs.*` rows on top of the rebuild flag; a rebuilding row outside that
+ * prefix clears nothing on screen and must not carry the mark.
+ *
  * Asked of the ROW rather than of the path so it reads like `isRandomized`
  * beside it, and so the panel never has to import `entry` to draw a mark.
  */
 export function clearsArcs(row) {
-  return !!row && row.rebuilds === true;
+  return !!row && row.rebuilds === true && row.path.startsWith('arcs.');
 }
 
 /**

@@ -40,6 +40,8 @@
 import { tunerRows, isRandomized, randomizeScope, clearsArcs } from './tuner.js';
 import { defaultOf, entry, settingLabel } from './settings.js';
 import { savePatch } from './rulestore.js';
+import { isAuto, AUTO } from './elements.js';
+import { THEME_SKIES } from './ramp.js';
 
 /** The patch a Keep writes: the touched paths at their current values.
  *
@@ -496,6 +498,20 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     return true;
   }
 
+  /** What a color row's SWATCH should show. `<input type=color>` cannot hold
+   *  the string `'auto'` -- the browser silently sanitizes an invalid value
+   *  to black, so a stock kiosk (appearance.background defaults to `'auto'`)
+   *  showed a black chip beside the text "auto", which looked like the sky
+   *  had no color at all rather than a resolved one. `appearance.background`
+   *  is the only row on this panel that allows `auto` today; resolve it the
+   *  same way applyTheme's own handler does in apply.js, so the swatch always
+   *  shows what the sky actually is rather than a sanitizer's fallback. */
+  function resolvedSwatch(path, v) {
+    if (!isAuto(v)) return v;
+    return path === 'appearance.background'
+      ? THEME_SKIES[defaultOf('appearance.theme')] : v;
+  }
+
   /** Put a row's controls back in step with the live value. */
   function syncRow(path) {
     const refs = rowRefs.get(path);
@@ -505,8 +521,9 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
       refs.range.value = String(v);
       refs.number.value = String(v);
     } else if (refs.color) {
-      refs.color.value = String(v);
+      refs.color.value = resolvedSwatch(path, v);
       refs.swatchText.textContent = String(v);
+      if (refs.autoBtn) refs.autoBtn.disabled = !isAuto(v);
     } else if (refs.check) {
       refs.check.checked = !!v;
     }
@@ -580,7 +597,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     } else if (spec.control === 'color') {
       const color = el('input', 'tuner-color');
       color.type = 'color';
-      color.value = String(value);
+      color.value = resolvedSwatch(spec.path, value);
       color.title = spec.help;
       const swatchText = el('span', 'tuner-hex', String(value));
       // `change`, not `input`: a native color picker streams every pixel the
@@ -591,6 +608,19 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
       refs.color = color;
       refs.swatchText = swatchText;
       row.append(color, swatchText);
+      // The one-way-door fix: a row that allows `auto` gets a return path
+      // back to it, the same `↺` affordance theme_panel.js gives its twelve
+      // element rows -- otherwise the only way off `auto` (picking a color)
+      // has no way back, and one accidental click permanently detaches this
+      // display's sky from the theme with nothing on the panel to undo it.
+      if (entry(spec.path).allowAuto) {
+        const autoBtn = el('button', 'theme-revert-el', '↺');
+        autoBtn.title = 'Return this color to the theme (auto).';
+        autoBtn.disabled = isAuto(value);
+        autoBtn.addEventListener('click', () => write(spec.path, AUTO));
+        refs.autoBtn = autoBtn;
+        row.append(autoBtn);
+      }
     } else {
       const check = el('input', 'tuner-check');
       check.type = 'checkbox';

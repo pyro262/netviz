@@ -18,12 +18,14 @@ test('every row names a path the schema actually declares', () => {
   }
 });
 
-test('the panel shows 53 rows in seven groups', () => {
+test('the panel shows 55 rows in seven groups', () => {
   // As of 0.6.0: 48 rows / six groups before the atmosphere-and-surface
-  // group's five rows landed. Stated by release because this count has
-  // already moved once, quietly, before anyone wrote the release next to it.
+  // group's five numeric rows landed, then 53 before dayTint/nightTint
+  // joined the same group as two color rows. Stated by release because this
+  // count has already moved more than once, quietly, before anyone wrote the
+  // release next to it.
   const rows = tunerRows();
-  assert.equal(rows.length, 53);
+  assert.equal(rows.length, 55);
   assert.deepEqual([...new Set(rows.map((r) => r.group))],
                    ['appearance', 'clouds', 'lightning', 'arcs', 'arcshape',
                     'surface', 'camera']);
@@ -142,7 +144,7 @@ test('tunerRows refuses a slider with no randomize flag', () => {
   } finally {
     good.randomize = saved;
   }
-  assert.equal(tunerRows().length, 53, 'the table was not put back');
+  assert.equal(tunerRows().length, 55, 'the table was not put back');
 });
 
 test('the randomized set is 41 sliders, and the excluded ones are named', () => {
@@ -213,7 +215,7 @@ test('randomizeScope partitions every row, and rolled matches the flag', () => {
   // Today's numbers, as of 0.6.0 -- stated so a change is deliberate rather
   // than unnoticed.
   assert.equal(scope.count, 41);
-  assert.equal(scope.heldCount, 12);
+  assert.equal(scope.heldCount, 14);
 });
 
 test('the scope moves with the table rather than being written down', () => {
@@ -240,10 +242,14 @@ test('the scope moves with the table rather than being written down', () => {
 test('a row rebuilds exactly when its schema entry says rebuild', () => {
   for (const row of tunerRows()) {
     assert.equal(row.rebuilds, entry(row.path).strategy === 'rebuild', row.path);
-    assert.equal(clearsArcs(row), row.rebuilds, row.path);
+    // clearsArcs is narrower than "rebuilds": a rebuilding row only clears
+    // the arc pool when it is an arc row. appearance.atmosphere.thickness is
+    // the counterexample, covered on its own below.
+    assert.equal(clearsArcs(row), row.rebuilds && row.path.startsWith('arcs.'), row.path);
   }
   assert.equal(clearsArcs(null), false);
-  assert.equal(clearsArcs({ rebuilds: 'yes' }), false, 'only a real true counts');
+  assert.equal(clearsArcs({ rebuilds: 'yes', path: 'arcs.flow.tube' }), false,
+               'only a real true counts');
 });
 
 test('the arc rebuilding rows are the three geometry fields on all three classes', () => {
@@ -267,17 +273,28 @@ test('the arc rebuilding rows are the three geometry fields on all three classes
   assert.equal(got.length, 9);
 });
 
-test('the shell thickness row rebuilds too, but is not an arc key', () => {
+test('the shell thickness row rebuilds, but does not carry the arc-clearing mark', () => {
+  // `rebuild` here means "the atmosphere shell is rebuilt", not "an arc is
+  // rebuilt" -- no arc geometry is touched by this row at all, so warning
+  // that it "clears the arcs on screen" would be a false statement about the
+  // wall. clearsArcs must say so.
   const row = tunerRows().find((r) => r.path === 'appearance.atmosphere.thickness');
   assert.ok(row, 'appearance.atmosphere.thickness is not on the panel');
-  assert.equal(clearsArcs(row), true);
+  assert.equal(row.rebuilds, true);
+  assert.equal(clearsArcs(row), false);
   assert.ok(!ARC_REBUILD_KEYS.includes('thickness'),
              'thickness must not join the arc-only rebuild list');
 });
 
-test('every rebuilding row on the panel is exactly the ten known rebuild rows', () => {
-  const got = tunerRows().filter(clearsArcs).map((r) => r.path).sort();
-  assert.equal(got.length, 10);
+test('every rebuilding row on the panel that is not an arc row is held back from the mark', () => {
+  // Not a fixed count -- a count here would lock in the artifact this finding
+  // exists to remove. The requirement is that clearsArcs only ever fires for
+  // an arcs.* row, whatever the panel's current row list happens to be.
+  for (const row of tunerRows()) {
+    if (row.rebuilds && !row.path.startsWith('arcs.')) {
+      assert.equal(clearsArcs(row), false, `${row.path} is not an arc row`);
+    }
+  }
 });
 
 test('every rebuilding row on the panel is one Randomize can roll', () => {
