@@ -821,9 +821,16 @@ export function defaultOf(path) { return cfg(path, undefined); }
 
 /** Names for the handful of paths whose plain-English name is not derivable
  *  from the path itself. Everything else is turned into words below, so this list only
- *  has to carry the exceptions rather than all 89 settings -- a second full
+ *  has to carry the exceptions rather than all 122 settings -- a second full
  *  copy of the catalog would drift, same reason the schema keeps no
- *  defaults. */
+ *  defaults.
+ *
+ *  The twelve `appearance.colors.*` element paths are exceptions too: the
+ *  derived form (`appearance colors coastline`) is what settingLabel used to
+ *  fall through to, and the theme panel prints exactly that string as a row
+ *  label and inside its own confirm questions -- the tuning panel spells its
+ *  own rows out longhand, and this list is what lets settingLabel do the
+ *  same rather than reading like a dumped schema path. */
 const LABELS = {
   'rail.enabled': 'the stats rail',
   'arcs.rules': 'your color rules',
@@ -831,13 +838,25 @@ const LABELS = {
   'input.lock': 'the display lock',
   'appearance.background': 'the background color',
   'traffic.flowsPerSecond': 'how many flows are drawn per second',
+  'appearance.colors.coastline': 'Coastline',
+  'appearance.colors.bordersWorld': 'World borders',
+  'appearance.colors.admin1': 'State/province borders',
+  'appearance.colors.bordersWatched': 'Watched-country borders',
+  'appearance.colors.countryFlash': 'Country flash',
+  'appearance.colors.cities': 'Cities',
+  'appearance.colors.atmosphere': 'Atmosphere glow',
+  'appearance.colors.rippleFlow': 'Flow ripple',
+  'appearance.colors.rippleBlock': 'Block ripple',
+  'appearance.colors.rippleHighlight': 'Highlight ripple',
+  'appearance.colors.auroraLow': 'Aurora, low band',
+  'appearance.colors.auroraHigh': 'Aurora, high band',
 };
 
 /**
  * A path in words, for a message somebody reads before deciding something.
  *
  * `layers.cityLights` -> "the city lights layer", `camera.walk.holdSeconds` ->
- * "camera walk hold seconds". Not pretty for every one of the 89, and it does
+ * "camera walk hold seconds". Not pretty for every one of the 122, and it does
  * not need to be: it appears in a list of what a reset would forget, where the
  * job is recognizing the setting you changed, not admiring the prose.
  */

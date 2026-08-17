@@ -57,5 +57,14 @@ export function resolveColor(key, stored) {
   if (Object.prototype.hasOwnProperty.call(ELEMENT_LITERAL, key)) {
     return ELEMENT_LITERAL[key];
   }
+  // No caller reaches this today with a key outside ELEMENT_T/ELEMENT_LITERAL
+  // -- both tables are the twelve schema paths, and a test asserts they match
+  // -- but ELEMENT_T[key] is silently undefined for anything else, and
+  // rampHexAt(undefined, ...) used to fail three calls deep inside
+  // hexToRgb(undefined) with a bare, unreadable TypeError. Named here instead,
+  // at the one place that knows what went wrong.
+  if (!Object.prototype.hasOwnProperty.call(ELEMENT_T, key)) {
+    throw new Error(`resolveColor: "${key}" is not a known element`);
+  }
   return rampHexAt(ELEMENT_T[key], activeRampStops());
 }
