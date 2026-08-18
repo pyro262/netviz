@@ -148,16 +148,16 @@ test('editing a second stop while already custom does not re-fork', () => {
   assert.equal(patch['appearance.customRamp'][7], '#00ffaa');
 });
 
-test('the header line counts overrides honestly', () => {
+test('the header line says, in plain words, how many colors you set', () => {
   const panel = createThemePanel(fakeDeps());
   panel.open();
   assert.equal(panel.headerLine(), 'plasma');
   panel.setElement('atmosphere', '#ff0088');
-  assert.equal(panel.headerLine(), 'plasma, 1 overridden');
+  assert.equal(panel.headerLine(), 'plasma, 1 set by you');
   panel.setElement('coastline', '#00ff88');
-  assert.equal(panel.headerLine(), 'plasma, 2 overridden');
+  assert.equal(panel.headerLine(), 'plasma, 2 set by you');
   panel.setElement('coastline', AUTO);
-  assert.equal(panel.headerLine(), 'plasma, 1 overridden');
+  assert.equal(panel.headerLine(), 'plasma, 1 set by you');
 });
 
 test('close with nothing pending does not ask', () => {

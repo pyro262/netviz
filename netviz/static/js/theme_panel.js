@@ -218,14 +218,19 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
 
   function pendingPaths() { return Object.keys(pendingPatch()); }
 
-  /** The header's plain-language line: "plasma", or "plasma, 2 overridden"
+  /** The header's plain-language line: "plasma", or "plasma, 2 set by you"
    *  -- counted from the twelve element settings that are not `auto`, never
-   *  cached, so a returned-to-auto row drops back out of the count the
-   *  instant it happens. */
+   *  cached, so a row handed back to the theme drops out of the count the
+   *  instant it happens.
+   *
+   *  "set by you", not "overridden": the panel is read by whoever walks up to
+   *  the wall, and `override` is the word the code uses for the mechanism, not
+   *  a word that tells a person what they are looking at. Same reason `auto`
+   *  and `ramp` do not appear in any string this file draws. */
   function headerLine() {
     const theme = current.get(THEME_PATH);
     const n = ELEMENT_KEYS.filter((k) => current.get(elementPath(k)) !== AUTO).length;
-    return n ? `${theme}, ${n} overridden` : theme;
+    return n ? `${theme}, ${n} set by you` : theme;
   }
 
   function refreshActions() {
@@ -444,7 +449,7 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
     color.type = 'color';
     const hex = el('span', 'tuner-hex');
     const revertBtn = el('button', 'theme-revert-el', '↺');
-    revertBtn.title = 'Return this element to the theme (auto).';
+    revertBtn.title = 'Let the theme pick this color again.';
     color.addEventListener('change', () => setElement(key, color.value));
     revertBtn.addEventListener('click', () => resetElement(key));
     row.append(label, color, hex, revertBtn);
@@ -498,22 +503,24 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
       opt.value = id;
       presetSelect.append(opt);
     }
-    presetSelect.title = 'The color ramp every element on auto follows.';
+    presetSelect.title = 'The palette. Every color below follows it, unless '
+                        + 'you have set that one yourself.';
     presetSelect.addEventListener('change', () => write(THEME_PATH, presetSelect.value));
 
-    const randomBtn = el('button', 'theme-randomize-ramp', 'Randomize ramp');
-    randomBtn.title = 'Roll a new coherent ramp: one rotating hue family, dark '
-                     + 'end to light end. Forks the preset to custom.';
+    const randomBtn = el('button', 'theme-randomize-ramp', 'Shuffle palette');
+    randomBtn.title = 'A fresh set of colors that still look like they belong '
+                     + 'together. Saves as your own palette, so the one you '
+                     + 'started from is still there to go back to.';
     randomBtn.addEventListener('click', () => doRandomizeRamp());
 
     const chaosBtn = el('button', 'theme-chaos', 'Chaos');
-    chaosBtn.title = 'Roll every element an independent random color, ignoring '
-                    + 'the ramp entirely. Marks all twelve dirty; Revert puts '
-                    + 'them all back in one click.';
+    chaosBtn.title = 'Every color picked at random, ignoring the palette -- the '
+                    + 'arcs and the planet too. It will be ugly. Nothing '
+                    + 'disappears, and Revert puts it all back in one click.';
     chaosBtn.addEventListener('click', () => chaos());
 
     const revertBtn = el('button', 'tuner-revert', 'Revert');
-    revertBtn.title = 'Put the colors you changed back to how they were when '
+    revertBtn.title = 'Put everything you changed back to how it was when '
                      + 'this panel opened, or to what you last kept.';
     revertBtn.addEventListener('click', revert);
 
@@ -542,14 +549,15 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
     node.append(sticky);
 
     node.append(el('p', 'tuner-lead',
-      'Changes show on the wall immediately and are forgotten on the next '
-      + 'reload. "Keep" remembers them on this screen only. Dragging a stop '
-      + 'below switches the ramp to a custom one built from what was active.'));
+      'Changes show on the wall straight away and are forgotten on the next '
+      + 'reload. "Keep" remembers them, on this screen only. Changing one of '
+      + 'the colors below saves it as your own palette, so the one you '
+      + 'started from stays as it was.'));
 
     node.append(renderGradient());
 
     const body = el('div', 'tuner-body');
-    body.append(el('h3', 'tuner-group', 'Elements'));
+    body.append(el('h3', 'tuner-group', 'Colors'));
     for (const key of ELEMENT_KEYS) body.append(renderElementRow(key));
     node.append(body);
 

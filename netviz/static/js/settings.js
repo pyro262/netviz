@@ -83,10 +83,10 @@ function arcClass(cls, keys) {
                 + 'per pool slot on spawn, so changing it clears the live arcs '
                 + 'rather than editing them in place.' },
     color: { type: 'color', allowAuto: true, strategy: 'uniform',
-             help: 'An explicit color for this arc class, used INSTEAD of its '
-                 + 'position on the ramp. `auto` follows the ramp, which is '
-                 + 'what a fresh kiosk ships with. Chaos rolls this; nothing '
-                 + 'else writes it, so a themed display never sees it set.' },
+             help: 'A color for this arc class of your own, used instead of '
+                 + 'the palette\'s. Left alone, the arc follows the palette, '
+                 + 'which is what a fresh display shows. Chaos sets this; '
+                 + 'nothing else does.' },
     colorAt: { type: 'number', min: 0, max: 1, strategy: 'uniform',
                help: 'Position on the plasma ramp, 0 (indigo) to 1 (pale '
                    + 'yellow). Ignored when the class carries an explicit hex. '
@@ -481,32 +481,33 @@ export const SCHEMA = {
     // reachable.
     type: 'color', allowAuto: true, derivedLuminanceCap: true,
     strategy: 'uniform',
-    help: 'The sky. `auto` follows the theme; a color of your own holds '
-        + 'against theme changes. Capped by luminance -- arcs blend '
-        + 'additively, so a bright ground swallows them whatever its hue. The '
-        + 'cap moves with the theme, because a darker ramp needs a darker sky.',
+    help: 'The sky. Left alone it follows the theme; a color of your own '
+        + 'stays put when the theme changes. There is a brightness limit -- '
+        + 'arcs are drawn by adding light, so a bright sky swallows them '
+        + 'whatever their color. The limit moves with the theme, because a '
+        + 'darker palette needs a darker sky.',
   },
   'appearance.colors.coastline': {
     type: 'color', allowAuto: true, strategy: 'uniform',
-    help: 'Coastlines. `auto` puts them at 0.42 on the theme ramp.',
+    help: 'Coastlines.',
   },
   'appearance.colors.bordersWorld': {
     type: 'color', allowAuto: true, strategy: 'uniform',
-    help: 'Every international border. Deliberately dim: a second full line '
-        + 'system competing with the coastlines says nothing from across a '
-        + 'room. `auto` is 0.24 on the ramp.',
+    help: 'Every international border. Deliberately dim: a second full set '
+        + 'of lines competing with the coastlines says nothing from across a '
+        + 'room.',
   },
   'appearance.colors.admin1': {
     type: 'color', allowAuto: true, strategy: 'uniform',
     help: 'US state and Canadian province boundaries -- dimmest of the three '
         + 'line layers, because home is in North America and this layer must '
-        + 'not out-shout the borders around it. `auto` is 0.26.',
+        + 'not out-shout the borders around it.',
   },
   'appearance.colors.bordersWatched': {
     type: 'color', allowAuto: true, strategy: 'uniform',
-    help: 'Outlines of the geo-blocked countries. `auto` is the block hue '
-        + '(0.86) knocked back to 0.62 of it, so it reads as an outline '
-        + 'rather than an arc; an explicit color is used at full strength.',
+    help: 'Outlines of the blocked countries. Left to the theme, these are '
+        + 'the block color knocked well back, so they read as an outline '
+        + 'rather than an arc. A color you pick is used at full strength.',
   },
   'appearance.colors.countryFlash': {
     type: 'color', allowAuto: true, strategy: 'uniform',
@@ -516,18 +517,18 @@ export const SCHEMA = {
   },
   'appearance.colors.cities': {
     type: 'color', allowAuto: true, strategy: 'uniform',
-    help: 'City lights. `auto` samples a WINDOW of the ramp (0.72 to 0.97) so '
-        + 'population weight rides it -- big cities brighter and warmer. An '
-        + 'explicit color goes flat in hue but keeps the brightness ranking.',
+    help: 'City lights. Left to the theme, bigger cities come out brighter '
+        + 'and warmer than small ones. A color you pick is used for all of '
+        + 'them, and bigger cities are still the brighter ones.',
   },
   'appearance.colors.atmosphere': {
     type: 'color', allowAuto: true, strategy: 'uniform',
-    help: 'The limb glow. `auto` is 0.20 on the ramp -- the dark end, so the '
-        + 'edge reads as atmosphere rather than as a drawn outline.',
+    help: 'The glow around the edge of the globe. Kept dark on purpose, so '
+        + 'the edge reads as atmosphere rather than as a drawn outline.',
   },
   'appearance.colors.rippleFlow': {
     type: 'color', allowAuto: true, strategy: 'uniform',
-    help: 'The ring a flow arc leaves where it lands. `auto` is 0.34.',
+    help: 'The ring a traffic arc leaves where it lands.',
   },
   'appearance.colors.rippleBlock': {
     type: 'color', allowAuto: true, strategy: 'uniform',
@@ -536,9 +537,9 @@ export const SCHEMA = {
   },
   'appearance.colors.rippleHighlight': {
     type: 'color', allowAuto: true, strategy: 'uniform',
-    help: 'The ring a highlighted arc leaves. NOT on the ramp: it matches the '
-        + 'highlight arc class cyan, and moving it onto the ramp would make a '
-        + 'rule-colored arc read as ordinary traffic.',
+    help: 'The ring a highlighted arc leaves. Deliberately its own color '
+        + 'rather than the theme\'s, so an arc picked out by one of your '
+        + 'color rules does not read as ordinary traffic.',
   },
   'appearance.colors.auroraLow': {
     type: 'color', allowAuto: true, strategy: 'uniform',
@@ -555,16 +556,16 @@ export const SCHEMA = {
     type: 'enum', values: ['plasma', 'viridis', 'magma', 'inferno', 'cividis',
                            'custom'],
     strategy: 'uniform',
-    help: 'The color ramp every element follows unless it has been given a '
+    help: 'The palette every color follows, unless you have given that one a '
         + 'color of its own. Plasma is the default and is what this display '
-        + 'has always drawn. Changing it also sets the sky, unless the sky has '
-        + 'been set explicitly.',
+        + 'has always drawn. Changing it also changes the sky, unless you '
+        + 'have set the sky yourself.',
   },
   'appearance.customRamp': {
     type: 'list', of: 'string', length: 10, elementType: 'color', strategy: 'uniform',
-    help: 'Ten stops, dark end first, used when the theme is `custom`. Editing '
-        + 'a stop on any preset copies it here and switches the theme to '
-        + 'custom, so a preset is never modified in place.',
+    help: 'Your own ten colors, darkest first, used when the theme is set to '
+        + 'Custom. Changing one of them on any palette copies it here first, '
+        + 'so the palette you started from is never altered.',
   },
   'appearance.bloom.strength': {
     type: 'number', min: 0, max: 2.0, strategy: 'uniform',
