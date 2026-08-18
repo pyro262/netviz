@@ -16,7 +16,7 @@
 import { cfg } from './config.js';
 import { compileRules } from './rules.js';
 import { rampHexAt, activeRampStops } from './ramp.js';
-import { AUTO } from './elements.js';
+import { AUTO, isAuto } from './elements.js';
 
 // DELIBERATELY NOT DECLARED: `home`.
 //
@@ -82,6 +82,11 @@ function arcClass(cls, keys) {
             help: 'Radius of the tube, in globe radii. The geometry is built '
                 + 'per pool slot on spawn, so changing it clears the live arcs '
                 + 'rather than editing them in place.' },
+    color: { type: 'color', allowAuto: true, strategy: 'uniform',
+             help: 'An explicit color for this arc class, used INSTEAD of its '
+                 + 'position on the ramp. `auto` follows the ramp, which is '
+                 + 'what a fresh kiosk ships with. Chaos rolls this; nothing '
+                 + 'else writes it, so a themed display never sees it set.' },
     colorAt: { type: 'number', min: 0, max: 1, strategy: 'uniform',
                help: 'Position on the plasma ramp, 0 (indigo) to 1 (pale '
                    + 'yellow). Ignored when the class carries an explicit hex. '
@@ -120,7 +125,10 @@ function arcClass(cls, keys) {
   return out;
 }
 
-const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
+// `color` is flow/block only -- it is absent from HIGHLIGHT_KEYS because a
+// color rule carries its own hex, so a class-level color there would be a
+// control that looks live and changes nothing.
+const ARC_KEYS = ['life', 'tube', 'color', 'colorAt', 'gain', 'speed', 'lift',
                   'maxRise', 'bloomScale'];
 // `arcs.highlight` is the shape EVERY color rule shares. A rule carries its
 // own color, and may carry its own gain and bloomScale; what is here is the
@@ -803,9 +811,15 @@ const LIFT = 2.85;
  *  arcs.bodyOpacity too, which the literal never did and which could always
  *  invalidate it silently. */
 export function maxBackgroundLuminance() {
+  // isAuto, not truthiness: the sentinel is a non-empty STRING, so a plain
+  // `||` would hand 'auto' to relativeLuminance, which returns NaN out of
+  // parseInt arithmetic -- and every NaN comparison is false, so the cap
+  // would silently refuse nothing. The same trap that shipped a white sky
+  // earlier in this feature, one module over.
   const explicit = defaultOf('arcs.flow.color');
-  const hex = explicit
-    || rampHexAt(defaultOf('arcs.flow.colorAt'), activeRampStops());
+  const hex = (explicit && !isAuto(explicit))
+    ? explicit
+    : rampHexAt(defaultOf('arcs.flow.colorAt'), activeRampStops());
   const contrib = relativeLuminance(hex) * defaultOf('arcs.bodyOpacity');
   return contrib / (LIFT - 1);
 }

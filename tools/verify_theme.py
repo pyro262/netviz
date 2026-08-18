@@ -86,6 +86,7 @@ import argparse
 import colorsys
 import io
 import os
+import re
 import subprocess
 import sys
 import time
@@ -865,9 +866,32 @@ def case5_revert_el_returns_to_theme(page, cx, cy) -> bool:
         f"(theme color expected {theme_color})")
 
 
+def _first_int(text):
+    """The first integer in a piece of UI copy, or None.
+
+    The footer reads "N settings changed, not yet kept" and the dialog title
+    "Close and discard N changes?" -- this case compares those two numbers
+    against each other rather than against a constant, so the roller can grow
+    without the verifier going red on a healthy build."""
+    m = re.search(r"\d+", text or "")
+    return int(m.group()) if m else None
+
+
 def case6_chaos_then_close_asks(page, cx, cy) -> bool:
-    """6: Chaos marks all twelve rows dirty and asks nothing; Close, now
-    facing twelve pending changes, DOES ask, and Yes discards all twelve.
+    """6: Chaos marks every element row dirty and asks nothing; Close, now
+    facing everything Chaos rolled, DOES ask, and Yes discards all of it.
+
+    THE PENDING COUNT IS NOT TWELVE AND MUST NOT BE HARDCODED. Chaos rolls
+    more than the twelve element rows -- the arc colors, the surface tints
+    and the atmosphere numbers have no row on this panel but are snapshotted
+    and reverted with everything else (see `allPaths()` unioning in
+    `CHAOS_PATHS`). This case asserted `"12" in count_text` and went red the
+    day the roller grew, reporting a working build as broken: the literal
+    encoded one release's arithmetic rather than the property. What is
+    actually required is that the three readings AGREE -- the marked rows,
+    the footer's count and the dialog's count all describe the same pending
+    state -- and that the footer's number is at least the number of rows,
+    since every row Chaos marks is also pending.
 
     RED FIRST, MEASURED: `theme_panel.js`'s `closeQuestion` was changed to
     unconditionally `return null;` (the question never fires, whatever is
@@ -898,14 +922,23 @@ def case6_chaos_then_close_asks(page, cx, cy) -> bool:
     page.wait_for_timeout(300)
     gone = not page.evaluate("() => !!document.querySelector('.theme-panel')")
 
+    # Derived, not literal: pull the count the panel printed and the count
+    # the dialog printed, and require them to agree with each other and to
+    # cover every marked row.
+    footer_n = _first_int(count_text)
+    dialog_n = _first_int(cstate.get("title") or "")
+    counts_agree = (footer_n is not None and footer_n == dialog_n
+                    and footer_n >= dirty_count)
+
     ok = (clicked and no_dialog and dirty_count == len(keys)
-          and preset_after == preset_before and "12" in count_text
+          and preset_after == preset_before and counts_agree
           and clicked_close and asked and answered and gone)
     return report(
         "6: Chaos dirties every row and asks nothing, Close then asks", ok,
         f"chaos clicked={clicked} no dialog from chaos={no_dialog} dirty "
         f"rows={dirty_count}/{len(keys)} preset unchanged={preset_after == preset_before} "
-        f"({preset_before!r} -> {preset_after!r}) footer={count_text!r}; Close "
+        f"({preset_before!r} -> {preset_after!r}) footer={count_text!r} "
+        f"(footer={footer_n} dialog={dialog_n} agree={counts_agree}); Close "
         f"asked={asked} (title={cstate.get('title')!r}) answered={answered} "
         f"panel gone={gone}")
 

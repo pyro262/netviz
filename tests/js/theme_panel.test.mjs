@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { CHAOS_PATHS } from '../../netviz/static/js/randomize_color.js';
 import { createThemePanel, ELEMENT_KEYS } from '../../netviz/static/js/theme_panel.js';
 import { RAMPS } from '../../netviz/static/js/ramp.js';
 import { AUTO } from '../../netviz/static/js/elements.js';
@@ -190,11 +191,19 @@ test('close() force-closes with no question, even with something pending', () =>
   assert.equal(panel.isOpen(), false);
 });
 
-test('chaos marks every element dirty', () => {
+test('chaos marks everything it rolled dirty, so Revert covers the whole roll', () => {
+  // Derived from CHAOS_PATHS, not a literal count: Chaos reaches past the
+  // twelve element rows into the arc colors, the surface tints and the
+  // atmosphere, and a path it can write but Revert cannot restore is a
+  // one-way door. Adding to the roller must not silently escape the undo.
   const panel = createThemePanel(fakeDeps());
   panel.open();
   panel.chaos(() => 0.5);
-  assert.equal(panel.pendingPaths().length, 12);
+  const pending = panel.pendingPaths();
+  assert.equal(pending.length, CHAOS_PATHS.length);
+  for (const p of CHAOS_PATHS) {
+    assert.ok(pending.includes(p), `${p} was rolled but is not pending`);
+  }
 });
 
 test('chaos never touches the theme or the custom ramp', () => {

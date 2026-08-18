@@ -31,10 +31,10 @@
 //             storage)`). Keep hands it exactly the touched paths, at their
 //             current values -- never the whole draft -- so it writes only
 //             what somebody actually decided about this display.
-import { RAMPS } from './ramp.js';
-import { ELEMENT_T, ELEMENT_LITERAL, AUTO, resolveColor } from './elements.js';
-import { defaultOf, entry, settingLabel } from './settings.js';
-import { randomizeRamp, chaosColors } from './randomize_color.js';
+import { RAMPS, THEME_SKIES } from './ramp.js';
+import { ELEMENT_T, ELEMENT_LITERAL, AUTO, isAuto, resolveColor } from './elements.js';
+import { defaultOf, entry, settingLabel, relativeLuminance } from './settings.js';
+import { randomizeRamp, chaosPatch, CHAOS_PATHS } from './randomize_color.js';
 
 /** The twelve element keys, in the same order apply.js's colorHandlers()
  *  declares them -- also the order chaosColors() returns, so a chaos patch
@@ -47,7 +47,20 @@ const STOP_COUNT = 10;
 const PRESET_IDS = ['plasma', 'viridis', 'magma', 'inferno', 'cividis'];
 
 function elementPath(key) { return `appearance.colors.${key}`; }
-function allPaths() { return [THEME_PATH, RAMP_PATH, ...ELEMENT_KEYS.map(elementPath)]; }
+
+/** Every path this panel snapshots, and therefore every path Revert, Keep and
+ *  Close can act on.
+ *
+ *  CHAOS_PATHS is unioned in rather than listed here: Chaos reaches beyond the
+ *  twelve element rows -- the two arc colors, the two surface tints, the three
+ *  atmosphere numbers -- and a path Chaos can WRITE but Revert cannot RESTORE
+ *  is a one-way door. Deriving the set from the roller means adding something
+ *  to Chaos cannot silently escape the undo. The extra paths have no row on
+ *  this panel; they are snapshotted and reverted all the same. */
+function allPaths() {
+  const base = [THEME_PATH, RAMP_PATH, ...ELEMENT_KEYS.map(elementPath)];
+  return [...new Set([...base, ...CHAOS_PATHS])];
+}
 
 function copyOf(v) { return Array.isArray(v) ? v.slice() : v; }
 
@@ -342,15 +355,22 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
     writePatch({ [RAMP_PATH]: stops, [THEME_PATH]: 'custom' });
   }
 
-  /** Chaos: every element independently, ignoring the ramp entirely -- see
+  /** Chaos: the whole display rolled independently, ignoring the ramp -- see
    *  randomize_color.js. Never touches the theme or the custom ramp, so a
-   *  Revert on a chaos click puts back exactly the twelve colors and nothing
-   *  about which preset was active. */
+   *  Revert on a chaos click puts back what was rolled and nothing about which
+   *  preset was active.
+   *
+   *  The arc floor is derived from the sky that is actually on screen, not
+   *  from the shipped one: a display running a brighter ground needs brighter
+   *  arcs to stay legible, and that relationship is the luminance cap's own,
+   *  inverted. */
   function chaos(rand = Math.random) {
-    const colors = chaosColors(rand);
-    const patch = {};
-    for (const key of ELEMENT_KEYS) patch[elementPath(key)] = colors[key];
-    writePatch(patch);
+    const sky = defaultOf('appearance.background');
+    writePatch(chaosPatch(rand, {
+      skyLuminance: relativeLuminance(
+        isAuto(sky) ? THEME_SKIES[defaultOf(THEME_PATH)] ?? THEME_SKIES.plasma : sky),
+      bodyOpacity: defaultOf('arcs.bodyOpacity'),
+    }));
   }
 
   function askThen(question, go) {

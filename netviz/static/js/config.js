@@ -93,10 +93,12 @@ export const CONFIG = {
   arcs: {
     bodyOpacity: 0.18,
 
-    flow:  { life: 4.0,  tube: 0.0032, colorAt: 0.30, gain: 1.0,
+    // `color: 'auto'` means "follow the ramp at colorAt". Only Chaos writes a
+    // hex here; every other path leaves the class on the theme.
+    flow:  { life: 4.0,  tube: 0.0032, color: 'auto', colorAt: 0.30, gain: 1.0,
              speed: 0.9,  lift: 0.28, maxRise: 0.24, bloomScale: 1.25 },
 
-    block: { life: 18.0, tube: 0.0052, colorAt: 0.86, gain: 0.74,
+    block: { life: 18.0, tube: 0.0052, color: 'auto', colorAt: 0.86, gain: 0.74,
              speed: 0.55, lift: 0.45, maxRise: 0.21, bloomScale: 0.5 },
 
     // Shape shared by every color rule. Color, gain and bloomScale come from

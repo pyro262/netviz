@@ -3,6 +3,7 @@
 // allocate per event.
 import * as THREE from 'three';
 import { plasmaAt } from './palette.js';
+import { isAuto } from './elements.js';
 import { classNameFor, foreignEnd } from './classify.js';
 import { compileRules, firstMatch, firstOverride } from './rules.js';
 import { densityGain } from './density.js';
@@ -26,7 +27,13 @@ const FLOWS_PER_SECOND = cfg('traffic.flowsPerSecond', 14);
 const COLOR_KEYS = ['color', 'colorAt', 'gain'];
 
 function specColor(c) {
-  const base = c.color ? new THREE.Color(c.color) : plasmaAt(c.colorAt);
+  // isAuto, not truthiness. `arcs.*.color` ships as the string 'auto', which
+  // is truthy -- a plain `c.color ?` would hand it to THREE.Color, which
+  // cannot parse it, warns once, and leaves the arc at the constructor's
+  // default of WHITE. A color rule's own spec carries a real hex and takes
+  // this branch as it always has.
+  const explicit = c.color && !isAuto(c.color);
+  const base = explicit ? new THREE.Color(c.color) : plasmaAt(c.colorAt);
   return base.multiplyScalar(c.gain === undefined ? 1 : c.gain);
 }
 

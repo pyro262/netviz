@@ -106,7 +106,9 @@ function arcHandlers(cls, keys) {
   return out;
 }
 
-const ARC_KEYS = ['life', 'tube', 'colorAt', 'gain', 'speed', 'lift',
+// `color` is flow/block only; HIGHLIGHT_KEYS omits it because a color rule
+// carries its own hex and a class-level color there would never be read.
+const ARC_KEYS = ['life', 'tube', 'color', 'colorAt', 'gain', 'speed', 'lift',
                   'maxRise', 'bloomScale'];
 // The shape every color rule shares. `gain` is here because a rule that omits
 // its own reads this one; the list must match settings.js's, which a test
