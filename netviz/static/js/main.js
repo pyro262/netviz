@@ -798,6 +798,10 @@ async function boot() {
     arcs, globe, ripples, aurora, clouds, lightning, renderer, camera, scene, rig, stars,
     milkyway, input,
     settings, menu, customArcsPanel, settingsPanel, testPanel,
+    // The rail's per-class counter, for verification tooling: the self-test
+    // draws sample arcs straight through the pool and must move nothing here,
+    // which is only checkable from outside if the counter is reachable.
+    classCounts,
     /** The oval's own arithmetic, for verification tooling: a verifier asserting
      *  the nightside offset must read the same function the shader mirrors, not
      *  a second copy of it in Python. */

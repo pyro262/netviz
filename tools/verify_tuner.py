@@ -1564,10 +1564,20 @@ def case14_close_can_keep(page, cx, cy) -> bool:
           and abs((after["live"] or 0) - OPACITY_TARGET) < 1e-9
           and moved != base)
 
+    # PUT BOTH BACK WITHOUT A RELOAD. The first cut reloaded here, and that was
+    # wrong twice over: a reload costs 30s+ under SwiftShader and timed out
+    # under load, taking the four cases that run after this one down with it --
+    # and it was never necessary. The store is restored directly, and the LIVE
+    # value is put back through the applier, because the next case reads
+    # cfg() and not localStorage.
+    if isinstance(base, (int, float)):
+        page.evaluate("(v) => window.__netviz.settings.apply({'arcs.bodyOpacity': v})",
+                      base)
+    # AFTER the re-apply, not before: `settings` is the persisting applier, so
+    # putting the wall back writes to the store as well and would undo a restore
+    # done first.
     restore_store(page, store_base)
-    page.reload(wait_until="load")
-    page.wait_for_function("window.__netvizReady === true", timeout=20_000)
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(300)
 
     return report(
         name, ok,

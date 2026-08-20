@@ -406,6 +406,11 @@
       .test-report-row { display: flex; gap: 0.5rem; padding: 1px 0; }
       .test-report-row.pass .test-report-mark { color: #4ade80; }
       .test-report-row.fail .test-report-mark { color: #fb9f3a; }
+      /* A THIRD state, deliberately not styled as either of the other two: a
+         check that could not run has not passed and has not failed, and drawing
+         it as either is the lie selftest.js's `skipped` exists to prevent. */
+      .test-report-row.skip .test-report-mark { color: #9c96b8; }
+      .test-report-row.skip { opacity: .7; }
       .test-report-label { flex: 0 0 220px; }
       .test-report-why { flex: 1 1 auto; min-width: 0; opacity: .65; }
       .test-note { margin: 6px 0 0; opacity: .65; font-size: 12px; }

@@ -61,10 +61,13 @@ function fakeDom() {
   return { root, document };
 }
 
-function withDom(dom, fn) {
+/** AWAIT-AWARE, because `run()` is async: a synchronous `finally` puts the real
+ *  `document` back before the runner's promise resolves, and the panel's own
+ *  showReport then calls createElement on `undefined`. */
+async function withDom(dom, fn) {
   const real = globalThis.document;
   globalThis.document = dom.document;
-  try { return fn(); } finally { globalThis.document = real; }
+  try { return await fn(); } finally { globalThis.document = real; }
 }
 
 /** Writes land in CONFIG, so `cfg()` reads them back the way the real
@@ -84,9 +87,9 @@ function configApplier(into) {
   };
 }
 
-function withCleanTest(fn) {
+async function withCleanTest(fn) {
   const saved = JSON.parse(JSON.stringify(CONFIG.test));
-  try { return fn(); } finally { Object.assign(CONFIG.test, saved); }
+  try { return await fn(); } finally { Object.assign(CONFIG.test, saved); }
 }
 
 const click = (dom, sel) => dom.root.querySelector(sel).dispatch('click', {});
@@ -100,9 +103,9 @@ test('five categories, every option a declared schema path', () => {
   assert.equal(testPaths().length, 15);
 });
 
-test('a single-option category offers no "enable all"', () => {
+test('a single-option category offers no "enable all"', async () => {
   const dom = fakeDom();
-  withCleanTest(() => withDom(dom, () => {
+  await withCleanTest(() => withDom(dom, () => {
     const panel = createTestPanel({ settings: configApplier(), root: dom.root });
     panel.open();
     for (const cat of TEST_CATEGORIES) {
@@ -128,9 +131,9 @@ test('every option says in words what it does -- no bare checkbox', () => {
   }
 });
 
-test('"enable all" ticks only its own category', () => {
+test('"enable all" ticks only its own category', async () => {
   const dom = fakeDom();
-  withCleanTest(() => withDom(dom, () => {
+  await withCleanTest(() => withDom(dom, () => {
     const applied = [];
     const panel = createTestPanel({ settings: configApplier(applied), root: dom.root });
     panel.open();
@@ -143,9 +146,9 @@ test('"enable all" ticks only its own category', () => {
   }));
 });
 
-test('Run calls the runner with exactly the ticked paths', () => {
+test('Run calls the runner with exactly the ticked paths', async () => {
   const dom = fakeDom();
-  withCleanTest(() => withDom(dom, () => {
+  await withCleanTest(() => withDom(dom, () => {
     const runs = [];
     CONFIG.test.geo.home = true;
     const panel = createTestPanel({
@@ -159,9 +162,9 @@ test('Run calls the runner with exactly the ticked paths', () => {
   }));
 });
 
-test('Run with nothing ticked does not call the runner', () => {
+test('Run with nothing ticked does not call the runner', async () => {
   const dom = fakeDom();
-  withCleanTest(() => withDom(dom, () => {
+  await withCleanTest(() => withDom(dom, () => {
     const runs = [];
     const panel = createTestPanel({
       settings: configApplier(), runner: (p) => { runs.push(p); return []; },
@@ -175,31 +178,42 @@ test('Run with nothing ticked does not call the runner', () => {
   }));
 });
 
-test('the report draws one row per check, marked pass or fail', () => {
+test('the report draws one row per check, marked pass, fail or skipped', async () => {
   const dom = fakeDom();
-  withCleanTest(() => withDom(dom, () => {
+  await withCleanTest(() => withDom(dom, async () => {
     CONFIG.test.geo.home = true;
     const panel = createTestPanel({
       settings: configApplier(), root: dom.root,
-      runner: () => [
-        { ok: true, label: 'home', why: '51.48, 0.00' },
-        { ok: false, label: 'landmarks', why: 'Sydney is 180 deg out' },
+      // THE REAL SHAPE selftest.js returns -- `{id, status, reason}`, async.
+      // A stub with an `ok` flag and a synchronous return is what let two bugs
+      // through: run() did not await, so showReport got a Promise and drew
+      // nothing, and the failure count read `!l.ok` and called every pass a
+      // failure. verify_test_mode.py's case 5 found both.
+      runner: async () => [
+        { id: 'test.geo.home', status: 'pass', reason: 'home projects' },
+        { id: 'test.geo.landmarks', status: 'fail', reason: 'Sydney is 180 deg out' },
+        { id: 'test.feeds.netflow', status: 'skipped', reason: 'collector unreachable' },
       ],
     });
     panel.open();
     click(dom, '.test-run');
+    await new Promise((r) => { setTimeout(r, 0); });   // let the runner resolve
     const rows = dom.root.querySelectorAll('.test-report-row');
-    assert.equal(rows.length, 2);
+    assert.equal(rows.length, 3);
     assert.ok(rows[0].className.includes('pass'));
     assert.ok(rows[1].className.includes('fail'));
-    assert.match(dom.root.querySelector('.test-note').textContent, /1 of 2/);
+    assert.ok(rows[2].className.includes('skip'),
+      'a check that could not run is neither a pass nor a failure');
+    const note = dom.root.querySelector('.test-note').textContent;
+    assert.match(note, /1 of 3/);
+    assert.match(note, /1 could not run/);
     panel.close();
   }));
 });
 
-test('Enable everything ticks all fifteen', () => {
+test('Enable everything ticks all fifteen', async () => {
   const dom = fakeDom();
-  withCleanTest(() => withDom(dom, () => {
+  await withCleanTest(() => withDom(dom, () => {
     const applied = [];
     const panel = createTestPanel({ settings: configApplier(applied), root: dom.root });
     panel.open();

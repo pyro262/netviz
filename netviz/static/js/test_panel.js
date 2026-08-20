@@ -134,15 +134,26 @@ export function createTestPanel({ settings, confirmer, runner, root, onClose } =
     if (!box) return;
     box.replaceChildren();
     for (const line of lines || []) {
-      const row = el('div', `test-report-row ${line.ok ? 'pass' : 'fail'}`);
-      row.append(el('span', 'test-report-mark', line.ok ? '✓' : '✕'));
-      row.append(el('span', 'test-report-label', line.label));
-      row.append(el('span', 'test-report-why', line.why || ''));
+      // THREE STATES, not two. A check that could not run has not passed and
+      // has not failed, and drawing it as either is the lie selftest.js's
+      // `skipped` exists to prevent.
+      const state = line.status === 'skipped' ? 'skip'
+        : (line.status === 'fail' ? 'fail' : 'pass');
+      const row = el('div', `test-report-row ${state}`);
+      row.append(el('span', 'test-report-mark',
+                    state === 'skip' ? '–' : (state === 'pass' ? '✓' : '✕')));
+      row.append(el('span', 'test-report-label', line.label || line.id || ''));
+      row.append(el('span', 'test-report-why', line.why || line.reason || ''));
       box.append(row);
     }
   }
 
-  function run() {
+  /** ASYNC, and the `await` is load-bearing: selftest.js's `run` is async --
+   *  the feed checks fetch /stats.json -- so a synchronous call here hands
+   *  showReport a Promise, which is not iterable and draws nothing at all.
+   *  The unit suite's runner stub returns an array, so it could not see this;
+   *  verify_test_mode.py's case 5 waited 20s for a report row and found none. */
+  async function run() {
     const paths = ticked();
     if (!paths.length) {
       // A run of nothing is a run that always passes, which teaches that the
@@ -153,12 +164,26 @@ export function createTestPanel({ settings, confirmer, runner, root, onClose } =
     }
     if (!runner) { setNote('No self-test runner is wired up.'); return; }
     setNote(`Running ${paths.length} check${paths.length === 1 ? '' : 's'}...`);
-    const lines = runner(paths) || [];
+    let lines;
+    try {
+      lines = (await runner(paths)) || [];
+    } catch (err) {
+      // A runner that throws must not leave "Running N checks..." on screen for
+      // ever, which reads as a run still in progress.
+      setNote(`The self-test could not run: ${err && err.message ? err.message : err}`);
+      showReport([]);
+      return;
+    }
     showReport(lines);
-    const failed = lines.filter((l) => !l.ok).length;
-    setNote(failed
+    // BY STATUS, not by an `ok` flag: selftest.js reports
+    // 'pass' | 'fail' | 'skipped', and counting `!l.ok` made every line a
+    // failure -- including the passes.
+    const failed = lines.filter((l) => l.status === 'fail').length;
+    const skipped = lines.filter((l) => l.status === 'skipped').length;
+    const done = failed
       ? `${failed} of ${lines.length} checks failed.`
-      : `All ${lines.length} checks passed.`);
+      : `All ${lines.length} checks passed.`;
+    setNote(skipped ? `${done} ${skipped} could not run.` : done);
   }
 
   function close() {
