@@ -442,12 +442,92 @@ export const SCHEMA = {
   },
 
   // ------------------------------------------------------------------ menu --
-  'menu.testMode': {
+  // ---------------------------------------------------------- test mode --
+  // Fourteen choices where there used to be one boolean. All `uniform`: none
+  // of them has a live object to poke -- they are read at the moment a preview
+  // or a run happens, the same shape traffic.*'s configOnly settings have.
+  'test.preview.layers': {
     type: 'bool', strategy: 'uniform',
     help: 'Hover a layer toggle in the menu and it applies live, so you can '
-        + 'see it before you click. Move away and it reverts. Only the '
-        + 'twelve layer toggles preview -- not the stats rail, which resizes '
-        + 'the renderer, and not the actions.',
+        + 'see it before you click. Move away and it reverts.',
+  },
+  'test.preview.settings': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Hover a row in the settings panel and preview it the same way. Off '
+        + 'by default: the panel is 82 rows, and a sweep of the cursor down it '
+        + 'would repaint the wall over and over.',
+  },
+  'test.preview.theme': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Hover a palette in the Theme picker and see it on the wall before '
+        + 'choosing it. A theme change recolors every element that follows it, '
+        + 'so this is the most expensive of the four previews.',
+  },
+  'test.preview.rail': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Preview the stats rail by hovering its menu row. OFF by default and '
+        + 'deliberately so: the rail is a relayout, so every pass of the cursor '
+        + "resizes the renderer and rebuilds the bloom pass's render targets. "
+        + 'Useful while deciding whether to run the rail at all; not something '
+        + 'to leave on.',
+  },
+  'test.arcs.flow': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Draw one sample flow arc on demand, so the flow color and glow can '
+        + 'be judged without waiting for real traffic.',
+  },
+  'test.arcs.blocked': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Draw one sample blocked arc on demand. Blocks arrive rarely and live '
+        + '18 seconds, so judging the alarm layer otherwise means waiting.',
+  },
+  'test.arcs.custom': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Draw one sample arc per custom arc you have defined, so a rule that '
+        + 'never fires can still be seen.',
+  },
+  'test.arcs.flood': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Draw 200 sample arcs at once, to see what a busy corridor looks like '
+        + 'at the current opacity and glow. Drawn straight through the arc pool '
+        + 'and never injected as events, so no counter on the rail moves.',
+  },
+  'test.layers.cycle': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Step through every layer in turn, on then off, so one pass shows what '
+        + 'each contributes. Reverts to the layers you had when it finishes.',
+  },
+  'test.feeds.netflow': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Include the netflow feed in the self-test: is it arriving, and how '
+        + 'stale is the newest event.',
+  },
+  'test.feeds.blocks': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Include the block feed in the self-test. A live router with nothing '
+        + 'blocked is indistinguishable from a dead syslog feed on the globe '
+        + 'alone; the collector counters tell them apart.',
+  },
+  'test.feeds.socket': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Include the WebSocket in the self-test: is this display connected, '
+        + 'and how long since the last frame arrived.',
+  },
+  'test.feeds.collector': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Include the collector in the self-test: /health.json, /stats.json '
+        + 'and the GeoIP miss rate.',
+  },
+  'test.geo.landmarks': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Check the projection numerically against known landmarks rather than '
+        + 'by eye. A mirrored globe looks perfectly fine until you know one.',
+  },
+  'test.geo.home': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Check that home is where the collector says it is. This was the '
+        + "Austin placeholder for a week, which put every arc's near end in the "
+        + 'wrong state.',
   },
 
   // -------------------------------------------------------------- layers --

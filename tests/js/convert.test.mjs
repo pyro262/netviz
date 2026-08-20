@@ -53,3 +53,28 @@ test('convertStored does not mutate its input', () => {
   convertStored(stored);
   assert.deepEqual(Object.keys(stored), ['arcs.rules']);
 });
+
+// ---------------------------------------------------------------------------
+// The registry's second entry: test mode's one boolean becomes a set.
+
+test('an old test-mode boolean converts to layer-toggle preview', () => {
+  const { patch, pending } = convertStored({ 'menu.testMode': true });
+  assert.equal(patch['test.preview.layers'], true);
+  assert.equal(Object.prototype.hasOwnProperty.call(patch, 'menu.testMode'), false);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].id, 'test.preview');
+});
+
+test('test mode off converts to preview off, not to absent', () => {
+  const { patch } = convertStored({ 'menu.testMode': false });
+  assert.equal(patch['test.preview.layers'], false,
+    'a display that turned it OFF chose that, and the choice survives');
+});
+
+test('two pending conversions stage as one write', () => {
+  const stored = { 'arcs.rules': [], 'menu.testMode': true };
+  const out = stageConversion(stored, pendingConversions(stored));
+  assert.equal(out.ok, true);
+  assert.deepEqual(Object.keys(out.next).sort(),
+                   ['arcs.custom', 'test.preview.layers']);
+});

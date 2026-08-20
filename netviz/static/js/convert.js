@@ -44,6 +44,26 @@ export const CONVERTERS = [
     summary: (n) => `${plural(n, 'custom arc')} you saved under the old name `
                   + `would be stored under the new one.`,
   },
+  {
+    // The registry's second entry, and it needed no new machinery -- which is
+    // the whole argument for there being a registry rather than three ad-hoc
+    // migrations.
+    id: 'test.preview',
+    detect: (stored) => hasOwn(stored, 'menu.testMode'),
+    writes: () => ['test.preview.layers'],
+    count: () => 1,
+    convert: (stored) => {
+      const out = { ...stored };
+      // Carried across in BOTH directions. A display that turned test mode off
+      // made a choice, and a converter that only carried `true` would quietly
+      // hand it back the shipped default.
+      out['test.preview.layers'] = stored['menu.testMode'] === true;
+      delete out['menu.testMode'];
+      return out;
+    },
+    summary: () => 'Test mode was one switch and is now a set of choices; the '
+                 + 'layer-preview half keeps your setting and the rest start off.',
+  },
 ];
 
 /** Which converters have something to do against this stored blob. */

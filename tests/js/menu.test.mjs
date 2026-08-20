@@ -33,7 +33,7 @@ test('the menu offers the handful of things worth one gesture', () => {
   // Not all 82 settings. A menu that lists everything is a panel with worse
   // ergonomics, and the panel is a later step.
   const ids = menuModel(STATE).map((i) => i.id);
-  assert.deepEqual(ids, ['lookHere', 'rail', 'testMode', 'layers', 'settings']);
+  assert.deepEqual(ids, ['lookHere', 'rail', 'layers', 'settings']);
 });
 
 test('a toggle reports the state it is actually in', () => {
@@ -44,15 +44,13 @@ test('a toggle reports the state it is actually in', () => {
   assert.equal(on.kind, 'toggle');
 });
 
-test('the Test mode row reflects state.testMode and sits directly above Layers', () => {
-  const on = byId(menuModel({ ...STATE, testMode: true }), 'testMode');
-  const off = byId(menuModel({ ...STATE, testMode: false }), 'testMode');
-  assert.equal(on.on, true);
-  assert.equal(off.on, false);
-  assert.equal(on.kind, 'toggle');
-  const ids = menuModel(STATE).map((i) => i.id);
-  assert.equal(ids.indexOf('testMode') + 1, ids.indexOf('layers'),
-    'Test mode must sit directly above Layers');
+test('there is no Test mode toggle -- it is fourteen choices in a dialog now', () => {
+  // One boolean that meant four different things became `test.*`, and a
+  // toggle row cannot express a set. Task 16 puts a "Test Mode..." action in
+  // its place; what is asserted here is that the toggle is GONE rather than
+  // left drawing a control that writes a path nothing reads.
+  const ids = menuModel({ ...STATE, testMode: true }).map((i) => i.id);
+  assert.equal(ids.includes('testMode'), false);
 });
 
 test('every layer toggle mirrors its layer', () => {
@@ -963,16 +961,16 @@ test('a fresh open forgets the previous dismissal', () => {
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
-/** Every test below flips CONFIG.menu.testMode for the duration of one
+/** Every test below flips CONFIG.test.preview.layers for the duration of one
  *  check; this restores it no matter how the body exits, the same discipline
  *  the input.lock test above uses. CONFIG is a shared module-level singleton
  *  and this file's tests run in one process, in order. */
 async function withTestMode(on, fn) {
-  CONFIG.menu.testMode = on;
+  CONFIG.test.preview.layers = on;
   try {
     await fn();
   } finally {
-    CONFIG.menu.testMode = false;
+    CONFIG.test.preview.layers = false;
   }
 }
 
@@ -1274,17 +1272,17 @@ test('schemaTitle: a path with no schema entry gets no title, not undefined-as-a
   assert.equal(schemaTitle('not.a.real.path.at.all'), undefined);
 });
 
-test('schemaTitle: every one of the fourteen schema-backed menu rows has a schema help string', () => {
+test('schemaTitle: every one of the thirteen schema-backed menu rows has a schema help string', () => {
   // If any of these ever lost its `help` in settings.js, this menu row would
   // silently go tooltip-less -- catch that here rather than on the wall.
   const paths = [
-    'rail.enabled', 'menu.testMode',
+    'rail.enabled',
     'layers.cityLights', 'layers.coastline', 'layers.bordersWatched',
-    'layers.bordersWorld', 'layers.admin1', 'layers.stars', 'layers.aurora',
-    'layers.atmosphere', 'layers.ripples', 'layers.countryFlash',
+    'layers.bordersWorld', 'layers.admin1', 'layers.stars', 'layers.milkyway',
+    'layers.aurora', 'layers.atmosphere', 'layers.ripples', 'layers.countryFlash',
     'layers.clouds', 'layers.lightning',
   ];
-  assert.equal(paths.length, 14);
+  assert.equal(paths.length, 14);   // rail + thirteen layers
   for (const path of paths) {
     const e = entry(path);
     assert.ok(e, `no schema entry for ${path}`);
@@ -1309,14 +1307,11 @@ test('every layer toggle row carries a title matching the first sentence of its 
   }
 });
 
-test('the rail and Test mode rows carry a title from their own schema paths', () => {
+test('the rail row carries a title from its own schema path', () => {
   const model = menuModel(STATE);
   const rail = byId(model, 'rail');
-  const testMode = byId(model, 'testMode');
   assert.ok(rail.title, 'rail row has no title');
   assert.equal(rail.title, firstSentence(entry('rail.enabled').help));
-  assert.ok(testMode.title, 'testMode row has no title');
-  assert.equal(testMode.title, firstSentence(entry('menu.testMode').help));
 });
 
 test('every action row -- Look here, Custom arcs, Settings, Reset -- has a hand-written one-sentence title', () => {

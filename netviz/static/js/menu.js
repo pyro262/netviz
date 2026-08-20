@@ -146,17 +146,12 @@ const LAYER_GROUPS = [
  * menuModel(state) → Array<Item>
  *
  * Builds the menu structure given the display's current state.
- * state is {railOn, layers: {...thirteen keys...}, layersExpanded, testMode,
+ * state is {railOn, layers: {...thirteen keys...}, layersExpanded,
  * canLookHere, settingsPanel, customArcsPanel, canReset}.
  *
  * Returns an array of top-level menu items in this order:
  * - lookHere: action, enabled only when pointer was on globe
  * - rail: toggle, reflects current rail state
- * - testMode: toggle, reflects state.testMode -- sits directly above Layers
- *   so it reads as governing what follows: with it on, hovering a layer
- *   toggle below previews that layer live before you commit to it with a
- *   click. It is a pure config write with nothing of its own to preview, so
- *   it does not preview itself.
  * - layers: submenu, click-to-expand, with a group header (kind: 'group',
  *   non-interactive) before each of the four groups and a toggle for each
  *   of the thirteen layers -- present only while state.layersExpanded is
@@ -184,14 +179,6 @@ export function menuModel(state) {
       on: state.railOn,
       enabled: true,
       title: schemaTitle('rail.enabled'),
-    },
-    {
-      id: 'testMode',
-      label: 'Test mode',
-      kind: 'toggle',
-      on: !!state.testMode,
-      enabled: true,
-      title: schemaTitle('menu.testMode'),
     },
     {
       id: 'layers',
@@ -268,7 +255,7 @@ export function menuModel(state) {
  *  reusing menuModel's layer ids -- but the top-level toggles read friendlier
  *  than their path (`rail`, not `rail.enabled`), so the handful that differ
  *  are named here rather than guessed from the id at click time. */
-const TOGGLE_PATHS = { rail: 'rail.enabled', testMode: 'menu.testMode' };
+const TOGGLE_PATHS = { rail: 'rail.enabled' };
 
 /**
  * Delay before a hovered layer row actually previews, in milliseconds.
@@ -331,7 +318,7 @@ function clampPosition(node, x, y) {
  * `preview` is the RAW, non-persisting applier (`createApplier(ctx)` in
  * main.js, unwrapped by `withPersistence`) -- optional, and used for exactly
  * one thing: applying a layer live while the pointer merely hovers it, under
- * `menu.testMode`. Nothing a hover does may ever reach `localStorage`, which
+ * `test.preview.*`. Nothing a hover does may ever reach `localStorage`, which
  * is why this is a second applier rather than a flag on `settings` -- a
  * hover that happened to go through the persisting one would freeze
  * whatever the pointer last touched into every future boot. A menu built
@@ -395,12 +382,15 @@ export function createMenu({
    *  and relayouts the menu itself has no business firing on mouse
    *  movement), not the actions, not Test mode's own row, not a group
    *  header. */
-  function wireHoverPreview(row, path, flippedValue) {
+  function wireHoverPreview(row, path, flippedValue, gate) {
     row.addEventListener('mouseenter', () => {
-      // Read fresh, not captured at menu-build time: Test mode is itself a
-      // toggle in this same menu, so a stale copy would mean the row above
-      // it takes an extra open/close cycle to take effect.
-      if (!cfg('menu.testMode', false)) return;
+      // The gate is a PATH now, not one global boolean: a person can ask for
+      // layer previews without asking for rail previews, which is the
+      // difference between a hidden exclusion and a choice with its
+      // consequence written next to it. Read fresh on every hover, never
+      // captured at menu-build time -- the Test Mode dialog can change it
+      // while this menu is open.
+      if (!cfg(gate, false)) return;
       // Moving from one previewed row to another reverts the first before
       // the second is even scheduled -- only one row ever previews at once.
       cancelPreview();
@@ -496,7 +486,6 @@ export function createMenu({
   function currentState(point) {
     return {
       railOn: cfg('rail.enabled', false),
-      testMode: cfg('menu.testMode', false),
       layers: {
         cityLights: cfg('layers.cityLights', true),
         coastline: cfg('layers.coastline', true),
@@ -636,13 +625,18 @@ export function createMenu({
           dropPreview(path);
           settings.apply({ [path]: !item.on });
         }));
-        // Hover preview is scoped to exactly the thirteen layer toggles --
-        // their ids ARE `layers.<key>`, which is also the schema path, so
-        // this is the same "id starts with layers." check that selects them
-        // everywhere else in this file. Requires a `preview` applier; a menu
-        // built without one (most tests) attaches no listeners at all.
+        // Two gates, not one. The thirteen layer toggles -- their ids ARE
+        // `layers.<key>`, which is also the schema path -- preview under
+        // `test.preview.layers`; the rail row previews under its own
+        // `test.preview.rail`, which is off by default because the rail is a
+        // relayout and every pass of the cursor would resize the renderer.
+        // That exclusion used to be hardcoded and invisible; it is a choice
+        // with its cost written beside it now. Requires a `preview` applier;
+        // a menu built without one (most tests) attaches no listeners at all.
         if (preview && item.id.startsWith('layers.')) {
-          wireHoverPreview(row, path, !item.on);
+          wireHoverPreview(row, path, !item.on, 'test.preview.layers');
+        } else if (preview && item.id === 'rail') {
+          wireHoverPreview(row, path, !item.on, 'test.preview.rail');
         }
       }
       return row;

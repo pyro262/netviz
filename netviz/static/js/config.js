@@ -249,15 +249,22 @@ export const CONFIG = {
 
   // ----------------------------------------------------------------- menu --
 
-  menu: {
-    // With this on, hovering a layer toggle in the menu's Layers submenu
-    // applies it live -- through the raw, non-persisting applier, never
-    // localStorage -- so a passer-by can see what a layer looks like before
-    // committing to it with a click. Moving off the row reverts to whatever
-    // was actually on screen before the hover started. Off by default: a
-    // sweep of the mouse down the menu must not repaint the wall for anyone
-    // who is not deliberately trying layers on.
-    testMode: false,
+  // ----------------------------------------------------------- test mode --
+  //
+  // One boolean until 0.7.0, and it meant four different things at once. Now
+  // each is its own choice, all off by default: nothing here repaints the wall
+  // for anyone who has not deliberately asked for it.
+  //
+  // `preview.*` is the hover behavior -- applied through the raw, non-persisting
+  // applier, never localStorage, and reverted the moment the cursor leaves.
+  // `arcs.*` and `layers.cycle` draw sample geometry on demand. `feeds.*` and
+  // `geo.*` are what the self-test checks.
+  test: {
+    preview: { layers: false, settings: false, theme: false, rail: false },
+    arcs: { flow: false, blocked: false, custom: false, flood: false },
+    layers: { cycle: false },
+    feeds: { netflow: false, blocks: false, socket: false, collector: false },
+    geo: { landmarks: false, home: false },
   },
 
   // --------------------------------------------------------------- layers --
