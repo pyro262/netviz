@@ -443,7 +443,7 @@ export const SCHEMA = {
 
   // ------------------------------------------------------------------ menu --
   // ---------------------------------------------------------- test mode --
-  // Fourteen choices where there used to be one boolean. All `uniform`: none
+  // Fifteen choices where there used to be one boolean. All `uniform`: none
   // of them has a live object to poke -- they are read at the moment a preview
   // or a run happens, the same shape traffic.*'s configOnly settings have.
   'test.preview.layers': {

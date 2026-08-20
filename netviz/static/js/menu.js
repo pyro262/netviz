@@ -203,6 +203,17 @@ export function menuModel(state) {
     // Absent, not disabled, when the display is locked: the lock says
     // configuring is not on offer, and a greyed row advertises a control
     // nobody in the room can use.
+    ...(state.testPanel ? [{
+      id: 'testMode',
+      label: 'Test Mode…',
+      kind: 'action',
+      enabled: true,
+      // The ellipsis is the signal that this opens something. It was a bare
+      // toggle whose only explanation was a tooltip -- and a wall display is
+      // never hovered, so that explanation reached nobody.
+      title: 'Opens Test Mode: preview settings by hovering them, draw sample '
+           + 'arcs, and run a self-test against the feeds and the map.',
+    }] : []),
     ...(state.customArcsPanel ? [{
       id: 'customArcs',
       label: 'Custom arcs…',
@@ -331,7 +342,7 @@ function clampPosition(node, x, y) {
  * settings.apply -- shows correctly the next time somebody opens it.
  */
 export function createMenu({
-  rig, settings, preview, customArcsPanel, settingsPanel, onReset, root,
+  rig, settings, preview, customArcsPanel, settingsPanel, testPanel, onReset, root,
   hoverDelayMs = HOVER_DELAY_MS,
 }) {
   let node = null;
@@ -508,6 +519,7 @@ export function createMenu({
       // a row whose click handler is guarded out. Same rule as customArcsPanel.
       settingsPanel: !!settingsPanel,
       customArcsPanel: !!customArcsPanel,
+      testPanel: !!testPanel,
       canReset: !!onReset,
     };
   }
@@ -653,6 +665,9 @@ export function createMenu({
           // rather than letting them overlap. The menu is what dispatches
           // every action, so it is the one place that knows about all three
           // panels; no panel needs to know another exists.
+          if (item.id === 'testMode' && testPanel) {
+            closeOtherPanelsThen('test', () => testPanel.open());
+          }
           if (item.id === 'customArcs' && customArcsPanel) {
             closeOtherPanelsThen('customArcs', () => customArcsPanel.open());
           }

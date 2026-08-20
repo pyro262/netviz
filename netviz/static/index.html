@@ -369,6 +369,54 @@
       .confirm-will { color: #fb9f3a; }
       .confirm-wont { color: #4ade80; }
       .confirm-note { margin-top: 10px; opacity: .65; font-size: 12px; }
+      /* ------------------------------------------------------ test mode --
+         A MODAL, unlike the two rails: Test Mode takes the display over for
+         the length of a run, which is a modal act. Centered like the custom
+         arcs panel and mounted on document.body for the same stacking-context
+         reason -- #stage is `position: fixed` and #rail is a later sibling.
+
+         Every option carries its explanation ON the panel rather than in a
+         `title`: a wall display is never hovered, which is the same argument
+         that printed Randomize's scope under its button. */
+      .test-panel {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        z-index: 40; max-width: min(760px, 92vw); max-height: 86vh;
+        overflow-y: auto; box-sizing: border-box;
+        background: #12102ceb; border: 1px solid #7201a8; border-radius: 4px;
+        padding: 18px 20px; color: #e9e2ff;
+        font: 400 13px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      .test-title { font-size: 15px; margin-bottom: 2px; }
+      .test-hint { opacity: .55; margin-bottom: 12px; }
+      .test-cat { margin-bottom: 14px; }
+      .test-cat-head { display: flex; align-items: baseline; gap: 0.6rem;
+                       border-bottom: 1px solid #ffffff14; padding-bottom: 2px; }
+      .test-cat-title { font-size: 11px; letter-spacing: 0.14em;
+                        text-transform: uppercase; color: #9c96b8; margin: 0; }
+      .test-all { margin-left: auto; font-size: 10px; letter-spacing: 0.08em;
+                  padding: 0.05rem 0.4rem; }
+      .test-cat-lead { margin: 4px 0 6px; opacity: .6; }
+      .test-opt { display: block; margin: 3px 0; cursor: pointer; }
+      .test-opt-label { margin-left: 6px; }
+      /* The help sits under its own option, indented past the checkbox, so a
+         person reads "what it is" and "what it costs" as one thing. */
+      .test-opt-help { display: block; margin: 1px 0 4px 22px; opacity: .5;
+                       font-size: 12px; }
+      .test-report { margin: 10px 0; }
+      .test-report-row { display: flex; gap: 0.5rem; padding: 1px 0; }
+      .test-report-row.pass .test-report-mark { color: #4ade80; }
+      .test-report-row.fail .test-report-mark { color: #fb9f3a; }
+      .test-report-label { flex: 0 0 220px; }
+      .test-report-why { flex: 1 1 auto; min-width: 0; opacity: .65; }
+      .test-note { margin: 6px 0 0; opacity: .65; font-size: 12px; }
+      .test-foot { display: flex; gap: 8px; margin-top: 14px;
+                   justify-content: flex-end; }
+      .test-panel input, .test-panel button {
+        background: #0b0916; color: inherit; border: 1px solid #2a2540;
+        border-radius: 3px; padding: 3px 8px; font: inherit; cursor: pointer;
+      }
+      .test-panel button:hover { border-color: #9333ea; }
+      .test-run { border-color: #7201a8; }
       .confirm-foot { display: flex; gap: 8px; justify-content: flex-end;
                       margin-top: 16px; }
       .confirm-foot button {

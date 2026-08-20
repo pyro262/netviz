@@ -24,6 +24,7 @@ import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
 import { createCustomArcsPanel } from './custom_arcs_panel.js';
+import { createTestPanel } from './test_panel.js';
 import { createSettingsPanel } from './settings_panel.js';
 import { createConfirm } from './confirm.js';
 import { coerce, settingLabel, setThemeLibrary } from './settings.js';
@@ -597,6 +598,13 @@ async function boot() {
   const settingsPanel = createSettingsPanel({
     preview, settings, storage, root: document.body, onLayout: resize, confirmer,
   });
+  // Test Mode. A MODAL, unlike the two rails: it takes the display over for
+  // the length of a run. `settings` and not `preview`, because a ticked check
+  // is an ordinary persisted setting -- somebody who ticked four and reloaded
+  // should find them still ticked.
+  const testPanel = createTestPanel({
+    settings, confirmer, root: document.body,
+  });
   // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
   // rules, then reload so config.js and /config.json decide again from the
   // top. The rules are kept because they are the operator's own work -- this
@@ -656,7 +664,7 @@ async function boot() {
     });
   } : null;
   const menu = createMenu({
-    rig, settings, preview, customArcsPanel, settingsPanel, onReset,
+    rig, settings, preview, customArcsPanel, settingsPanel, testPanel, onReset,
     root: document.body,
   });
   input = startInput({
