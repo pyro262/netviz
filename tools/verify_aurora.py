@@ -276,7 +276,7 @@ def case2_stands_up_at_the_limb(page):
         check(False, "2: the curtains stand off the disc at the limb",
               f"only {len(band)} lifted pixels outside the silhouette; "
               f"{out['total']} lifted in total")
-        return band
+        return band, out["total"]
     # BOTH NUMBERS, and the floor of 40 this case shipped with was too low --
     # measured against an injected break that collapsed R_INNER to 1.0495 (a
     # shell with no height at all), which still scored 101-142 pixels outside
@@ -298,7 +298,7 @@ def case2_stands_up_at_the_limb(page):
           f"height-less shell scores ~120), spanning {lo:.4f}..{hi:.4f} disc "
           f"radii = {spread:.4f} of spread (want >=0.015); {out['total']} lifted "
           f"in total")
-    return band
+    return band, out["total"]
 
 
 def case3_green_below_red(page, band) -> None:
@@ -428,7 +428,7 @@ def case5_nightside_offset(page) -> None:
           f"exactly={agrees}; band thicker at midnight={thicker}")
 
 
-def case6_no_reading_no_aurora(page) -> None:
+def case6_no_reading_no_aurora(page, storm_total) -> None:
     """6: no reading is not the same as a quiet sky.
 
     Measured against a SECOND no-reading frame, so what is asserted is that two
@@ -438,7 +438,14 @@ def case6_no_reading_no_aurora(page) -> None:
 
     This case also calibrates the threshold every case above uses: if the noise
     floor between two identical frames were anywhere near DIFF_MIN, none of
-    those measurements would mean anything."""
+    those measurements would mean anything.
+
+    MEASURED AS A RATIO AGAINST THE STORM, not as a fixed pixel count. The count
+    is load-sensitive -- 0 differing pixels on an idle machine and 160 with
+    another verifier running beside it, because a slower render loop leaves more
+    of the scene un-settled between the two captures. What the case actually
+    claims is that no reading draws NOTHING NEXT TO A STORM, and a ratio says
+    that whatever the machine happens to be doing."""
     set_reading(page, None)
     settle(page)
     grab(page, "storm")          # deliberately the same state as `quiet`
@@ -457,10 +464,15 @@ def case6_no_reading_no_aurora(page) -> None:
     # Put a real reading back, so a later run starts from a live sky rather than
     # from this case's leftovers.
     set_reading(page, 3)
-    check(not visible and n["n"] < 40, "6: no reading means no aurora",
+    # Both counts use the same 3-pixel stride, so they compare directly. 5% is
+    # wide on purpose: the idle measurement is 0%, and a build that drew an
+    # aurora with no reading would be at 100%.
+    ratio = n["n"] / storm_total if storm_total else 1.0
+    check(not visible and ratio < 0.05, "6: no reading means no aurora",
           f"mesh visible={visible} (must be False); two no-reading frames differ "
-          f"in {n['n']} sampled pixels, worst lift {n['worst']} against a "
-          f"threshold of {DIFF_MIN}")
+          f"in {n['n']} sampled pixels against the storm's {storm_total} "
+          f"({ratio * 100:.1f}%, want <5%), worst lift {n['worst']} against a "
+          f"per-pixel threshold of {DIFF_MIN}")
 
 
 def restore_the_scene(page, original) -> None:
@@ -501,11 +513,11 @@ def run(page) -> None:
     quiet_the_scene(page)
     capture_pair(page)
     case1_night_side(page)
-    band = case2_stands_up_at_the_limb(page)
+    band, storm_total = case2_stands_up_at_the_limb(page)
     case3_green_below_red(page, band)
     case4_planet_occludes(page)
     case5_nightside_offset(page)
-    case6_no_reading_no_aurora(page)
+    case6_no_reading_no_aurora(page, storm_total)
     restore_the_scene(page, original)
 
 

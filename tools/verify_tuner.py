@@ -1244,8 +1244,15 @@ def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
 
     said = page.evaluate("""async () => {
       const t = await import('./js/tuner.js');
+      const sp = await import('./js/settings_panel.js');
       const rows = [...document.querySelectorAll('.tuner-row')];
-      const scope = t.randomizeScope();
+      // THE PANEL'S OWN SCOPE, not tuner.js's slider scope. `randomizeScope`
+      // answers "which SLIDERS does a roll move", which was the whole story
+      // until 0.7.0 merged the theme in -- Randomize now rolls the element
+      // catalogue too, so the slider count (47) is no longer what the button
+      // does (69). Reading the wrong one here made this case demand that the
+      // panel print a number smaller than its own behavior.
+      const scope = sp.panelScope();
       const el = document.querySelector('.tuner-scope');
       const marked = rows.map((r) => {
         const m = r.querySelector('.tuner-mark');
@@ -1283,7 +1290,7 @@ def case12_randomize_scope_is_stated(page, cx, cy) -> bool:
         // than carrying a second copy of it.
         expected: scope.count,
         expectedHeld: scope.heldCount,
-        flagged: t.tunerRows().map((r) => t.isRandomized(r)),
+        flagged: t.tunerRows().map((r) => sp.panelRolls(r)),
         marked, classed,
         markCount: marked.filter(Boolean).length,
         withMarks, blanked, swatch,
