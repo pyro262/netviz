@@ -25,6 +25,7 @@ import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
 import { createCustomArcsPanel } from './custom_arcs_panel.js';
 import { createTestPanel } from './test_panel.js';
+import { createSelfTest } from './selftest.js';
 import { createSettingsPanel } from './settings_panel.js';
 import { createConfirm } from './confirm.js';
 import { coerce, settingLabel, setThemeLibrary } from './settings.js';
@@ -141,7 +142,11 @@ function connect(onEvent) {
     ws.addEventListener('error', () => ws.close());
   };
   open();
-  return { isOpen: () => socket !== null && socket.readyState === WebSocket.OPEN };
+  return {
+    isOpen: () => socket !== null && socket.readyState === WebSocket.OPEN,
+    /** The socket itself, for the self-test's readyState check. */
+    raw: () => socket,
+  };
 }
 
 async function boot() {
@@ -315,7 +320,33 @@ async function boot() {
   // timestamp, so the drain cannot be dated; ignore bursts until it is over.
   const REPLAY_DRAIN_SECONDS = 5;
   const bootedAt = performance.now() / 1000;
-  const link = connect((ev) => {
+  // Test Mode's pause. RENDERER-SIDE ONLY: the collector keeps running, Influx
+  // keeps receiving and no counter on the rail is disturbed -- events are held
+  // here and drained when the run ends, so a sample arc is judged on a clean
+  // globe rather than against live traffic. Capped, because a run that hangs
+  // must not grow this without bound; the overflow is dropped from the FRONT,
+  // so what drains is the most recent traffic rather than the stalest.
+  const HELD_MAX = 2000;
+  let held = null;
+  const pauseFeed = () => { if (!held) held = []; };
+  const resumeFeed = () => {
+    const queue = held;
+    held = null;
+    if (!queue) return;
+    for (const e of queue) onEvent(e);
+  };
+
+  const onEvent = (ev) => {
+    if (held) {
+      held.push(ev);
+      if (held.length > HELD_MAX) held.shift();
+      return;
+    }
+    drawEvent(ev);
+  };
+
+  const link = connect(onEvent);
+  function drawEvent(ev) {
     // DNS is dropped UNLESS a rule is explicitly aimed at the reason it was
     // hidden -- a port matcher naming a DNS port, or an address matcher no
     // broader than the resolver-list entry that hid it. A rule broad enough to
@@ -353,7 +384,7 @@ async function boot() {
         rig.visit(hit.lat, hit.lon);
       }
     }
-  });
+  }
 
   const build = watchForNewBuild();
   const degraded = startDegraded({ isOpen: link.isOpen });
@@ -602,8 +633,54 @@ async function boot() {
   // the length of a run. `settings` and not `preview`, because a ticked check
   // is an ordinary persisted setting -- somebody who ticked four and reloaded
   // should find them still ticked.
+  //
+  // SAMPLE ARCS GO STRAIGHT THROUGH THE POOL, never through the socket
+  // callback: injecting fabricated events would run them past classify.js and
+  // the rail's counters, and a test that pollutes the numbers it is testing is
+  // worse than no test. `arcs.spawn(ev, cls)` with an explicit class is that
+  // path -- the class is given, so classNameFor never runs.
+  const SAMPLE_ENDS = [
+    { sll: [35.68, 139.69], dll: null },        // Tokyo
+    { sll: [-33.87, 151.21], dll: null },       // Sydney
+    { sll: [51.51, -0.13], dll: null },         // London
+    { sll: [-23.55, -46.63], dll: null },       // Sao Paulo
+  ];
+  const selfTest = createSelfTest({
+    arcs: {
+      drawSample(cls, count) {
+        // CONFIG.home is a whole object or null (the collector fills it
+        // from NETVIZ_HOME_LAT/LON), never a dotted pair.
+        const h = CONFIG.home;
+        const homeLL = h ? [h.lat, h.lon] : [0, 0];
+        const wanted = cls === 'custom' ? cfg('arcs.custom', []).length : count;
+        for (let i = 0; i < wanted; i += 1) {
+          const end = SAMPLE_ENDS[i % SAMPLE_ENDS.length];
+          const drawn = cls === 'custom' ? `rule${(i % Math.max(1, wanted)) + 1}` : cls;
+          arcs.spawn({ k: cls === 'block' ? 'block' : 'flow',
+                       sll: end.sll, dll: homeLL, b: 1 }, drawn, []);
+        }
+        return wanted;
+      },
+      count: () => arcs.liveCount(),
+    },
+    project: (lat, lon) => window.__netviz.project(lat, lon),
+    // The renderer's OWN position function, which is where `theta = -lon`
+    // actually lives -- see the landmark check in selftest.js for why a screen
+    // projection cannot answer this on its own.
+    vec3: (lat, lon) => latLonToVec3(lat, lon, GLOBE_RADIUS),
+    stats: async () => {
+      const r = await fetch('/stats.json', { cache: 'no-store' });
+      if (!r.ok) throw new Error(`/stats.json returned ${r.status}`);
+      return r.json();
+    },
+    socket: () => link.raw(),
+    home: () => CONFIG.home,
+    pause: pauseFeed,
+    resume: resumeFeed,
+  });
   const testPanel = createTestPanel({
     settings, confirmer, root: document.body,
+    runner: (paths) => selfTest.run(paths),
   });
   // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
   // rules, then reload so config.js and /config.json decide again from the
