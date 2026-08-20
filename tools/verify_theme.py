@@ -440,20 +440,41 @@ def canvas_regions(page):
     return globe, sky
 
 
-# The synthetic feed's arc pool is nowhere near steady state right after
-# `__netvizReady` -- MEASURED live: sampling the same static box every second
-# for 25s with NOTHING changing (no preset switch, no interaction) still
-# climbed monotonically the whole time (mean channel value 51 -> 69 over 25
-# one-second samples), because block arcs live 18s and the pool fills over
-# multiple arrival cycles, not one. A short settle between preset switches
-# cannot outrun that trend -- it would read as "the globe recolored" when
-# what actually moved was the pool still filling. WARMUP_SECONDS burns that
-# transient off ONCE, before any preset is ever sampled; a much shorter
-# per-preset settle is enough after that, because every preset from then on
-# is compared against others sampled within the same already-settled window
-# (measured residual drift there: 1-3 per channel over several seconds, well
-# under CASE3_RGB_DIST_MIN).
-CASE3_WARMUP_SECONDS = 30
+# THE ARCS WERE THE NOISE, and this case is not about the arcs.
+#
+# Case 3 asks whether each preset recolors THE GLOBE. The globe box also
+# catches whatever arcs happen to be in flight at the instant of the shot, and
+# those are Poisson-driven and by far the brightest thing in the frame -- so
+# they went into the measurement as noise, and for two years of this file's
+# history the answer was to average more shots and warm up longer and hope the
+# noise stayed under the floor.
+#
+# MEASURED, both sides, same box, same session:
+#
+#   arcs live (30s warmup, 4 shots averaged, exactly as this case used to run)
+#     same-preset ceiling  2.97   (plasma sampled 6x, 15 pairwise distances)
+#     closest real pair    3.23   (viridis/cividis)
+#   arcs suppressed (rate to its floor + the pool cleared before each shot)
+#     same-preset ceiling  0.08   (same 6x plasma, same 15 distances)
+#     closest real pair    0.87   (magma/inferno)
+#
+# Suppressing the arcs drops the noise floor by a factor of 37 and the signal
+# stops being buried. It also removes the reason the 30s warmup existed: the
+# transient that warmup burned off was the arc pool filling, and a pool that is
+# cleared before every shot has no transient to fill.
+#
+# WHAT THAT MEASUREMENT REVEALED, and it is the whole reason this case was
+# failing: magma and inferno really do render this region 0.87 apart -- about
+# one part in 255, which no eye will ever see. They are near-twin ramps (both
+# begin #000004 and track each other closely) and the globe box is dominated by
+# the LOW-t elements -- atmosphere at 0.20, world borders at 0.24, admin1 at
+# 0.26 -- which is exactly where the two agree most. The 5.08 this file once
+# recorded for that pair was arc noise landing high on the day it was measured,
+# not a separation that was ever there. So the old floor of 4.0 was calibrated
+# against an artifact, and no threshold could have made that pair pass.
+CASE3_QUIET_FLOWS = 1        # traffic.flowsPerSecond' own schema floor
+CASE3_QUIET_SETTLE_MS = 200  # one frame plus slack, after clearing the pool
+CASE3_WARMUP_SECONDS = 3     # textures and shader compile only; no pool to fill
 CASE3_SETTLE_MS = 800
 # MEASURED: raising this from 2 to 4 nudged the same-preset noise ceiling
 # down slightly (6 repeats of plasma, post-warmup: max pairwise distance 3.42
@@ -468,26 +489,25 @@ CASE3_SAMPLES = 4
 CASE3_SAMPLE_GAP_MS = 350
 # Euclidean distance between two presets' mean RGB (0..255 per channel).
 #
-# MEASURED, same day, same box, same warmup, both numbers from THIS
-# configuration (CASE3_SAMPLES=4):
-#   - same-preset noise ceiling: plasma sampled 5 independent times (each a
-#     fresh CASE3_SETTLE_MS + CASE3_SAMPLES-averaged shot, exactly as case 3
-#     samples a real preset), all 10 pairwise distances among them --
-#     maximum observed 3.31, mean 1.66. A second run at CASE3_SAMPLES=2
-#     (the value this constant shipped with before) gave max 3.42 on 6
-#     repeats -- so the noise ceiling sits at roughly 3.3-3.5 regardless of
-#     which of the two sample counts is used.
-#   - closest real pair: magma vs inferno, 5.08 (measured in the same run
-#     that found the full 10-pair spread 4.7-22.5 across the 5 presets).
+# RE-MEASURED with the arcs suppressed -- which is what the previous version of
+# this comment instructed the next person to do ("if a future preset pair ever
+# lands closer together than magma/inferno's 5.08, or the noise ceiling creeps
+# up, RE-MEASURE both sides"). Both sides, same session, same box:
 #
-# 4.0 sits almost exactly between the two: ~0.6-0.7 above the measured noise
-# ceiling, ~1.0-1.1 below the closest real pair. That margin is real but not
-# large -- this project's own history is why it is being written down this
-# plainly rather than picked to merely look safe. If a future preset pair
-# ever lands closer together than magma/inferno's 5.08, or the noise ceiling
-# creeps up, RE-MEASURE both sides with the harness this comment describes
-# before moving this number.
-CASE3_RGB_DIST_MIN = 4.0
+#   same-preset noise ceiling   0.08   (plasma sampled 6x, all 15 pairs)
+#   closest real pair           0.87   (magma/inferno -- see the note above)
+#   next-closest real pair      4.27   (viridis/cividis)
+#
+# 0.4 sits at 5x the noise ceiling and less than half the closest real pair.
+#
+# WHAT THIS FLOOR NOW CLAIMS, stated plainly so nobody reads more into it: that
+# every preset really does reach the globe, and that no two presets are secretly
+# the same ramp. It does NOT claim the two are telling apart by eye -- at 0.87,
+# magma and inferno are not, and this file says so above rather than asserting
+# something false. The lever that proves the case still has teeth is unchanged:
+# with PRESET_IDS collapsed to ['plasma'] * 5 the distances are 0.00 and this
+# floor still fails them.
+CASE3_RGB_DIST_MIN = 0.4
 CASE3_VAL_MARGIN = 0.02      # globe box brighter than the sky box by this much
 PRESET_IDS = ["plasma", "viridis", "magma", "inferno", "cividis"]
 
@@ -666,8 +686,8 @@ def case2_closes_tuner_first(page, cx, cy) -> bool:
 
 
 def case3_presets_recolor(page, cx, cy) -> bool:
-    """3: each of the five presets visibly recolors the globe, and every
-    preset is distinguishable from every other one.
+    """3: each of the five presets really recolors the globe, and no two
+    presets are secretly the same ramp.
 
     Samples a box centered on the canvas (always where the sphere sits --
     the camera looks at the globe's own origin every frame) and a box in the
@@ -678,7 +698,8 @@ def case3_presets_recolor(page, cx, cy) -> bool:
     (10 pairs), not a hue delta: measured live, aggregating a dozen
     differently-t elements plus arcs and bloom into one region makes some
     ramp pairs (magma/inferno/cividis, which share a warm dark-to-light
-    character across most of their range) land close in raw hue, and hue
+    character across most of their range -- magma and inferno genuinely so,
+    see below) land close in raw hue, and hue
     itself is numerically unstable at the low saturation cividis produces --
     a small RGB shift swings it by tens of degrees for no real reason. RGB
     distance has neither problem and is exactly what "visibly different"
@@ -686,10 +707,14 @@ def case3_presets_recolor(page, cx, cy) -> bool:
     synthetic feed never match -- the bar is a real distance between
     independently-sampled averages, not a match against a stored picture.
 
-    `CASE3_WARMUP_SECONDS` runs once, before the first preset is even set --
-    see its own comment for the measured transient it burns off. Only after
-    that does this become a same-window comparison, which is what keeps the
-    per-preset settle short.
+    THE ARCS ARE SUPPRESSED FOR THE SAMPLE, and that is the whole of what
+    makes this case reliable -- see CASE3_QUIET_FLOWS' comment for the
+    before/after measurement. Rate to its schema floor, pool cleared before
+    every shot, both restored afterward. The globe box otherwise catches
+    whatever arcs are in flight at the instant of the screenshot, which is
+    Poisson-driven and the brightest thing in the frame: measured, that noise
+    was 2.97 against a closest real pair of 3.23, so the metric was reading
+    mostly arcs. Suppressed, the same-preset ceiling is 0.08.
 
     RED FIRST, MEASURED, against the CURRENT RGB-distance metric (an earlier
     hue-delta version of this case was separately broken and restored during
@@ -707,28 +732,48 @@ def case3_presets_recolor(page, cx, cy) -> bool:
     the sky box -- that half of the check does not depend on the ramp
     varying at all, which is why it survives as a second guard even here).
 
-    CASE3_RGB_DIST_MIN and CASE3_SAMPLES were both re-measured for this
-    fix -- see CASE3_RGB_DIST_MIN's own comment for the noise-ceiling
-    (3.31-3.42) and closest-real-pair (5.08) numbers the floor of 4.0 sits
-    between, and why that margin is real but not large."""
+    WHAT THIS CASE DOES NOT CLAIM. magma and inferno render this region
+    0.87 apart -- one part in 255, invisible. They are near-twin ramps and
+    the globe box is dominated by the low-t elements where they agree most.
+    So this case asserts that every preset REACHES the globe and that no two
+    are secretly the same ramp; it does not assert that any two are telling
+    apart by eye, because for that pair it would be false. The 5.08 this
+    file once recorded for magma/inferno was arc noise, not separation."""
     ok_open = open_theme_panel(page, cx, cy)
     if not ok_open:
-        return report("3: each preset visibly recolors the globe", False,
+        return report("3: each preset really recolors the globe", False,
                       "could not open the panel")
 
-    print(f"      case 3: warming up the arc pool for {CASE3_WARMUP_SECONDS}s "
-          "before sampling (block arcs live 18s; the pool is not at steady "
-          "state right after load)...")
     page.wait_for_timeout(CASE3_WARMUP_SECONDS * 1000)
 
+    # Read the live rate back BEFORE lowering it, and put it back in the
+    # `finally` below whatever happens -- an early return or an exception
+    # inside the sampling loop must not leave the wall running at one flow a
+    # second with nobody told why.
+    original_flows = read_live(page, "traffic.flowsPerSecond")
     globe_box, sky_box = canvas_regions(page)
     samples = {}
-    for preset_id in PRESET_IDS:
-        set_preset(page, preset_id)
-        page.wait_for_timeout(CASE3_SETTLE_MS)
-        g = sample_region_averaged(page, globe_box, CASE3_SAMPLES, CASE3_SAMPLE_GAP_MS)
-        s = sample_mean_rgb(page, sky_box)
-        samples[preset_id] = (g, s)
+    try:
+        page.evaluate("(n) => window.__netviz.settings.apply("
+                      "{'traffic.flowsPerSecond': n})", CASE3_QUIET_FLOWS)
+        for preset_id in PRESET_IDS:
+            set_preset(page, preset_id)
+            page.wait_for_timeout(CASE3_SETTLE_MS)
+            # Cleared per preset, not once: the pool refills even at the floor
+            # rate, and a shot taken later in the sweep would carry more arcs
+            # than one taken early -- which is a drift across the very sequence
+            # being compared, the same shape of error the old 30s warmup was
+            # fighting.
+            page.evaluate("() => window.__netviz.arcs.rebuild()")
+            page.wait_for_timeout(CASE3_QUIET_SETTLE_MS)
+            g = sample_region_averaged(page, globe_box, CASE3_SAMPLES,
+                                       CASE3_SAMPLE_GAP_MS)
+            s = sample_mean_rgb(page, sky_box)
+            samples[preset_id] = (g, s)
+    finally:
+        if isinstance(original_flows, (int, float)):
+            page.evaluate("(n) => window.__netviz.settings.apply("
+                          "{'traffic.flowsPerSecond': n})", original_flows)
 
     # Restore before asserting, so a failure does not leave the wall on a
     # random preset -- pendingPaths is just {appearance.theme} here, since no
@@ -751,7 +796,7 @@ def case3_presets_recolor(page, cx, cy) -> bool:
         f"val={rgb_to_hsv255(g)['val']:.3f}, sky val={rgb_to_hsv255(s)['val']:.3f}"
         for pid, (g, s) in samples.items())
     return report(
-        "3: each preset visibly recolors the globe", ok,
+        "3: each preset really recolors the globe", ok,
         f"{detail}; closest pair {worst[0]} dist={worst[1]:.2f} (min required "
         f"{CASE3_RGB_DIST_MIN}, {len(pairs)} pairs checked, all distinguishable="
         f"{moved}); brightness sanity (globe val > sky val by "
