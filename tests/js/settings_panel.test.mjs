@@ -800,3 +800,45 @@ test('the return-to-theme button is disabled only when the row IS on auto', () =
     CONFIG.appearance.colors.bordersWorld = saved;
   }
 });
+
+test('Keep persists a theme row, not just the tuner rows it always could', () => {
+  // The merge put twelve element colors and thirteen rail rows through the same
+  // Keep that only ever carried sliders and one swatch before. ONE writer, not
+  // two: `preview` has already put the value on the wall by the time Keep runs,
+  // so savePatch is the whole of the work and the expensive theme fan-out does
+  // not run a second time.
+  const saved = CONFIG.appearance.colors.cities;
+  const storage = themeStorage();
+  const writing = {
+    apply: (patch) => {
+      for (const [path, v] of Object.entries(patch)) {
+        const parts = path.split('.');
+        let o = CONFIG;
+        for (const k of parts.slice(0, -1)) o = o[k];
+        o[parts[parts.length - 1]] = v;
+      }
+      return { applied: Object.keys(patch), rejected: [] };
+    },
+  };
+  const dom = panelDom();
+  try {
+    withPanelGlobals(dom, () => {
+      const panel = createSettingsPanel({
+        preview: writing, storage, root: dom.root,
+        confirmer: { ask: (q) => q.onConfirm() },
+      });
+      panel.open();
+      const section = dom.root.querySelector('.tuner-group-body[data-group="theme"]');
+      const swatch = section.querySelectorAll('.tuner-color')[5];   // cities
+      swatch.value = '#00ff88';
+      swatch.dispatch('change', {});
+      dom.root.querySelector('.tuner-keep').dispatch('click', {});
+      const stored = JSON.parse(storage.peek(SETTINGS_KEY) || '{}');
+      assert.equal(stored['appearance.colors.cities'], '#00ff88',
+        'a theme row was edited and kept, and did not reach storage');
+      panel.close();
+    });
+  } finally {
+    CONFIG.appearance.colors.cities = saved;
+  }
+});
