@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   menuModel, isDoubleTap, DOUBLE_TAP, createMenu, firstSentence, schemaTitle,
 } from '../../netviz/static/js/menu.js';
-import { CONFIG } from '../../netviz/static/js/config.js';
+import { CONFIG, cfg } from '../../netviz/static/js/config.js';
 import { entry } from '../../netviz/static/js/settings.js';
 
 const ALL_LAYERS_ON = {
@@ -628,13 +628,19 @@ test('a toggle click applies the schema path with the flipped value, and closes'
       root: dom.root,
     });
     menu.open(0, 0, { x: 0, y: 0 });
-    // 'rail' is the top-level toggle's id, but rail.enabled (default false)
-    // is the schema path it actually has to write -- the two are not spelled
-    // the same, and that mapping is exactly what this test guards.
+    // 'rail' is the top-level toggle's id, but `rail.enabled` is the schema
+    // path it actually has to write -- the two are not spelled the same, and
+    // that mapping is exactly what this test guards.
+    //
+    // The VALUE is derived, not written down: a toggle writes the flip of
+    // whatever is live, so hardcoding `true` was really asserting the shipped
+    // default as well as the mapping, and it went red the day that default
+    // changed. What is asserted is the flip.
+    const wasOn = cfg('rail.enabled', false);
     const railRow = findByDataId(dom.root, 'rail');
     assert.ok(railRow, 'no row with data-id=rail');
     railRow.dispatch('click', { target: railRow });
-    assert.deepEqual(log, [{ 'rail.enabled': true }]);
+    assert.deepEqual(log, [{ 'rail.enabled': !wasOn }]);
     assert.equal(menu.isOpen(), false, 'a successful action must close the menu');
   });
 });

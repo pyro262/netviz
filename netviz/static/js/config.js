@@ -445,14 +445,20 @@ export const CONFIG = {
   // ----------------------------------------------------------------- rail --
   //
   // The right rail: block counts, netflow rate, feed health, clock. It takes
-  // 26% of the screen from the globe, so it is off unless a display turns it
-  // on from the on-screen menu -- one collector, several kiosks, some with
-  // and some without. This is only the shipped default; the menu's own
-  // choice is remembered in localStorage and wins on every later boot. Set
-  // this true if every display at your site should default to having it.
+  // 26% of the screen from the globe. ON by default as of 0.7.0: this is a wall
+  // display and the numbers are half of what it is for, so a kiosk that has
+  // never been configured should show them rather than wait to be asked.
+  //
+  // It was off from the first commit until now, on the ground that one
+  // collector serves several kiosks and some of them would not want it. That is
+  // still true and is still handled -- by the MENU, not by the default: the
+  // choice is per display and remembered in localStorage, and a stored answer
+  // WINS OVER THIS on every later boot. So a display that has already turned
+  // the rail off keeps it off, and this only decides what a fresh one does.
+  // Set it back to false if a majority of displays at your site want it gone.
 
   rail: {
-    enabled: false,
+    enabled: true,
     // How many color-rule rows the rail lists. Ranked by the last hour, not
     // by list order, so a rule that never fires cannot hold a slot in front of
     // one that does.

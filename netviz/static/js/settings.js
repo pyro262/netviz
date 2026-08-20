@@ -902,9 +902,11 @@ export const SCHEMA = {
   // ---------------------------------------------------------------- rail --
   'rail.enabled': {
     type: 'bool', strategy: 'relayout',
-    help: 'The right rail: block counts, netflow rate, feed health, clock. It '
+    help: 'The right rail: block counts, netflow rate, feed health, clock. On '
+        + 'by default -- the numbers are half of what a wall display is for. It '
         + 'takes 26% of the screen from the globe, so toggling it resizes the '
-        + 'renderer and corrects the camera aspect.',
+        + 'renderer and corrects the camera aspect. Your choice is remembered '
+        + 'on this screen and wins over the default from then on.',
   },
   'rail.maxRules': {
     type: 'int', min: 1, max: 20, strategy: 'uniform',
