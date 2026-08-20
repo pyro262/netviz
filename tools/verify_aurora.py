@@ -463,7 +463,41 @@ def case6_no_reading_no_aurora(page) -> None:
           f"threshold of {DIFF_MIN}")
 
 
+def restore_the_scene(page, original) -> None:
+    """Put back what quiet_the_scene turned off, and the store with it.
+
+    Playwright's `new_context()` gives this run its own ephemeral profile, so
+    the storage written here has never been a real display's -- verify_tuner.py
+    records that measurement. Restored all the same, for the same reason it is:
+    it costs nothing, and it is what keeps this honest if anyone ever swaps in
+    `launch_persistent_context()`."""
+    page.evaluate("""(v) => window.__netviz.settings.apply({
+      'camera.walk.enabled': v.walk,
+      'traffic.flowsPerSecond': v.flows,
+      'layers.lightning': v.lightning,
+      'layers.clouds': v.clouds,
+    })""", original)
+    page.evaluate("""(v) => {
+      if (v === null) window.localStorage.removeItem('netviz.settings.v1');
+      else window.localStorage.setItem('netviz.settings.v1', v);
+    }""", original["store"])
+
+
+def read_the_scene(page):
+    return page.evaluate("""async () => {
+      const c = await import('./js/config.js');
+      return {
+        walk: c.cfg('camera.walk.enabled', true),
+        flows: c.cfg('traffic.flowsPerSecond', 8),
+        lightning: c.cfg('layers.lightning', false),
+        clouds: c.cfg('layers.clouds', false),
+        store: window.localStorage.getItem('netviz.settings.v1'),
+      };
+    }""")
+
+
 def run(page) -> None:
+    original = read_the_scene(page)
     quiet_the_scene(page)
     capture_pair(page)
     case1_night_side(page)
@@ -472,6 +506,7 @@ def run(page) -> None:
     case4_planet_occludes(page)
     case5_nightside_offset(page)
     case6_no_reading_no_aurora(page)
+    restore_the_scene(page, original)
 
 
 def main() -> int:
