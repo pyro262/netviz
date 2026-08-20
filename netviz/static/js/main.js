@@ -797,7 +797,7 @@ async function boot() {
   window.__netviz = {
     arcs, globe, ripples, aurora, clouds, lightning, renderer, camera, scene, rig, stars,
     milkyway, input,
-    settings, menu, customArcsPanel, settingsPanel,
+    settings, menu, customArcsPanel, settingsPanel, testPanel,
     /** The oval's own arithmetic, for verification tooling: a verifier asserting
      *  the nightside offset must read the same function the shader mirrors, not
      *  a second copy of it in Python. */
