@@ -10,9 +10,9 @@ import { CONFIG, mergeServerConfig } from '../../netviz/static/js/config.js';
 
 /** Run fn with a rule list installed, then put the old one back. */
 function withRules(rules, fn) {
-  const saved = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = rules;
-  try { fn(); } finally { CONFIG.arcs.rules = saved; }
+  const saved = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = rules;
+  try { fn(); } finally { CONFIG.arcs.custom = saved; }
 }
 
 test('a plain flow is a flow', () => {
@@ -74,7 +74,7 @@ test('rules are recompiled when the list is replaced', () => {
   withRules([{ match: 'DE', color: '#fff' }], () => {
     const ev = { k: 'flow', s: '1.1.1.1', d: '2.2.2.2', sc: 'DE', dc: 'US' };
     assert.equal(classNameFor(ev), 'rule1');
-    CONFIG.arcs.rules = [{ match: 'FR', color: '#fff' }];
+    CONFIG.arcs.custom = [{ match: 'FR', color: '#fff' }];
     assert.equal(classNameFor(ev), 'flow');
   });
 });
@@ -87,10 +87,10 @@ test("the collector's slots migrate into color rules", () => {
       { prefix: '172.20.5.', label: 'lab', color: '#ff0000' },
       { prefix: '' },
     ] } });
-    assert.equal(CONFIG.arcs.rules.length, 1);
-    assert.equal(CONFIG.arcs.rules[0].match, '172.20.5.0/24');
-    assert.equal(CONFIG.arcs.rules[0].color, '#ff0000');
-    assert.equal(CONFIG.arcs.rules[0].name, 'lab');
+    assert.equal(CONFIG.arcs.custom.length, 1);
+    assert.equal(CONFIG.arcs.custom[0].match, '172.20.5.0/24');
+    assert.equal(CONFIG.arcs.custom[0].color, '#ff0000');
+    assert.equal(CONFIG.arcs.custom[0].name, 'lab');
     assert.equal(classNameFor({ k: 'flow', s: '172.20.5.9', d: '8.8.8.8' }), 'rule1');
   });
 });
@@ -100,8 +100,8 @@ test('a display with its own rules is not overwritten by the environment', () =>
   // empty list and never appends to a populated one.
   withRules([{ match: '10.0.0.0/8', color: '#123456' }], () => {
     mergeServerConfig({ highlight: { networks: [{ prefix: '172.20.5.' }] } });
-    assert.equal(CONFIG.arcs.rules.length, 1);
-    assert.equal(CONFIG.arcs.rules[0].match, '10.0.0.0/8');
+    assert.equal(CONFIG.arcs.custom.length, 1);
+    assert.equal(CONFIG.arcs.custom[0].match, '10.0.0.0/8');
   });
 });
 
@@ -110,7 +110,7 @@ test('a malformed server config leaves the local one alone', () => {
     mergeServerConfig(null);
     mergeServerConfig({});
     mergeServerConfig({ highlight: { networks: 'nope' } });
-    assert.equal(CONFIG.arcs.rules.length, 0);
+    assert.equal(CONFIG.arcs.custom.length, 0);
   });
 });
 
@@ -312,34 +312,34 @@ test('isDns still answers the same question', () => {
 });
 
 test('overrideClassFor returns the class of the rule aimed at the suppression', () => {
-  const prev = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'udp/53', color: '#22d3ee' }];
+  const prev = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: 'udp/53', color: '#22d3ee' }];
   try {
     const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 53, pr: 17 };
     assert.equal(overrideClassFor(ev, dnsSuppression(ev)), 'rule1');
   } finally {
-    CONFIG.arcs.rules = prev;
+    CONFIG.arcs.custom = prev;
   }
 });
 
 test('overrideClassFor refuses a rule that matches but is not aimed', () => {
   // The rule claims the event -- but it was written about a country, not about
   // DNS, so it does not get to put a third of the feed back on the wall.
-  const prev = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'DE', color: '#22d3ee' }];
+  const prev = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: 'DE', color: '#22d3ee' }];
   try {
     const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dc: 'DE', dp: 53 };
     assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
   } finally {
-    CONFIG.arcs.rules = prev;
+    CONFIG.arcs.custom = prev;
   }
 });
 
 test('the first OVERRIDING rule owns the class, not the first matching one', () => {
   // A broad rule above does not participate and does not lend its color: for
   // suppressed traffic the eligible set is exactly the overriding rules.
-  const prev = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [
+  const prev = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [
     { match: 'DE', color: '#ff0000' },        // matches, not aimed
     { match: 'udp/53', color: '#22d3ee' },    // aimed
   ];
@@ -347,7 +347,7 @@ test('the first OVERRIDING rule owns the class, not the first matching one', () 
     const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dc: 'DE', dp: 53, pr: 17 };
     assert.equal(overrideClassFor(ev, dnsSuppression(ev)), 'rule2');
   } finally {
-    CONFIG.arcs.rules = prev;
+    CONFIG.arcs.custom = prev;
   }
 });
 
@@ -355,25 +355,25 @@ test('beating either axis is enough', () => {
   // Hidden by the port rule AND by the address rule; a rule aimed at just the
   // port draws it. Requiring both would make `udp/53` fail on the best-known
   // resolvers on the internet, which reads as a broken control.
-  const prev = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'udp/53', color: '#22d3ee' }];
+  const prev = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: 'udp/53', color: '#22d3ee' }];
   try {
     const ev = { k: 'flow', s: '203.0.113.5', d: '9.9.9.9', dp: 53, pr: 17 };
     assert.equal(overrideClassFor(ev, dnsSuppression(ev)), 'rule1');
   } finally {
-    CONFIG.arcs.rules = prev;
+    CONFIG.arcs.custom = prev;
   }
 });
 
 test('overrideClassFor is null with no rules and with nothing suppressed', () => {
-  const prev = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [];
+  const prev = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [];
   try {
     const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 53 };
     assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
     assert.equal(overrideClassFor(ev, []), null);
   } finally {
-    CONFIG.arcs.rules = prev;
+    CONFIG.arcs.custom = prev;
   }
 });
 
@@ -383,14 +383,14 @@ test('an ordinary /32 on the local end does not unhide that host talking to ever
   // it names the LOCAL end, which is not what was hidden. Before containment
   // was checked, one /32 on a site's own forwarder put its whole conversation
   // with every listed resolver back on the wall in that rule's color.
-  const prev = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: '203.0.113.5/32', color: '#22d3ee' }];
+  const prev = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: '203.0.113.5/32', color: '#22d3ee' }];
   try {
     const ev = { k: 'flow', s: '203.0.113.5', d: '9.9.9.9' };
     assert.deepEqual(dnsSuppression(ev).map((s) => s.axis), ['address']);
     assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
   } finally {
-    CONFIG.arcs.rules = prev;
+    CONFIG.arcs.custom = prev;
   }
 });
 
@@ -432,13 +432,13 @@ test('overrideClassFor still requires containment -- an aimed rule that does not
   // `end: 'src'` means it only ever looks at the source port -- and this event
   // only carries a destination port. Axis + specificity is not enough on its
   // own; the rule has to actually match the event via matchRule.
-  const prev = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'udp/53', end: 'src', color: '#22d3ee' }];
+  const prev = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: 'udp/53', end: 'src', color: '#22d3ee' }];
   try {
     const ev = { k: 'flow', s: '203.0.113.5', d: '198.51.100.7', dp: 53, pr: 17 };
     assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
   } finally {
-    CONFIG.arcs.rules = prev;
+    CONFIG.arcs.custom = prev;
   }
 });
 
@@ -446,12 +446,12 @@ test('overrideClassFor still requires containment -- a /32 rule for one resolver
   // The suppression is real (9.9.9.10 is also a shipped resolver-list entry)
   // and the rule's single address is as specific as a /32 can be, but it names
   // a DIFFERENT address than the one on the event.
-  const prev = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: '9.9.9.9/32', color: '#22d3ee' }];
+  const prev = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: '9.9.9.9/32', color: '#22d3ee' }];
   try {
     const ev = { k: 'flow', s: '203.0.113.5', d: '9.9.9.10' };
     assert.equal(overrideClassFor(ev, dnsSuppression(ev)), null);
   } finally {
-    CONFIG.arcs.rules = prev;
+    CONFIG.arcs.custom = prev;
   }
 });

@@ -11,6 +11,7 @@
 
 import { compileRules } from './rules.js';
 import { entry } from './settings.js';
+import { convertStored } from './convert.js';
 
 export const KEY = 'netviz.settings.v1';
 
@@ -59,7 +60,7 @@ export function savePatch(storage, patch) {
  *
  *  `keep` is the list of setting paths to carry across, and it is what makes
  *  "reset to netviz defaults" a statement about the DISPLAY rather than about
- *  the operator's work: `arcs.rules` is a list somebody sat and typed, so a
+ *  the operator's work: `arcs.custom` is a list somebody sat and typed, so a
  *  control that resets the wall's appearance has no business deleting it.
  *  Everything persists into one blob under one key, so keeping a path means
  *  writing the blob back with only that path in it -- removing the key would
@@ -155,4 +156,20 @@ export function parseImport(text) {
     return { error: refused.map((r) => `rule ${r.index + 1}: ${r.reason}`).join('; ') };
   }
   return { rules: parsed, error: null };
+}
+
+/** The stored patch AS THIS BUILD READS IT, plus what it would take to make
+ *  that reading permanent.
+ *
+ *  Deliberately separate from loadPatch(), which stays RAW. savePatch() merges
+ *  onto loadPatch()'s result, so a converting loadPatch would write the
+ *  conversion on the next ordinary save -- silently, with nobody asked, which
+ *  is the one thing the conversion policy exists to prevent. clearPatch()'s
+ *  keep list has the mirror problem: on a display that has not converted yet,
+ *  the key worth keeping is still the OLD name. Both of those callers want the
+ *  raw blob; boot and the panels want this one. */
+export function loadConverted(storage) {
+  const { patch, error } = loadPatch(storage);
+  const { patch: converted, pending } = convertStored(patch);
+  return { patch: converted, pending, error };
 }

@@ -28,7 +28,7 @@ import { createSettingsPanel } from './settings_panel.js';
 import { createThemePanel } from './theme_panel.js';
 import { createConfirm } from './confirm.js';
 import { coerce, settingLabel } from './settings.js';
-import { loadPatch, withPersistence, clearPatch } from './rulestore.js';
+import { loadPatch, loadConverted, withPersistence, clearPatch } from './rulestore.js';
 
 const GLOBE_RADIUS = 1.0;
 
@@ -175,19 +175,19 @@ async function boot() {
   // the schema no longer declares is reported and skipped rather than
   // reviving a setting that no longer exists. `settings` does not exist yet at
   // this point in boot, and two of the stored keys are needed before it does:
-  // createArcs() below reads CONFIG.arcs.rules, and the rail-mount decision a
+  // createArcs() below reads CONFIG.arcs.custom, and the rail-mount decision a
   // little further down (still before the first resize()) reads
   // CONFIG.rail.enabled -- both run long before createApplier() is called near
   // the end of boot(). So those two keys are written into CONFIG directly
   // here, validated through the same coerce() the executor would use.
   // Everything else in the stored patch (layers.*, camera.*, ...) is applied
   // through the executor once it exists, further down.
-  const stored = loadPatch(storage);
+  const stored = loadConverted(storage);
   if (stored.error) console.warn(`netviz: ${stored.error}`);
-  if (Object.prototype.hasOwnProperty.call(stored.patch, 'arcs.rules')) {
-    const c = coerce('arcs.rules', stored.patch['arcs.rules']);
-    if (c.ok) CONFIG.arcs.rules = c.value;
-    else console.warn(`netviz: stored arcs.rules skipped -- ${c.why}`);
+  if (Object.prototype.hasOwnProperty.call(stored.patch, 'arcs.custom')) {
+    const c = coerce('arcs.custom', stored.patch['arcs.custom']);
+    if (c.ok) CONFIG.arcs.custom = c.value;
+    else console.warn(`netviz: stored arcs.custom skipped -- ${c.why}`);
   }
   if (Object.prototype.hasOwnProperty.call(stored.patch, 'rail.enabled')) {
     const c = coerce('rail.enabled', stored.patch['rail.enabled']);
@@ -327,9 +327,9 @@ async function boot() {
     if (cls.startsWith('rule')) {
       // cls's index counts positions in the COMPILED rule list (refusals
       // dropped); the raw list here still carries them, so an unparseable
-      // rule earlier in arcs.rules would otherwise shift every index after
+      // rule earlier in arcs.custom would otherwise shift every index after
       // it and the rail would count traffic under the wrong rule's key.
-      const rule = cfg('arcs.rules', [])[rawRuleIndex(Number(cls.slice(4)) - 1)];
+      const rule = cfg('arcs.custom', [])[rawRuleIndex(Number(cls.slice(4)) - 1)];
       if (rule) classCounts.add(ruleKey(rule), Date.now());
     }
     arcs.spawn(ev, cls, sups);
@@ -587,9 +587,14 @@ async function boot() {
   // reset and the dialog says exactly that with one button -- a yes/no over an
   // action that would change nothing teaches that Yes does nothing.
   const onReset = storage ? () => {
+    // RAW, not converted: on a display that has not converted yet the key
+    // holding somebody's work is still the OLD name, and a keep list built
+    // from the converted reading would delete it.
     const held = loadPatch(storage).patch || {};
-    const losing = Object.keys(held).filter((p) => p !== 'arcs.rules');
-    const ruleCount = Array.isArray(held['arcs.rules']) ? held['arcs.rules'].length : 0;
+    const KEEP = ['arcs.custom', 'arcs.rules'];
+    const losing = Object.keys(held).filter((p) => !KEEP.includes(p));
+    const customList = held['arcs.custom'] || held['arcs.rules'];
+    const ruleCount = Array.isArray(customList) ? customList.length : 0;
     confirmer.ask({
       title: 'Reset this display to netviz defaults?',
       lead: 'This affects only this screen, in this web browser. Nothing is '
@@ -602,19 +607,19 @@ async function boot() {
       ] : [],
       wont: [
         ruleCount
-          ? `Touch your ${ruleCount} color rule${ruleCount === 1 ? '' : 's'} -- they stay exactly as they are.`
-          : 'Touch your color rules -- they are kept.',
+          ? `Touch your ${ruleCount} custom arc${ruleCount === 1 ? '' : 's'} -- they stay exactly as they are.`
+          : 'Touch your custom arcs -- they are kept.',
         'Change anything on the collector, or on any other display.',
         'Delete any traffic, history or statistics.',
       ],
       note: losing.length
-        ? 'To change the color rules instead, use "Color rules..." in this menu.'
+        ? 'To change the custom arcs instead, use "Custom arcs..." in this menu.'
         : 'Nothing to reset: this display is already running netviz defaults '
-          + '(your color rules are not affected either way).',
+          + '(your custom arcs are not affected either way).',
       confirmLabel: 'Yes, reset this display',
       cancelLabel: 'No, leave it alone',
       onConfirm: () => {
-        const out = clearPatch(storage, ['arcs.rules']);
+        const out = clearPatch(storage, KEEP);
         if (!out.ok) { console.warn(`netviz: ${out.error}`); return; }
         window.location.reload();
       },
@@ -628,7 +633,7 @@ async function boot() {
     canvas: renderer.domElement, rig, menu, rulesPanel, settingsPanel, themePanel,
   });
   ctx.input = input;
-  // The rest of the stored patch (arcs.rules and rail.enabled were already
+  // The rest of the stored patch (arcs.custom and rail.enabled were already
   // applied directly to CONFIG above, before createArcs() and the rail-mount
   // decision needed them -- see the comments there). Re-running the whole
   // patch through the executor here is harmless (setRules and rail.mount are

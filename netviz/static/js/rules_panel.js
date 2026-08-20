@@ -4,7 +4,7 @@
 // which of them are valid, and which are ready to apply. The DOM half below
 // builds the modal and does nothing a test could decide.
 //
-// The panel writes ONLY through settings.apply({'arcs.rules': list}) -- never
+// The panel writes ONLY through settings.apply({'arcs.custom': list}) -- never
 // arcs.setRules, never CONFIG, never localStorage. That is the same rule
 // menu.js follows, and it is what keeps one validator and one vocabulary
 // between the panel, the menu, an imported file and any future write API.
@@ -79,7 +79,7 @@ export function readyRules(rows) {
 // #stage -- paints over everything inside it. The menu hit exactly this and a
 // z-index of 9999 changed nothing.
 
-const cfgRules = () => cfg('arcs.rules', []);
+const cfgRules = () => cfg('arcs.custom', []);
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -206,7 +206,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
   function applyDraft() {
     const rows = panelRows(draft);
     if (dirty) {
-      const out = settings.apply({ 'arcs.rules': readyRules(rows) });
+      const out = settings.apply({ 'arcs.custom': readyRules(rows) });
       for (const r of out.rejected) console.warn(`netviz: ${r.path} -- ${r.why}`);
     }
     return rows;

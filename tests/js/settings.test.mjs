@@ -157,7 +157,7 @@ test('planApply ignores paths it does not know', () => {
 test('the rules type accepts a list every row of which parses', () => {
   const list = [{ match: '10.20.50.0/24', color: '#22d3ee' },
                 { match: 'DE', color: '#ff8800', end: 'dst' }];
-  const c = coerce('arcs.rules', list);
+  const c = coerce('arcs.custom', list);
   assert.equal(c.ok, true);
   assert.deepEqual(c.value, list);      // stored raw; rules.js compiles at use
 });
@@ -166,7 +166,7 @@ test('the rules type refuses a bad row by index, naming the reason', () => {
   // A patch is one deliberate act, so it is all-or-nothing here. Per-row
   // partial application belongs to the panel, which knows which row somebody
   // is mid-typing in.
-  const c = coerce('arcs.rules', [{ match: '10.20.50.0/24', color: '#22d3ee' },
+  const c = coerce('arcs.custom', [{ match: '10.20.50.0/24', color: '#22d3ee' },
                                   { match: 'nonsense', color: '#fff' }]);
   assert.equal(c.ok, false);
   assert.match(c.why, /rule 2/);
@@ -175,12 +175,12 @@ test('the rules type refuses a bad row by index, naming the reason', () => {
 
 test('the rules type refuses what is not a list', () => {
   for (const bad of [null, undefined, 'DE', 42, { match: 'DE' }]) {
-    assert.equal(coerce('arcs.rules', bad).ok, false);
+    assert.equal(coerce('arcs.custom', bad).ok, false);
   }
 });
 
 test('an empty rule list is accepted -- it means no rules, not no opinion', () => {
-  assert.equal(coerce('arcs.rules', []).ok, true);
+  assert.equal(coerce('arcs.custom', []).ok, true);
 });
 
 test('rail.maxRules is bounded and rounds', () => {
@@ -549,4 +549,10 @@ test('dayAmbient reproduces the old fixed 0.55 + 0.45*lit at the shipped default
     const old = 0.55 + 0.45 * lit;
     assert.ok(Math.abs(now - old) < 1e-12, `lit=${lit}: ${now} != ${old}`);
   }
+});
+
+test('the custom-arc list is declared under its new path only', () => {
+  assert.ok(entry('arcs.custom'), 'arcs.custom is declared');
+  assert.equal(entry('arcs.rules'), null, 'the old path is gone, not aliased');
+  assert.equal(entry('arcs.custom').type, 'rules');
 });

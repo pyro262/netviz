@@ -16,7 +16,7 @@ let compiledFrom = null;
 let compiled = compileRules([]);
 
 export function activeRules() {
-  const list = cfg('arcs.rules', []);
+  const list = cfg('arcs.custom', []);
   if (list !== compiledFrom) {
     compiledFrom = list;
     compiled = compileRules(list);
@@ -203,11 +203,11 @@ export function classNameFor(ev) {
 
 /**
  * Map a `firstMatch`/`classNameFor` index (a position in `compiled.rules`,
- * i.e. `activeRules()`) back to its position in the RAW `arcs.rules` list.
+ * i.e. `activeRules()`) back to its position in the RAW `arcs.custom` list.
  *
  * `compileRules` drops refused (unparseable) entries from `rules` entirely,
  * so the two index spaces only agree when nothing before the match was
- * refused. Anything reading `cfg('arcs.rules', [])[idx]` with the compiled
+ * refused. Anything reading `cfg('arcs.custom', [])[idx]` with the compiled
  * index -- the rail's per-rule counter did exactly this -- picks the wrong
  * rule's key whenever an earlier row fails to parse, silently attributing
  * traffic to a rule nobody matched.

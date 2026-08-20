@@ -85,7 +85,7 @@ function buildClasses() {
   // bloomScale gets the shape's own, which is where the shipped 0.70 / 0.41
   // live -- no default is invented here.
   const shared = sharedShape();
-  compileRules(cfg('arcs.rules', [])).rules.forEach((rule, i) => {
+  compileRules(cfg('arcs.custom', [])).rules.forEach((rule, i) => {
     const name = `rule${i + 1}`;
     table[name] = classSpec(name, {
       ...shared,
@@ -457,7 +457,7 @@ export function createArcs(radius, capacity = 220, onLand = null) {
    * previously rule-colored at all, not just recolored.
    *
    * classify.classNameFor is NOT used here on purpose: it reads
-   * CONFIG.arcs.rules, which is still the OLD list at the moment this handler
+   * CONFIG.arcs.custom, which is still the OLD list at the moment this handler
    * runs -- apply.js writes CONFIG only after every handler in a patch
    * returns. firstMatch is called directly against the list just compiled.
    */

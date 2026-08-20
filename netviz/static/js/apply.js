@@ -236,7 +236,7 @@ export const HANDLERS = {
   // Every rule shares one geometry, so nothing is torn down: setRules pushes
   // color, gain and bloomScale into the arcs ALREADY IN THE AIR. Marking this
   // `rebuild` would clear the pool for no benefit and cost a pass.
-  'arcs.rules': (v, ctx) => {
+  'arcs.custom': (v, ctx) => {
     ctx.arcs.setRules(v);
     if (ctx.classCounts) ctx.classCounts.setKeys(v.map(ruleKey));
   },

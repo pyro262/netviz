@@ -27,7 +27,7 @@ import { AUTO, isAuto } from './elements.js';
 // It is also not a preference: a home position is site data, which is exactly
 // why it lives in .env and not in this tracked tree.
 //
-// `arcs.rules` IS declared, as its own `rules` type, below. It is a list of
+// `arcs.custom` IS declared, as its own `rules` type, below. It is a list of
 // OBJECTS, which the generic `list` type cannot describe -- `list` carries an
 // element type and nothing else, so it could validate neither a matcher nor a
 // per-rule color. The `rules` case in `coerce` delegates to rules.js's own
@@ -212,14 +212,14 @@ export const SCHEMA = {
   ...arcClass('flow', ARC_KEYS),
   ...arcClass('block', ARC_KEYS),
   ...arcClass('highlight', HIGHLIGHT_KEYS),
-  'arcs.rules': {
+  'arcs.custom': {
     type: 'rules', strategy: 'uniform',
-    help: 'Color rules, in precedence order: the first ENABLED rule that '
-        + 'claims an arc colors it. A rule matches a subnet (10.20.50.0/24), '
-        + 'an inclusive address range, a country code, or a port (tcp/443), '
+    help: 'Custom arcs, in precedence order: the first ENABLED entry that '
+        + 'claims an arc colors it. One matches a subnet (203.0.113.0/24), an '
+        + 'inclusive address range, a country code, or a port (tcp/443), '
         + 'against the source, the destination or either end. Blocks are never '
-        + 'colored by a rule. Pushed into the arcs already in the air, so a '
-        + 'recolor shows within a frame rather than on the next spawn.',
+        + 'colored by a custom arc. Pushed into the arcs already in the air, so '
+        + 'a recolor shows within a frame rather than on the next spawn.',
   },
 
   // -------------------------------------------------------------- camera --
@@ -883,7 +883,7 @@ export function defaultOf(path) { return cfg(path, undefined); }
  *  same rather than reading like a dumped schema path. */
 const LABELS = {
   'rail.enabled': 'the stats rail',
-  'arcs.rules': 'your color rules',
+  'arcs.custom': 'your custom arcs',
   'input.enabled': 'touch and mouse control',
   'input.lock': 'the display lock',
   'appearance.background': 'the background color',

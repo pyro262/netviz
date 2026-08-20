@@ -721,7 +721,7 @@ export function start(counter, classColors, lightningState = () => null) {
 
   const draw = (capOverride) => {
     version = versionLabel(snapshot) || version;
-    const rules = cfg('arcs.rules', []);
+    const rules = cfg('arcs.custom', []);
     const cap = capOverride === undefined ? cfg('rail.maxRules', 5) : capOverride;
     // The rule rows come from the renderer's own counter, not from
     // /stats.json: the collector has never seen the rule list.

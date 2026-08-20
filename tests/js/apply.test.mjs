@@ -303,12 +303,12 @@ test('a rejected value changes nothing and is reported', () => {
   assert.deepEqual(log, [], 'a rejected value touched the display');
 });
 
-test('arcs.rules is applied through setRules and does not clear the pool', () => {
+test('arcs.custom is applied through setRules and does not clear the pool', () => {
   const log = [];
   const ctx = fakeCtx(log);
   const applier = createApplier(ctx);
   const list = [{ match: 'DE', color: '#ff8800' }];
-  const out = applier.apply({ 'arcs.rules': list });
+  const out = applier.apply({ 'arcs.custom': list });
   assert.deepEqual(out.rejected, []);
   assert.deepEqual(ctx.arcs.setRulesCalls, [list]);
   assert.equal(ctx.arcs.rebuildCalls, 0, 'every rule shares one geometry');
@@ -317,14 +317,14 @@ test('arcs.rules is applied through setRules and does not clear the pool', () =>
   assert.deepEqual(ctx.classCounts.setKeysCalls, [['DE|either']]);
 });
 
-test('arcs.rules tolerates a ctx with no classCounts', () => {
+test('arcs.custom tolerates a ctx with no classCounts', () => {
   // Older test doubles and any future caller that never built a counter must
   // not crash the handler -- the guard in apply.js is what this proves.
   const log = [];
   const ctx = fakeCtx(log);
   delete ctx.classCounts;
   const applier = createApplier(ctx);
-  const out = applier.apply({ 'arcs.rules': [{ match: 'DE', color: '#ff8800' }] });
+  const out = applier.apply({ 'arcs.custom': [{ match: 'DE', color: '#ff8800' }] });
   assert.deepEqual(out.rejected, []);
 });
 

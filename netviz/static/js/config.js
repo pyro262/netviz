@@ -110,7 +110,7 @@ export const CONFIG = {
     highlight: { life: 4.0, tube: 0.0032, speed: 0.9, lift: 0.28,
                  maxRise: 0.24, bloomScale: 0.41, gain: 0.70 },
 
-    // Color rules, in precedence order: the first ENABLED rule that claims an
+    // Custom arcs, in precedence order: the first ENABLED entry that claims an
     // arc colors it. Empty by default -- every flow draws in the ordinary
     // flow color, exactly as an unconfigured display does today.
     //
@@ -125,9 +125,9 @@ export const CONFIG = {
     //   bloomScale  optional; defaults to arcs.highlight.bloomScale
     //   enabled     optional; default true
     //
-    // Blocks are never colored by a rule -- the alarm layer is one visual
+    // Blocks are never colored by a custom arc -- the alarm layer is one visual
     // language and the wall exists to show it.
-    rules: [],
+    custom: [],
   },
 
   // --------------------------------------------------------------- camera --
@@ -530,9 +530,9 @@ export function mergeServerConfig(served) {
   // configured list is the display's own decision and must not be appended to
   // or overwritten by the environment.
   const networks = served && served.highlight && served.highlight.networks;
-  if (Array.isArray(networks) && !CONFIG.arcs.rules.length) {
+  if (Array.isArray(networks) && !CONFIG.arcs.custom.length) {
     const { rules, refused } = rulesFromNetworks(networks);
-    if (rules.length) CONFIG.arcs.rules = rules;
+    if (rules.length) CONFIG.arcs.custom = rules;
     for (const r of refused) {
       console.warn(`netviz: highlight slot ${r.index + 1} not migrated -- ${r.reason}`);
     }

@@ -420,7 +420,7 @@ test('the reset row is drawn only when there is a handler behind it', () => {
 });
 
 test('clicking reset calls the handler and closes the menu', () => {
-  // The handler is main.js's, and what it does -- keep arcs.rules, drop the
+  // The handler is main.js's, and what it does -- keep arcs.custom, drop the
   // rest, reload -- is proved by rulestore's own tests and by
   // verify_rules_editor case 6. What belongs here is only that the row is
   // wired to it at all, which is the failure mode a menu row has.

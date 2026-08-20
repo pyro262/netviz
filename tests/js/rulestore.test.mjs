@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { KEY, loadPatch, savePatch, clearPatch, withPersistence,
-  serialiseRules, parseImport, exportFilename }
+  serialiseRules, parseImport, exportFilename, loadConverted }
   from '../../netviz/static/js/rulestore.js';
 
 /** The three methods of Storage this module uses, and nothing else. A real
@@ -18,7 +18,7 @@ function fakeStorage(initial = {}, opts = {}) {
 
 test('a saved patch round-trips', () => {
   const s = fakeStorage();
-  const patch = { 'arcs.rules': [{ match: 'DE', color: '#ff8800' }], 'rail.enabled': true };
+  const patch = { 'arcs.custom': [{ match: 'DE', color: '#ff8800' }], 'rail.enabled': true };
   assert.equal(savePatch(s, patch).ok, true);
   assert.deepEqual(loadPatch(s).patch, patch);
   assert.equal(loadPatch(s).error, null);
@@ -70,11 +70,11 @@ test('clear keeps the paths it is told to keep', () => {
     [KEY]: JSON.stringify({
       'rail.enabled': true,
       'layers.stars': false,
-      'arcs.rules': [{ match: 'DE', color: '#ff8800' }],
+      'arcs.custom': [{ match: 'DE', color: '#ff8800' }],
     }),
   });
-  assert.equal(clearPatch(s, ['arcs.rules']).ok, true);
-  assert.deepEqual(loadPatch(s).patch, { 'arcs.rules': [{ match: 'DE', color: '#ff8800' }] });
+  assert.equal(clearPatch(s, ['arcs.custom']).ok, true);
+  assert.deepEqual(loadPatch(s).patch, { 'arcs.custom': [{ match: 'DE', color: '#ff8800' }] });
 });
 
 test('clear with nothing left to keep removes the key outright', () => {
@@ -82,13 +82,13 @@ test('clear with nothing left to keep removes the key outright', () => {
   // every reader, and leaving `{}` behind is a row in someone's storage
   // inspector that says the display was configured when it was not.
   const s = fakeStorage({ [KEY]: '{"rail.enabled":true}' });
-  assert.equal(clearPatch(s, ['arcs.rules']).ok, true);
+  assert.equal(clearPatch(s, ['arcs.custom']).ok, true);
   assert.equal(s.getItem(KEY), null);
 });
 
 test('clear keeping a path that was never set does not invent it', () => {
   const s = fakeStorage({ [KEY]: '{"rail.enabled":true,"layers.stars":false}' });
-  clearPatch(s, ['arcs.rules']);
+  clearPatch(s, ['arcs.custom']);
   assert.equal(s.getItem(KEY), null);
 });
 
@@ -106,8 +106,8 @@ test('withPersistence stores accepted keys and returns the result untouched', ()
 test('a rejected key is never stored', () => {
   // Storing it would resurrect the same rejection on every boot, for ever.
   const s = fakeStorage();
-  const base = { apply: () => ({ applied: [], rejected: [{ path: 'arcs.rules', why: 'bad' }] }) };
-  withPersistence(base, s).apply({ 'arcs.rules': [{ match: 'nonsense' }] });
+  const base = { apply: () => ({ applied: [], rejected: [{ path: 'arcs.custom', why: 'bad' }] }) };
+  withPersistence(base, s).apply({ 'arcs.custom': [{ match: 'nonsense' }] });
   assert.deepEqual(loadPatch(s).patch, {});
 });
 
@@ -191,4 +191,38 @@ test('an empty exported list is a legitimate import', () => {
 test('the export filename carries the date', () => {
   assert.equal(exportFilename(new Date(Date.UTC(2026, 7, 11))),
                'netviz-rules-2026-08-11.json');
+});
+
+// ---------------------------------------------------------------------------
+// loadConverted -- 0.7.0's schema rename, read at boot and written by nobody.
+
+const CONV_RULES = [{ match: '203.0.113.0/24', end: 'either', color: '#00ff88',
+                      name: 'docs net', enabled: true }];
+const peek = (s) => JSON.parse(s.data[KEY]);
+
+test('loadConverted reads an old blob as the new path', () => {
+  const s = fakeStorage({ [KEY]: JSON.stringify({ 'arcs.rules': CONV_RULES }) });
+  const out = loadConverted(s);
+  assert.deepEqual(out.patch['arcs.custom'], CONV_RULES);
+  assert.equal(out.pending.length, 1);
+});
+
+test('loadConverted writes nothing -- storage still holds the old name', () => {
+  const s = fakeStorage({ [KEY]: JSON.stringify({ 'arcs.rules': CONV_RULES }) });
+  loadConverted(s);
+  assert.deepEqual(Object.keys(peek(s)), ['arcs.rules']);
+});
+
+test('loadPatch stays raw, so savePatch cannot convert by accident', () => {
+  const s = fakeStorage({ [KEY]: JSON.stringify({ 'arcs.rules': CONV_RULES }) });
+  assert.deepEqual(loadPatch(s).patch, { 'arcs.rules': CONV_RULES });
+  savePatch(s, { 'rail.enabled': true });
+  assert.deepEqual(Object.keys(peek(s)).sort(), ['arcs.rules', 'rail.enabled']);
+});
+
+test('a reset keeps the custom arcs under EITHER name', () => {
+  const s = fakeStorage({ [KEY]: JSON.stringify({ 'arcs.rules': CONV_RULES,
+                                                  'rail.enabled': true }) });
+  clearPatch(s, ['arcs.custom', 'arcs.rules']);
+  assert.deepEqual(peek(s), { 'arcs.rules': CONV_RULES });
 });

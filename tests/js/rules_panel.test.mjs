@@ -193,8 +193,8 @@ test('typing in the match field does not rebuild the row -- the input node stays
   // -bearing assertion here -- actual focus retention needs a real browser
   // and is covered by Task 6's verify_rules_editor.py instead.
   const dom = fakeDom();
-  const savedRules = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: '10.20.50.0/2', color: '#22d3ee' }];
+  const savedRules = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: '10.20.50.0/2', color: '#22d3ee' }];
   try {
     withFakeGlobals(dom, () => {
       const applied = [];
@@ -214,11 +214,11 @@ test('typing in the match field does not rebuild the row -- the input node stays
       // merely looking at the panel cannot capture a collector-migrated rule
       // list into localStorage or drop an unparseable rule nobody touched.
       assert.ok(applied.length >= 1, 'settings.apply was not called on the edit');
-      const last = applied[applied.length - 1]['arcs.rules'];
+      const last = applied[applied.length - 1]['arcs.custom'];
       assert.equal(last[0].match, '10.20.50.0/24');
     });
   } finally {
-    CONFIG.arcs.rules = savedRules;
+    CONFIG.arcs.custom = savedRules;
   }
 });
 
@@ -233,8 +233,8 @@ test('opening the panel alone never calls settings.apply -- only an edit does', 
   // by readyRules and the reduced list gets written back -- deleting a
   // rule nobody touched.
   const dom = fakeDom();
-  const savedRules = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'DE', color: '#22d3ee', name: 'germany' }];
+  const savedRules = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: 'DE', color: '#22d3ee', name: 'germany' }];
   try {
     withFakeGlobals(dom, () => {
       const applied = [];
@@ -253,14 +253,14 @@ test('opening the panel alone never calls settings.apply -- only an edit does', 
       assert.ok(applied.length >= 1, 'an edit after opening did not apply');
     });
   } finally {
-    CONFIG.arcs.rules = savedRules;
+    CONFIG.arcs.custom = savedRules;
   }
 });
 
 test('adding a row is a structural change and does rebuild the list', () => {
   const dom = fakeDom();
-  const savedRules = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'DE', color: '#22d3ee' }];
+  const savedRules = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: 'DE', color: '#22d3ee' }];
   try {
     withFakeGlobals(dom, () => {
       const panel = createRulesPanel({
@@ -276,7 +276,7 @@ test('adding a row is a structural change and does rebuild the list', () => {
       assert.notEqual(after, before, 'a structural change did not rebuild the row');
     });
   } finally {
-    CONFIG.arcs.rules = savedRules;
+    CONFIG.arcs.custom = savedRules;
   }
 });
 
@@ -289,8 +289,8 @@ test('the enabled toggle survives more than one click', () => {
   // correct behaviour -- only a second click can, which is why this test
   // fires the button twice and checks the value is back where it started.
   const dom = fakeDom();
-  const savedRules = CONFIG.arcs.rules;
-  CONFIG.arcs.rules = [{ match: 'DE', color: '#22d3ee', enabled: true }];
+  const savedRules = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [{ match: 'DE', color: '#22d3ee', enabled: true }];
   try {
     withFakeGlobals(dom, () => {
       const applied = [];
@@ -304,17 +304,17 @@ test('the enabled toggle survives more than one click', () => {
       assert.ok(toggle.className.includes(' on'), 'row did not start enabled');
 
       toggle.dispatch('click', {});
-      let last = applied[applied.length - 1]['arcs.rules'];
+      let last = applied[applied.length - 1]['arcs.custom'];
       assert.equal(last[0].enabled, false, 'first click did not disable the rule');
       assert.equal(toggle.className.includes(' on'), false, 'button did not reflect disabled');
 
       toggle.dispatch('click', {});
-      last = applied[applied.length - 1]['arcs.rules'];
+      last = applied[applied.length - 1]['arcs.custom'];
       assert.equal(last[0].enabled, true, 'second click did not re-enable the rule -- toggle is stuck');
       assert.ok(toggle.className.includes(' on'), 'button did not reflect re-enabled');
     });
   } finally {
-    CONFIG.arcs.rules = savedRules;
+    CONFIG.arcs.custom = savedRules;
   }
 });
 
