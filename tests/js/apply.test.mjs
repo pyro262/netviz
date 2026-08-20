@@ -497,3 +497,17 @@ test('a theme AND a customRamp in one patch end on the new ramp either way', (t)
   assert.equal(seenA.coastline, seenB.coastline,
                'the two key orders must resolve to the same color');
 });
+
+test('a rail scale writes a custom property and asks for a re-fit', () => {
+  const log = [];
+  const ctx = fakeCtx(log);
+  const written = [];
+  ctx.rail.setScale = (g, v) => { written.push([g, v]); log.push('rail.refit'); };
+  const applier = createApplier(ctx);
+  const out = applier.apply({ 'rail.scale.master': 2.5 });
+  assert.deepEqual(out.rejected, []);
+  assert.deepEqual(written, [['master', 2.5]]);
+  assert.equal(log.filter((l) => l === 'rail.refit').length, 1);
+  assert.equal(log.filter((l) => l === 'resize').length, 1,
+               'exactly one relayout, however many keys asked');
+});

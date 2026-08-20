@@ -95,7 +95,7 @@ def panel_open_case(page, cx, cy) -> bool:
     must actually be `document.contains()`-true with a non-zero bounding
     rect, not merely `isOpen()` saying so."""
     page.evaluate("() => { const p = document.querySelector('.custom-arc-panel'); if (p) p.remove(); }")
-    clicked = open_menu_and_click(page, "rules", cx, cy)
+    clicked = open_menu_and_click(page, "customArcs", cx, cy)
     page.wait_for_timeout(300)
     state = page.evaluate("""() => {
       const el = document.querySelector('.custom-arc-panel');
@@ -282,11 +282,35 @@ def bad_row_case(page) -> bool:
 
 
 def reload_survives_case(page) -> bool:
-    """4: it survives a reload.
+    """4: a Keep survives a reload -- and only a Keep does.
 
-    Reloads the real page and checks CONFIG.arcs.custom still carries the
-    rule, and that a fresh arc from the same address takes it -- proving
-    the persisted patch, not just the in-memory CONFIG, is what survived."""
+    Both halves, because either alone is passed by a bug. 0.7.0 gave this panel
+    a pending model: an edit PREVIEWS and stores nothing, and only Keep writes.
+    So the reload is preceded by a Keep, and before that the store is read to
+    prove the typing on its own left it alone -- a panel that persisted every
+    keystroke (which is what this was until 0.7.0) would pass the survival half
+    and fail the silence half, and a Keep that never wrote would do the reverse.
+
+    Then it checks CONFIG.arcs.custom still carries the rule, and that a fresh
+    arc from the same address takes it -- proving the persisted patch, not just
+    the in-memory CONFIG, is what survived."""
+    before = page.evaluate("() => window.localStorage.getItem('netviz.settings.v1')")
+    typed_only_stored = before is None or '203.0.113.0/24' not in before
+    kept = page.evaluate("""() => {
+      const b = document.querySelector('.custom-arc-keep');
+      if (!b || b.disabled) return false;
+      b.click();
+      return true;
+    }""")
+    page.wait_for_timeout(300)
+    # Keep asks first, the same as the tuning panel's does.
+    answered = page.evaluate("""() => {
+      const b = document.querySelector('.confirm .confirm-yes');
+      if (!b) return false;
+      b.click();
+      return true;
+    }""")
+    page.wait_for_timeout(400)
     page.reload(wait_until="load")
     page.wait_for_function("window.__netvizReady === true", timeout=20_000)
     page.wait_for_timeout(1500)
@@ -299,11 +323,13 @@ def reload_survives_case(page) -> bool:
       const cls = cl.classNameFor({k: 'flow', s: '203.0.113.9', d: '198.51.100.7'});
       return {rules, has, cls};
     }""")
-    ok = result["has"] and result["cls"].startswith("rule")
+    ok = (typed_only_stored and kept and answered
+          and result["has"] and result["cls"].startswith("rule"))
     return report(
-        "4: it survives a reload", ok,
-        f"CONFIG.arcs.custom has the rule: {result['has']}, "
-        f"a fresh arc classifies as {result['cls']}")
+        "4: a Keep survives a reload -- and only a Keep does", ok,
+        f"typing alone stored nothing={typed_only_stored}; Keep clicked={kept} "
+        f"asked and answered={answered}; after reload CONFIG.arcs.custom has "
+        f"the rule: {result['has']}, a fresh arc classifies as {result['cls']}")
 
 
 def export_import_roundtrip_case(page) -> bool:
@@ -582,7 +608,7 @@ def keyboard_typing_case(page, cx, cy) -> bool:
     changes; a fabricated `Event('input')` would never exercise that path
     at all and would pass whether or not the fix was in place."""
     if not page.evaluate("() => !!document.querySelector('.custom-arc-panel')"):
-        open_menu_and_click(page, "rules", cx, cy)
+        open_menu_and_click(page, "customArcs", cx, cy)
         page.wait_for_timeout(300)
     page.evaluate("() => { const m = document.querySelector('.menu'); if (m) m.remove(); }")
 
@@ -728,7 +754,7 @@ def builtin_colors_case(page, cx, cy) -> bool:
     and that the undo returns the class to the theme rather than to a
     remembered hex."""
     page.evaluate("() => { const p = document.querySelector('.custom-arc-panel'); if (p) p.remove(); }")
-    open_menu_and_click(page, "rules", cx, cy)
+    open_menu_and_click(page, "customArcs", cx, cy)
     page.wait_for_timeout(300)
 
     state = page.evaluate("""async () => {
@@ -814,7 +840,7 @@ def run(page, cx, cy) -> bool:
     ok &= keyboard_typing_case(page, cx, cy)
     ok &= reload_survives_case(page)
     # The reload above dropped the panel; reopen it for the cases that need it.
-    open_menu_and_click(page, "rules", cx, cy)
+    open_menu_and_click(page, "customArcs", cx, cy)
     page.wait_for_timeout(300)
     ok &= export_import_roundtrip_case(page)
     ok &= reset_case(page, cx, cy)

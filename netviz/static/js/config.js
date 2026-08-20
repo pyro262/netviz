@@ -441,6 +441,18 @@ export const CONFIG = {
     // by list order, so a rule that never fires cannot hold a slot in front of
     // one that does.
     maxRules: 5,
+
+    // Text size, as a multiplier on the rail's own vw-based sizes. 1.0 is what
+    // netviz has always drawn. The rail is sized in vw so it reads the same on
+    // a 1080p desk monitor and a 4K wall -- these scale that, they do not
+    // replace it.
+    scale: {
+      master: 1.0,
+      header: 1.0,
+      panel: 1.0,
+      big: 1.0,
+      row: 1.0,
+    },
   },
 
   // --------------------------------------------------------------- polling --

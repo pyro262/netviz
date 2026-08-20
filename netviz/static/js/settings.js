@@ -761,6 +761,40 @@ export const SCHEMA = {
         + 'rather than dropped: a truncated list that does not say it '
         + 'truncated is a lie about the traffic.',
   },
+  // Five paths, not one. `config.js` is a tree, so `rail.scale` cannot be a
+  // number AND the parent of the four group scales at the same time -- the same
+  // reason input.zoomRange is `.0`/`.1` under a parent rather than a bare pair.
+  //
+  // `relayout`, not `uniform`: writing the custom property is only half of it.
+  // fitRuleCap divides the rail's free space by a MEASURED row height, and a
+  // scale change moves both of those numbers, so the rail has to re-fit -- the
+  // same work a window resize already does.
+  'rail.scale.master': {
+    type: 'number', min: 0.25, max: 4.0, strategy: 'relayout',
+    help: 'Multiplies every text size on the rail at once. Sizes stay relative '
+        + 'to the window, so a wall and a desk monitor still read the same; '
+        + 'this is for a rail that is too small or too large on BOTH.',
+  },
+  'rail.scale.header': {
+    type: 'number', min: 0.25, max: 4.0, strategy: 'relayout',
+    help: 'The wordmark and the two clocks.',
+  },
+  'rail.scale.panel': {
+    type: 'number', min: 0.25, max: 4.0, strategy: 'relayout',
+    help: 'Each panel\'s heading and the small note beside it.',
+  },
+  'rail.scale.big': {
+    type: 'number', min: 0.25, max: 4.0, strategy: 'relayout',
+    help: 'The two big numbers -- blocks today, flows per minute -- and their '
+        + 'labels.',
+  },
+  'rail.scale.row': {
+    type: 'number', min: 0.25, max: 4.0, strategy: 'relayout',
+    help: 'Every ordinary row: labels, values and the build label at the foot. '
+        + 'At the top of the range the rail runs past its column and the rows '
+        + 'that do not fit are dropped and counted, which is the cost of a '
+        + 'range this wide.',
+  },
 
   // ------------------------------------------------------------- polling --
   'polling.healthSeconds': {

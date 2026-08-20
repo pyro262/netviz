@@ -4,10 +4,17 @@
 // which of them are valid, and which are ready to apply. The DOM half below
 // builds the modal and does nothing a test could decide.
 //
-// The panel writes ONLY through settings.apply({'arcs.custom': list}) -- never
-// arcs.setRules, never CONFIG, never localStorage. That is the same rule
-// menu.js follows, and it is what keeps one validator and one vocabulary
-// between the panel, the menu, an imported file and any future write API.
+// The panel writes ONLY through an applier -- never arcs.setRules, never
+// CONFIG, never localStorage directly. That is the same rule menu.js follows,
+// and it is what keeps one validator and one vocabulary between the panel, the
+// menu, an imported file and any future write API.
+//
+// TWO appliers, same split the settings panel uses. Every edit goes through
+// `preview` (raw, persisting nothing) so the wall shows it immediately; only a
+// Keep goes through `settings` (withPersistence), which is what writes. Before
+// this, every keystroke persisted, so there was nothing to save or discard --
+// and Escape and click-outside closed in silence, which would now throw away
+// somebody's half-finished list without a word.
 import { parseRule } from './rules.js';
 import { cfg } from './config.js';
 import { rampHexAt, activeRampStops } from './ramp.js';
@@ -171,8 +178,11 @@ const NAME_HELP =
   'Optional. What to call this custom arc in the stats rail -- "storj nodes" says '
   + 'more than the subnet does. Not used for matching.';
 
-export function createCustomArcsPanel({ settings, storage, confirmer, pending,
-                                       root, onClose } = {}) {
+export function createCustomArcsPanel({ settings, preview, storage, confirmer,
+                                       pending, root, onClose } = {}) {
+  // `preview` is optional so a caller that only has one applier still works;
+  // it falls back to the persisting one, which is exactly the old behavior.
+  const previewer = preview || settings;
   const mount = root || document.body;
   let node = null;
   // The working list, edited row by row. Kept here rather than read back out
@@ -198,6 +208,27 @@ export function createCustomArcsPanel({ settings, storage, confirmer, pending,
   // list got written back and quietly deleted a rule nobody touched.
   let dirty = false;
 
+  // The three paths this panel can write: the list, and the two built-in class
+  // colors its fixed rows edit. Snapshotted together, because Revert has to put
+  // back a swatch as surely as it puts back a row -- a path this panel can
+  // WRITE but cannot RESTORE is a one-way door.
+  const PATHS = ['arcs.custom', 'arcs.block.color', 'arcs.flow.color'];
+  let snapshot = new Map();
+  let dirtyPaths = new Set();
+
+  /** What a Keep would write: the touched paths at their CURRENT values. */
+  function pendingPatch() {
+    const out = {};
+    for (const path of dirtyPaths) {
+      if (!snapshot.has(path)) continue;
+      out[path] = path === 'arcs.custom'
+        ? readyRules(panelRows(draft)) : cfg(path, 'auto');
+    }
+    return out;
+  }
+
+  function pendingPaths() { return Object.keys(pendingPatch()); }
+
   function isOpen() { return node !== null; }
 
   /** Validate the whole draft and, if an edit actually happened, push it
@@ -210,8 +241,10 @@ export function createCustomArcsPanel({ settings, storage, confirmer, pending,
   function applyDraft() {
     const rows = panelRows(draft);
     if (dirty) {
-      const out = settings.apply({ 'arcs.custom': readyRules(rows) });
+      const out = previewer.apply({ 'arcs.custom': readyRules(rows) });
       for (const r of out.rejected) console.warn(`netviz: ${r.path} -- ${r.why}`);
+      dirtyPaths.add('arcs.custom');
+      refreshActions();
     }
     return rows;
   }
@@ -372,9 +405,11 @@ export function createCustomArcsPanel({ settings, storage, confirmer, pending,
     swatch.value = builtinColor(cls);
     swatch.title = spec.help;
     swatch.addEventListener('input', () => {
-      const out = settings.apply({ [`arcs.${cls}.color`]: swatch.value });
+      const out = previewer.apply({ [`arcs.${cls}.color`]: swatch.value });
       for (const r of out.rejected) console.warn(`netviz: ${r.path} -- ${r.why}`);
+      dirtyPaths.add(`arcs.${cls}.color`);
       refreshBuiltin();
+      refreshActions();
     });
     wrap.append(swatch);
 
@@ -390,8 +425,10 @@ export function createCustomArcsPanel({ settings, storage, confirmer, pending,
                + 'recolors it with everything else.';
     undo.disabled = onAuto;
     undo.addEventListener('click', () => {
-      settings.apply({ [`arcs.${cls}.color`]: 'auto' });
+      previewer.apply({ [`arcs.${cls}.color`]: 'auto' });
+      dirtyPaths.add(`arcs.${cls}.color`);
       refreshBuiltin();
+      refreshActions();
     });
     wrap.append(undo);
     return wrap;
@@ -427,8 +464,164 @@ export function createCustomArcsPanel({ settings, storage, confirmer, pending,
     return add;
   }
 
+  /** The three action buttons' enabled state, re-read from the pending set.
+   *  Called after anything that could change it, the same discipline
+   *  settings_panel.js's refreshActions() follows. */
+  function refreshActions() {
+    if (!node) return;
+    const n = pendingPaths().length;
+    const keepBtn = node.querySelector('.custom-arc-keep');
+    const revertBtn = node.querySelector('.custom-arc-revert');
+    if (keepBtn) keepBtn.disabled = n === 0;
+    if (revertBtn) revertBtn.disabled = n === 0;
+    const count = node.querySelector('.custom-arc-count');
+    if (count) {
+      count.textContent = n
+        ? `${n} change${n === 1 ? '' : 's'}, not yet kept`
+        : '';
+    }
+  }
+
+  /** Ask, then do -- or just do, when this panel was built with no confirmer.
+   *  Same shape settings_panel.js uses, and for the same reason: main.js passes
+   *  the ONE dialog the page has, so there is one set of rules on screen. */
+  function askThen(question, go) {
+    if (!question || !confirmer) { go(); return; }
+    confirmer.ask({ ...question, onConfirm: go });
+  }
+
+  function keepQuestion(n) {
+    return {
+      title: `Remember ${n} change${n === 1 ? '' : 's'} on this screen?`,
+      lead: 'This writes them into this web browser, for this screen only. '
+          + 'Nothing is sent to the collector.',
+      will: [
+        `Store ${n} change${n === 1 ? '' : 's'} so they survive a reload.`,
+        'Leave the wall exactly as it looks right now.',
+      ],
+      wont: [
+        'Change anything on the collector, or on any other display.',
+        'Delete any traffic, history or statistics.',
+      ],
+      confirmLabel: 'Yes, remember them',
+      cancelLabel: 'No, leave them unsaved',
+    };
+  }
+
+  function revertQuestion(n) {
+    return {
+      title: `Put ${n} change${n === 1 ? '' : 's'} back?`,
+      lead: 'The wall goes back to how it was when this panel opened, or to '
+          + 'whatever you last kept, whichever is later.',
+      will: [
+        `Undo ${n} change${n === 1 ? '' : 's'} you have not kept.`,
+        'Redraw the arcs in their previous colors.',
+      ],
+      wont: [
+        'Change anything you have already kept -- that stays kept.',
+        'Change anything on the collector, or on any other display.',
+      ],
+      confirmLabel: 'Yes, put them back',
+      cancelLabel: 'No, keep editing',
+    };
+  }
+
+  function closeQuestion(n) {
+    return {
+      title: `Close and discard ${n} change${n === 1 ? '' : 's'}?`,
+      lead: 'Closing this panel is a revert: nothing you are trying out '
+          + 'survives it, because a preview left on the wall after the panel '
+          + 'is gone is a display in a state nothing recorded.',
+      will: [
+        `Discard ${n} change${n === 1 ? '' : 's'} you have not kept.`,
+        'Put the arcs back to how they were before you opened this panel.',
+        'Close the panel.',
+      ],
+      wont: [
+        'Change anything you have already kept -- that stays kept.',
+        'Change anything on the collector, or on any other display.',
+      ],
+      note: 'To keep them instead, cancel and click "Keep" -- or use the '
+          + 'middle button here, which does both.',
+      confirmLabel: 'Yes, close and discard',
+      cancelLabel: 'No, go back to the panel',
+      altLabel: 'Keep them, then close',
+    };
+  }
+
+  function doKeep() {
+    const patch = pendingPatch();
+    const n = Object.keys(patch).length;
+    if (!n) return;
+    const out = settings.apply(patch);
+    for (const r of out.rejected || []) console.warn(`netviz: ${r.path} -- ${r.why}`);
+    // Re-baseline: what was just written IS the new starting point, so a
+    // later Revert puts the display back to here rather than to the state
+    // before a keep the operator already committed to.
+    for (const [path, v] of Object.entries(patch)) snapshot.set(path, v);
+    dirtyPaths = new Set();
+    dirty = false;
+    showNote(`Kept ${n} change${n === 1 ? '' : 's'} on this display.`);
+    refreshActions();
+  }
+
+  function keep() {
+    const n = pendingPaths().length;
+    if (!n) return;
+    askThen(keepQuestion(n), doKeep);
+  }
+
+  function doRevert() {
+    const patch = {};
+    for (const path of dirtyPaths) {
+      if (snapshot.has(path)) patch[path] = snapshot.get(path);
+    }
+    if (Object.keys(patch).length) {
+      const out = previewer.apply(patch);
+      for (const r of out.rejected || []) console.warn(`netviz: ${r.path} -- ${r.why}`);
+    }
+    dirtyPaths = new Set();
+    dirty = false;
+    draft = (snapshot.get('arcs.custom') || []).map((r) => ({ ...r }));
+    if (node) redraw();
+    showNote('');
+    refreshActions();
+  }
+
+  function revert() {
+    const n = pendingPaths().length;
+    if (!n) return;
+    askThen(revertQuestion(n), doRevert);
+  }
+
+  /** Close, asking first when there is something to lose.
+   *
+   *  Called by Escape, by a click outside, by the Close button and by menu.js
+   *  before it opens another panel. `onClosed` runs only when the panel
+   *  actually closed, and runs immediately when there was nothing to ask. */
+  function requestClose(onClosed) {
+    const done = () => { if (onClosed) onClosed(); };
+    if (!node) { done(); return; }
+    const n = pendingPaths().length;
+    if (!n) { close(); done(); return; }
+    if (!confirmer) { close(); done(); return; }
+    // Asked directly rather than through askThen(), which carries ONE callback
+    // and this question has two answers that act. The alt KEEPS FIRST, then
+    // closes -- close() reverts whatever is still dirty, so closing first would
+    // revert the very values it is about to write.
+    confirmer.ask({
+      ...closeQuestion(n),
+      onConfirm: () => { close(); done(); },
+      onAlt: () => { doKeep(); close(); done(); },
+    });
+  }
+
   function close() {
     if (!node) return;
+    // The FORCE close: whatever is still pending is discarded, because a
+    // preview left on the wall after the panel is gone is a display in a state
+    // nothing recorded. requestClose() is the door that asks first.
+    if (dirtyPaths.size) doRevert();
     node.remove();
     node = null;
     document.removeEventListener('keydown', onKeyDown, true);
@@ -436,15 +629,23 @@ export function createCustomArcsPanel({ settings, storage, confirmer, pending,
     if (onClose) onClose();
   }
 
-  function onKeyDown(e) { if (e && e.key === 'Escape') close(); }
+  function onKeyDown(e) { if (e && e.key === 'Escape') requestClose(); }
   function onOutside(e) {
-    if (node && e && e.target && !node.contains(e.target)) close();
+    if (node && e && e.target && !node.contains(e.target)) requestClose();
   }
 
   function open() {
     if (node) return true;
     draft = (cfgCustom() || []).map((r) => ({ ...r }));
     dirty = false;
+    // The baseline a Revert and a force-close put back. Taken BEFORE anything
+    // is drawn, so a look with no edit has nothing to undo.
+    snapshot = new Map();
+    for (const path of PATHS) {
+      snapshot.set(path, path === 'arcs.custom'
+        ? (cfgCustom() || []).map((r) => ({ ...r })) : cfg(path, 'auto'));
+    }
+    dirtyPaths = new Set();
     node = el('div', 'custom-arc-panel');
     node.append(el('div', 'custom-arc-title', 'Custom arcs'));
     // Says what the engine actually does. The old sentence -- "checked top to
@@ -542,13 +743,22 @@ export function createCustomArcsPanel({ settings, storage, confirmer, pending,
     importBtn.addEventListener('click', () => importInput.click());
     foot.append(importBtn, importInput);
 
+    // Revert / Keep / Close, in the tuning panel's order and with its words,
+    // so an operator does not learn two sets of rules for the same three
+    // decisions. Close ASKS -- it is requestClose(), not the force-close.
+    const revertBtn = el('button', 'custom-arc-revert', 'Revert');
+    revertBtn.addEventListener('click', revert);
+    const keepBtn = el('button', 'custom-arc-keep', 'Keep');
+    keepBtn.addEventListener('click', keep);
     const closeBtn = el('button', 'custom-arc-close', 'Close');
-    closeBtn.addEventListener('click', close);
-    foot.append(closeBtn);
+    closeBtn.addEventListener('click', () => requestClose());
+    foot.append(revertBtn, keepBtn, closeBtn);
     node.append(foot);
+    node.append(el('div', 'custom-arc-count'));
     node.append(el('div', 'custom-arc-note'));
     mount.appendChild(node);
     redraw();
+    refreshActions();
     document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('pointerdown', onOutside, true);
     askConversion();
@@ -610,5 +820,5 @@ export function createCustomArcsPanel({ settings, storage, confirmer, pending,
     });
   }
 
-  return { open, close, isOpen };
+  return { open, close, requestClose, isOpen, pendingPaths };
 }

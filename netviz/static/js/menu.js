@@ -486,16 +486,16 @@ export function createMenu({
    *  `skip` names the panel about to be opened, so it is never closed by its
    *  own opener. */
   function closeOtherPanelsThen(skip, openFn) {
+    // All three ASK now. The custom arcs panel used to be force-closed here, on
+    // the ground that every edit in it already persisted immediately -- that
+    // stopped being true when it got a pending model, and a force-close would
+    // silently discard exactly the work that model exists to protect.
     const askers = [];
     if (settingsPanel && skip !== 'settings') askers.push(settingsPanel);
     if (themePanel && skip !== 'theme') askers.push(themePanel);
-    const closeRules = !!(customArcsPanel && skip !== 'customArcs');
+    if (customArcsPanel && skip !== 'customArcs') askers.push(customArcsPanel);
     function next(i) {
-      if (i >= askers.length) {
-        if (closeRules) customArcsPanel.close();
-        openFn();
-        return;
-      }
+      if (i >= askers.length) { openFn(); return; }
       askers[i].requestClose(() => next(i + 1));
     }
     next(0);

@@ -811,3 +811,22 @@ test('no lightning row at all when the layer is off or has no bucket', () => {
     assert.equal(found, false);
   }
 });
+
+test('the fit re-derives after a scale change', () => {
+  // Same measured inputs, one with rows twice as tall. The cap must fall,
+  // because fitRuleCap divides free space by a MEASURED row height and the
+  // scale moved both terms.
+  const small = fitRuleCap({ available: 900, other: 300, chrome: 40,
+                             rowHeight: 20, total: 12, maxRules: 12 });
+  const large = fitRuleCap({ available: 900, other: 600, chrome: 80,
+                             rowHeight: 40, total: 12, maxRules: 12 });
+  assert.ok(large < small, `${large} should be below ${small}`);
+  assert.ok(large >= 1, 'the fitter floors at one row plus a named overflow');
+});
+
+test('railContentHeight still sums correctly with scaled children', () => {
+  const at1 = railContentHeight({ childHeights: [40, 120, 90, 30], gap: 14, padding: 32 });
+  const at4 = railContentHeight({ childHeights: [160, 480, 360, 120], gap: 14, padding: 32 });
+  assert.equal(at1, 40 + 120 + 90 + 30 + 14 * 3 + 32);
+  assert.equal(at4, 160 + 480 + 360 + 120 + 14 * 3 + 32);
+});

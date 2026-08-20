@@ -405,9 +405,14 @@ export function closeQuestion(paths = []) {
       'Change anything on the collector, or on any other display.',
       'Touch your color rules.',
     ],
-    note: 'To keep these instead, cancel and click "Keep".',
+    note: 'To keep these instead, cancel and click "Keep" -- or use the middle '
+        + 'button here, which does both.',
     confirmLabel: 'Yes, close and discard',
     cancelLabel: 'No, go back to the panel',
+    // The third answer. It exists because "close" and "keep" were two separate
+    // decisions that a person almost always makes together, and the panel used
+    // to make them cancel out of one dialog to reach the other button.
+    altLabel: 'Keep them, then close',
   };
 }
 
@@ -903,9 +908,20 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
   function requestClose(onClosed) {
     const done = () => { if (onClosed) onClosed(); };
     if (!node) { done(); return; }
+    const patch = dirtyPatch(snapshot, current, dirty);
     const question = closeQuestion(Object.keys(revertPatch(snapshot, dirty)));
     if (!question) { closePanel(); done(); return; }
-    askThen(question, () => { closePanel(); done(); });
+    // Asked directly rather than through askThen(), which carries ONE callback
+    // and this question has two answers that act. The alt KEEPS FIRST, then
+    // closes -- and closePanel() reverts whatever is still dirty, which after a
+    // successful doKeep() is nothing. Ordering matters: closing first would
+    // revert the very values it is about to write.
+    if (!confirmer) { closePanel(); done(); return; }
+    confirmer.ask({
+      ...question,
+      onConfirm: () => { closePanel(); done(); },
+      onAlt: () => { doKeep(patch); closePanel(); done(); },
+    });
   }
 
   return { open, close: closePanel, requestClose, isOpen };

@@ -972,10 +972,10 @@ def case11_small_viewport(page) -> bool:
 
 
 def custom_arcs_panel_open(page) -> bool:
-    """The color-rules panel's own element, on the same terms as the tuning
+    """The custom-arcs panel's own element, on the same terms as the tuning
     panel's: in the document with a non-zero rect."""
     return bool(page.evaluate("""() => {
-      const el = document.querySelector('.rules-panel');
+      const el = document.querySelector('.custom-arc-panel');
       if (!el || !document.contains(el)) return false;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
@@ -1021,7 +1021,7 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
     moved = read_live(page, OPACITY)
 
     # Cancel first.
-    clicked = open_menu_and_click(page, "rules", cx, cy)
+    clicked = open_menu_and_click(page, "customArcs", cx, cy)
     page.wait_for_timeout(300)
     asked = confirm_state(page)
     asked_ok = confirm_is_really_open(asked) and asked.get("yes") and asked.get("no")
@@ -1042,7 +1042,7 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
             and after_cancel["store"] == store_base)
 
     # Then through it for real.
-    clicked2 = open_menu_and_click(page, "rules", cx, cy)
+    clicked2 = open_menu_and_click(page, "customArcs", cx, cy)
     page.wait_for_timeout(300)
     asked2 = confirm_is_really_open(confirm_state(page))
     answered2 = answer_confirm(page, True) if asked2 else False
@@ -1479,6 +1479,80 @@ def case13_rebuild_rows_warn_and_clear(page, cx, cy) -> bool:
         f"{after_control} (still drawn={control_ok})")
 
 
+def case14_close_can_keep(page, cx, cy) -> bool:
+    """14: the Close question's middle button keeps the pending rows, then closes.
+
+    "Close" and "Keep" were two separate decisions a person almost always makes
+    together, and reaching the second one meant cancelling out of the dialog
+    offering the first. The third button does both, and it has to do them in
+    that order: closePanel() reverts whatever is still dirty, so a wiring that
+    closed first would revert the very values it was about to write -- and the
+    panel would shut looking exactly as if it had worked.
+
+    Which is why all three are read after the click: the panel is gone, the
+    STORE carries the row, and the WALL is still at the dragged value rather
+    than back at the baseline. The store alone is passed by a keep that wrote
+    and then reverted the display; the wall alone is passed by a close that
+    never wrote at all.
+
+    Cleans up after itself -- main()'s finally restores the whole key, but a
+    case that leaves a row kept changes the baseline every later case reads."""
+    name = "14: Close can keep instead of discarding"
+    close_panel(page)
+    page.wait_for_timeout(250)
+    if not open_menu_and_click(page, "settings", cx, cy):
+        return report(name, False, "could not open the tuning panel")
+    page.wait_for_timeout(400)
+
+    store_base = read_store(page)
+    base = read_live(page, OPACITY)
+    out = drag_slider(page, OPACITY, OPACITY_TARGET)
+    if out.get("error"):
+        return report(name, False, out["error"])
+    moved = read_live(page, OPACITY)
+
+    clicked = click_panel_button(page, ".tuner-close")
+    page.wait_for_timeout(300)
+    state = confirm_state(page)
+    seen = confirm_is_really_open(state)
+    # The middle button exists ONLY when altLabel is set, so its absence here
+    # is the whole regression this case guards -- not a detail of the click.
+    alt_present = page.evaluate(
+        "() => !!document.querySelector('.confirm .confirm-alt')")
+    alt_clicked = page.evaluate("""() => {
+      const b = document.querySelector('.confirm .confirm-alt');
+      if (!b) return false;
+      b.click();
+      return true;
+    }""") if alt_present else False
+    page.wait_for_timeout(500)
+
+    after = {
+        "panel": panel_is_really_open(panel_state(page)),
+        "live": read_live(page, OPACITY),
+        "store": read_store(page),
+    }
+    parsed = json.loads(after["store"]) if after["store"] else {}
+    stored = parsed.get(OPACITY)
+    ok = (clicked and seen and alt_present and alt_clicked
+          and not after["panel"]
+          and stored is not None and abs(stored - OPACITY_TARGET) < 1e-9
+          and abs((after["live"] or 0) - OPACITY_TARGET) < 1e-9
+          and moved != base)
+
+    restore_store(page, store_base)
+    page.reload(wait_until="load")
+    page.wait_for_function("window.__netvizReady === true", timeout=20_000)
+    page.wait_for_timeout(1500)
+
+    return report(
+        name, ok,
+        f"{OPACITY} base={base} -> drag {moved}; asked={seen} alt button "
+        f"present={alt_present} clicked={alt_clicked}; after: panel "
+        f"open={after['panel']} (must be False), live={after['live']} "
+        f"(must stay {OPACITY_TARGET}, not revert to {base}), stored={stored}")
+
+
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= case1_panel_in_dom(page, cx, cy)
@@ -1494,6 +1568,7 @@ def run(page, cx, cy) -> bool:
     ok &= case7_camera_held(page, cx, cy)
     ok &= case8_menu_mutual_exclusion(page, cx, cy)
     ok &= case9_randomize(page, cx, cy)
+    ok &= case14_close_can_keep(page, cx, cy)
     ok &= case12_randomize_scope_is_stated(page, cx, cy)
     ok &= case13_rebuild_rows_warn_and_clear(page, cx, cy)
     # Last, because it resizes the viewport. It restores it, but a case that

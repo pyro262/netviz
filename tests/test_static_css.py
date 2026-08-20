@@ -47,6 +47,8 @@ REQUIRED_SELECTORS = (
     ".custom-arc-legend",
     ".custom-arc-row",
     ".custom-arc-fixed",
+    ".custom-arc-keep",
+    ".custom-arc-count",
     ".tuner-panel",
     ".tuner-head",
     ".tuner-actions",

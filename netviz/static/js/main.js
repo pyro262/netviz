@@ -451,6 +451,21 @@ async function boot() {
     // nothing to refuse: the value is stored in CONFIG by the executor and the
     // rail reads it when it next mounts.
     setMaxRules() {},
+    /** Write one scale onto the rail element and re-fit.
+     *
+     *  The custom properties live on #rail itself, not on :root: the rail is
+     *  the only consumer, and a scale left on the document would still be in
+     *  force for a future element that happened to name the same variable.
+     *  Safe while unmounted -- #rail exists in the markup either way, and the
+     *  fit re-runs from scratch on the next mount. */
+    setScale(group, value) {
+      const el = document.getElementById('rail');
+      // The master is the OUTER multiplier the four group variables are built
+      // from, so it is the one property that is not a `-own`.
+      const prop = group === 'master' ? '--rail-master' : `--rail-${group}-own`;
+      if (el) el.style.setProperty(prop, String(value));
+      if (railHandle) railHandle.redraw();
+    },
   };
   // One source, and it is already reconciled: the stored patch was applied
   // over config.js before this point, so cfg('rail.enabled') is what the menu
@@ -551,7 +566,8 @@ async function boot() {
   // every schema rename this display's memory still predates. The panel asks
   // about them; nothing writes until somebody says yes.
   const customArcsPanel = createCustomArcsPanel({
-    settings, storage, confirmer, pending: stored.pending, root: document.body,
+    settings, preview, storage, confirmer, pending: stored.pending,
+    root: document.body,
   });
   // Same mount argument as the rules panel: document.body, never #stage.
   //

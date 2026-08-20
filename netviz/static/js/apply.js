@@ -364,6 +364,13 @@ export const HANDLERS = {
     if (!v && ctx.rail.mounted()) ctx.rail.unmount();
   },
   'rail.maxRules': (v, ctx) => ctx.rail.setMaxRules(v),
+  // Each writes one custom property on #rail and re-fits. Declared `relayout`,
+  // so the executor also calls resize() once however many of the five moved.
+  'rail.scale.master': (v, ctx) => ctx.rail.setScale('master', v),
+  'rail.scale.header': (v, ctx) => ctx.rail.setScale('header', v),
+  'rail.scale.panel': (v, ctx) => ctx.rail.setScale('panel', v),
+  'rail.scale.big': (v, ctx) => ctx.rail.setScale('big', v),
+  'rail.scale.row': (v, ctx) => ctx.rail.setScale('row', v),
 
   'polling.healthSeconds': (v, ctx) => ctx.polling('health', v),
   'polling.railSeconds': (v, ctx) => ctx.polling('rail', v),

@@ -788,6 +788,13 @@ export function start(counter, classColors, lightningState = () => null) {
   let stopped = false;
   return {
     poll,
+    /** Re-run one paint from scratch.
+     *
+     *  What a text-scale write needs: fitRuleCap divides the rail's free space
+     *  by a MEASURED row height, and a scale moves both terms, so the fit has
+     *  to be derived again rather than kept. draw() already measures live, so
+     *  it self-corrects -- this only gives a caller a way to ask. */
+    redraw() { if (!stopped) draw(); },
     /** polling.railSeconds is a live setting; the interval is replaced rather
      *  than read from inside a fixed timer. */
     setPeriod(seconds) {

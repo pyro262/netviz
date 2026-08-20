@@ -556,3 +556,16 @@ test('the custom-arc list is declared under its new path only', () => {
   assert.equal(entry('arcs.rules'), null, 'the old path is gone, not aliased');
   assert.equal(entry('arcs.custom').type, 'rules');
 });
+
+test('the five rail scales are declared with the widest range the operator chose', () => {
+  for (const g of ['master', 'header', 'panel', 'big', 'row']) {
+    const e = entry(`rail.scale.${g}`);
+    assert.ok(e, `rail.scale.${g} is declared`);
+    assert.equal(e.type, 'number');
+    assert.equal(e.min, 0.25);
+    assert.equal(e.max, 4.0);
+    assert.equal(e.strategy, 'relayout',
+      'a scale write has to reach the same re-fit path a resize does');
+  }
+  assert.equal(entry('rail.scale'), null, 'a path is a leaf or a parent, never both');
+});

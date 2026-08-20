@@ -481,3 +481,131 @@ test('"not now" does not ask again in the same session', () => {
     panel.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 7: the pending model.
+//
+// Before this, every keystroke in this panel went straight through
+// settings.apply and PERSISTED, so there was nothing to save or discard -- and
+// Escape and click-outside closed silently, which after the change would be a
+// silent discard of somebody's typing. The panel now carries the same model the
+// settings panel does: snapshot at open, preview on every edit, Keep writes,
+// Revert puts back, and Close asks.
+
+const recorder = (into) => ({
+  apply: (patch) => { into.push(patch); return { applied: Object.keys(patch), rejected: [] }; },
+});
+const autoConfirm = () => ({ ask: (q) => { if (q.onConfirm) q.onConfirm(); } });
+
+const clickAdd = (dom) => dom.root.querySelector('.custom-arc-add').dispatch('click', {});
+function typeMatch(dom, value) {
+  const m = dom.root.querySelector('.custom-arc-match');
+  m.value = value;
+  m.dispatch('input', {});
+}
+const clickButton = (dom, cls) => dom.root.querySelector(cls).dispatch('click', {});
+
+function withEmptyCustom(fn) {
+  const saved = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [];
+  try { return fn(); } finally { CONFIG.arcs.custom = saved; }
+}
+
+test('opening writes nothing to either applier', () => {
+  const dom = fakeDom();
+  withEmptyCustom(() => withFakeGlobals(dom, () => {
+    const previewed = []; const persisted = [];
+    const panel = createCustomArcsPanel({
+      preview: recorder(previewed), settings: recorder(persisted), root: dom.root,
+    });
+    panel.open();
+    assert.deepEqual(previewed, []);
+    assert.deepEqual(persisted, []);
+    panel.close();
+  }));
+});
+
+test('an edit previews live and persists nothing', () => {
+  const dom = fakeDom();
+  withEmptyCustom(() => withFakeGlobals(dom, () => {
+    const previewed = []; const persisted = [];
+    const panel = createCustomArcsPanel({
+      preview: recorder(previewed), settings: recorder(persisted), root: dom.root,
+    });
+    panel.open();
+    clickAdd(dom);
+    typeMatch(dom, '203.0.113.0/24');
+    assert.ok(previewed.length > 0);
+    assert.deepEqual(persisted, []);
+    assert.deepEqual(panel.pendingPaths(), ['arcs.custom']);
+    panel.close();
+  }));
+});
+
+test('Keep persists the touched paths and clears the pending set', () => {
+  const dom = fakeDom();
+  withEmptyCustom(() => withFakeGlobals(dom, () => {
+    const persisted = [];
+    const panel = createCustomArcsPanel({
+      preview: recorder([]), settings: recorder(persisted),
+      confirmer: autoConfirm(), root: dom.root,
+    });
+    panel.open();
+    clickAdd(dom); typeMatch(dom, '203.0.113.0/24');
+    clickButton(dom, '.custom-arc-keep');
+    assert.equal(persisted.length, 1);
+    assert.ok('arcs.custom' in persisted[0]);
+    assert.deepEqual(panel.pendingPaths(), []);
+    panel.close();
+  }));
+});
+
+test('Revert puts the list back to what it was at open', () => {
+  const dom = fakeDom();
+  withEmptyCustom(() => withFakeGlobals(dom, () => {
+    const previewed = [];
+    const panel = createCustomArcsPanel({
+      preview: recorder(previewed), settings: recorder([]),
+      confirmer: autoConfirm(), root: dom.root,
+    });
+    panel.open();
+    clickAdd(dom); typeMatch(dom, '203.0.113.0/24');
+    clickButton(dom, '.custom-arc-revert');
+    assert.deepEqual(previewed[previewed.length - 1]['arcs.custom'], []);
+    assert.deepEqual(panel.pendingPaths(), []);
+    panel.close();
+  }));
+});
+
+test('Escape routes through requestClose and asks when something is pending', () => {
+  const dom = fakeDom();
+  withEmptyCustom(() => withFakeGlobals(dom, () => {
+    const asked = [];
+    const panel = createCustomArcsPanel({
+      preview: recorder([]), settings: recorder([]),
+      confirmer: { ask: (q) => { asked.push(q); } }, root: dom.root,
+    });
+    panel.open();
+    clickAdd(dom); typeMatch(dom, '203.0.113.0/24');
+    dom.document.dispatch('keydown', { key: 'Escape' });
+    assert.equal(asked.length, 1, 'silently discarding is what this replaces');
+    assert.equal(panel.isOpen(), true, 'still open until the question is answered');
+    asked[0].onConfirm();
+    assert.equal(panel.isOpen(), false);
+  }));
+});
+
+test('a click outside with nothing pending closes with no question', () => {
+  const dom = fakeDom();
+  withEmptyCustom(() => withFakeGlobals(dom, () => {
+    const asked = [];
+    const panel = createCustomArcsPanel({
+      preview: recorder([]), settings: recorder([]),
+      confirmer: { ask: (q) => { asked.push(q); } }, root: dom.root,
+    });
+    panel.open();
+    dom.document.dispatch('pointerdown', { target: dom.root });
+    assert.equal(asked.length, 0);
+    assert.equal(panel.isOpen(), false);
+  }));
+});

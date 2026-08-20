@@ -429,3 +429,24 @@ test('the two marks are different glyphs', () => {
   // -- so one glyph doing both jobs would make each unreadable.
   assert.notEqual(RANDOM_MARK, REBUILD_MARK);
 });
+
+// ---------------------------------------------------------------------------
+// The close question's third answer.
+//
+// "Close" and "Keep" were two separate decisions a person almost always makes
+// together, and reaching the second one meant cancelling out of the dialog
+// offering the first. The BUTTON's wiring is proved live by verify_tuner.py's
+// case 8, which needs a real browser; what is proved here is that the question
+// offers the answer at all, and that offering it did not turn "nothing pending"
+// into a question.
+
+test('the close question offers keeping as well as discarding', () => {
+  const q = closeQuestion(['rail.enabled', 'arcs.bodyOpacity']);
+  assert.equal(q.altLabel, 'Keep them, then close');
+  assert.match(q.confirmLabel, /discard/i);
+  assert.match(q.cancelLabel, /go back/i);
+});
+
+test('nothing pending is still no question at all', () => {
+  assert.equal(closeQuestion([]), null);
+});
