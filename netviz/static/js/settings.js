@@ -587,6 +587,47 @@ export const SCHEMA = {
     help: 'The aurora’s upper band. #c56cff is 630 nm red over violet -- '
         + 'the same caveat as the lower band.',
   },
+  // ------------------------------------------------- the rail's own text --
+  // On the ramp like everything else, so picking a palette recolors the
+  // numbers with the globe and a saved theme captures them. Delivered to the
+  // rail as CSS custom properties, not as an injected function: rail.js is
+  // three-free and stays that way.
+  'appearance.colors.railWordmark': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The NETVIZ wordmark at the top of the stats rail.',
+  },
+  'appearance.colors.railClock': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'Both clocks under the wordmark, local and UTC.',
+  },
+  'appearance.colors.railPanelTitle': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'Each panel heading on the rail, and the small note beside it.',
+  },
+  'appearance.colors.railBig': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The two big numbers: blocks today and flows per minute.',
+  },
+  'appearance.colors.railLabel': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The left-hand label of every ordinary rail row.',
+  },
+  'appearance.colors.railValue': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The right-hand value of every ordinary rail row, and the rail\'s '
+        + 'own base text color.',
+  },
+  'appearance.colors.railAlarm': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'A rail value that is wrong -- a stale feed, a miss rate over the '
+        + 'threshold. Kept deliberately far from the ordinary value color: an '
+        + 'alarm in the same neighborhood as everything else stops reading as '
+        + 'an alarm.',
+  },
+  'appearance.colors.railBars': {
+    type: 'color', allowAuto: true, strategy: 'uniform',
+    help: 'The filled part of every bar and sparkline on the rail.',
+  },
   'appearance.theme': {
     type: 'enum', values: ['plasma', 'viridis', 'magma', 'inferno', 'cividis',
                            'custom'],
@@ -909,7 +950,7 @@ export function defaultOf(path) { return cfg(path, undefined); }
  *  copy of the catalog would drift, same reason the schema keeps no
  *  defaults.
  *
- *  The twelve `appearance.colors.*` element paths are exceptions too: the
+ *  The twenty `appearance.colors.*` element paths are exceptions too: the
  *  derived form (`appearance colors coastline`) is what settingLabel used to
  *  fall through to, and the theme panel prints exactly that string as a row
  *  label and inside its own confirm questions -- the tuning panel spells its
@@ -922,6 +963,14 @@ const LABELS = {
   'input.lock': 'the display lock',
   'appearance.background': 'the background color',
   'traffic.flowsPerSecond': 'how many flows are drawn per second',
+  'appearance.colors.railWordmark': 'Rail wordmark',
+  'appearance.colors.railClock': 'Rail clock',
+  'appearance.colors.railPanelTitle': 'Rail panel headings',
+  'appearance.colors.railBig': 'Rail big numbers',
+  'appearance.colors.railLabel': 'Rail labels',
+  'appearance.colors.railValue': 'Rail values',
+  'appearance.colors.railAlarm': 'Rail alarm values',
+  'appearance.colors.railBars': 'Rail bars and sparklines',
   'appearance.colors.coastline': 'Coastline',
   'appearance.colors.bordersWorld': 'World borders',
   'appearance.colors.admin1': 'State/province borders',

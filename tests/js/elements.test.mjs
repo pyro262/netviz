@@ -17,6 +17,14 @@ test('the table carries every ramp-derived element with its shipped t', () => {
     atmosphere: 0.20,
     rippleFlow: 0.34,
     rippleBlock: 0.86,
+    railWordmark: 1.00,
+    railClock: 0.89,
+    railPanelTitle: 0.67,
+    railBig: 0.89,
+    railLabel: 0.44,
+    railValue: 0.89,
+    railAlarm: 0.60,
+    railBars: 0.67,
   });
 });
 
@@ -63,4 +71,42 @@ test('isAuto is exact, not truthy', () => {
   assert.equal(isAuto('#auto0'), false);
   assert.equal(isAuto(''), false);
   assert.equal(isAuto(undefined), false);
+});
+
+// ---------------------------------------------------------------------------
+// The rail's text joins the catalogue (0.7.0).
+
+import { entry, paths } from '../../netviz/static/js/settings.js';
+import { RAMPS } from '../../netviz/static/js/ramp.js';
+
+const RAIL_KEYS = ['railWordmark', 'railClock', 'railPanelTitle', 'railBig',
+                   'railLabel', 'railValue', 'railAlarm', 'railBars'];
+
+test('the catalogue is twenty entries: seventeen ramp, three literal', () => {
+  assert.equal(Object.keys(ELEMENT_T).length + Object.keys(ELEMENT_LITERAL).length, 20);
+  for (const k of RAIL_KEYS) assert.ok(k in ELEMENT_T, `${k} is on the ramp`);
+});
+
+test('every catalogue key has a schema path and vice versa', () => {
+  const keys = [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)];
+  for (const k of keys) assert.ok(entry(`appearance.colors.${k}`), k);
+  const declared = paths().filter((p) => p.startsWith('appearance.colors.'));
+  assert.equal(declared.length, keys.length);
+});
+
+test('railAlarm stays distinct from railValue on ALL FIVE presets', () => {
+  // The judgment a test CAN hold: two ramp samples far enough apart that the
+  // alarm never lands in the value color's neighborhood. "Still reads as an
+  // alarm" is a wall decision and is not claimed here.
+  //
+  // 0.60 is the value whose WORST separation across the five presets clears
+  // this threshold -- cividis at 102. 0.65 does not (cividis, 88), and today's
+  // literal #fb9f3a is t~0.78, only 0.11 from railValue.
+  const hex2 = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const dist = (a, b) => Math.hypot(...hex2(a).map((v, i) => v - hex2(b)[i]));
+  for (const [id, stops] of Object.entries(RAMPS)) {
+    const d = dist(rampHexAt(ELEMENT_T.railAlarm, stops),
+                   rampHexAt(ELEMENT_T.railValue, stops));
+    assert.ok(d >= 90, `${id}: railAlarm and railValue are ${d.toFixed(0)} apart, want >= 90`);
+  }
 });

@@ -458,6 +458,16 @@ async function boot() {
      *  force for a future element that happened to name the same variable.
      *  Safe while unmounted -- #rail exists in the markup either way, and the
      *  fit re-runs from scratch on the next mount. */
+    /** The rail's colors arrive as CSS custom properties, not as a second
+     *  injected function. rail.js must not learn what a color is -- it is
+     *  three-free and unit-tested without one, which is why the arc legend's
+     *  colors are already handed in as a function called on every paint. A
+     *  property is simpler than a second function and needs no repaint at all.
+     *  No-op-safe while unmounted: #rail is in the markup either way. */
+    setColor(name, color) {
+      const el = document.getElementById('rail');
+      if (el) el.style.setProperty(`--rail-c-${name}`, `#${color.getHexString()}`);
+    },
     setScale(group, value) {
       const el = document.getElementById('rail');
       // The master is the OUTER multiplier the four group variables are built

@@ -33,6 +33,26 @@ export const ELEMENT_T = {
   atmosphere: 0.20,
   rippleFlow: 0.34,
   rippleBlock: 0.86,
+
+  // ------------------------------------------------------------- the rail --
+  // The rail's text is on the ramp like everything else, so picking a palette
+  // recolors the numbers with the globe and a saved theme captures them. They
+  // sit here rather than as standalone color settings for exactly that reason:
+  // one reader (resolveColor), one vocabulary, one `auto` sentinel.
+  railWordmark: 1.00,
+  railClock: 0.89,
+  railPanelTitle: 0.67,
+  railBig: 0.89,
+  railLabel: 0.44,
+  railValue: 0.89,
+  // NOT fitted to today's #fb9f3a, which is t~0.78 and only 0.11 from
+  // railValue. An alarm color that drifts into the same neighborhood as the
+  // ordinary value color stops reading as an alarm -- the same argument that
+  // keeps the update watermark violet rather than amber. 0.60 is the value
+  // whose WORST separation across all five presets still clears the test's
+  // threshold; 0.65 does not, on cividis. Measured, not guessed.
+  railAlarm: 0.60,
+  railBars: 0.67,
 };
 
 /** Elements that are NOT on the ramp and must not be moved onto it.
@@ -58,7 +78,7 @@ export function resolveColor(key, stored) {
     return ELEMENT_LITERAL[key];
   }
   // No caller reaches this today with a key outside ELEMENT_T/ELEMENT_LITERAL
-  // -- both tables are the twelve schema paths, and a test asserts they match
+  // -- both tables are the twenty schema paths, and a test asserts they match
   // -- but ELEMENT_T[key] is silently undefined for anything else, and
   // rampHexAt(undefined, ...) used to fail three calls deep inside
   // hexToRgb(undefined) with a bare, unreadable TypeError. Named here instead,

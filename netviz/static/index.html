@@ -95,6 +95,16 @@
            They live on #rail and not on :root because the rail is the only
            consumer; a scale left on the document would still be in force for
            some future element that happened to name the same variable. */
+        /* The eight catalogue colors, delivered as properties by
+           apply.js's rail handlers. The literals here are what netviz has
+           always drawn, so a display that has never applied a color needs no
+           write at all. `.rail-clock`'s #d8576b and `.rail-bar`'s track are
+           chrome, not catalogue entries, and stay literal -- the catalogue is
+           eight entries by decision, not "every color in the stylesheet". */
+        --rail-c-wordmark: #f0f921; --rail-c-clock: #fdca26;
+        --rail-c-panel-title: #ed7953; --rail-c-big: #fdca26;
+        --rail-c-label: #bd3786; --rail-c-value: #fdca26;
+        --rail-c-alarm: #fb9f3a; --rail-c-bars: #ed7953;
         --rail-master: 1;
         --rail-header-own: 1; --rail-panel-own: 1;
         --rail-big-own: 1;    --rail-row-own: 1;
@@ -106,7 +116,7 @@
         display: none; flex-direction: column; gap: 1.4vh;
         box-sizing: border-box; padding: 1.6vh 1.4vw;
         background: #12102400;         /* transparent-backed, per the design */
-        color: #fdca26;                /* plasma */
+        color: var(--rail-c-value);    /* plasma */
         font: 400 calc(1.05vw * var(--rail-row))/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
         letter-spacing: 0.04em;
         /* Degraded mode fades the stats out over 2s (the canvas drain next to
@@ -132,9 +142,9 @@
       body.degraded #rail { opacity: 0.28; }
 
       .rail-head { display: flex; align-items: baseline; justify-content: space-between; }
-      .rail-title { font-size: calc(1.5vw * var(--rail-header)); font-weight: 600; color: #f0f921; letter-spacing: 0.18em; }
+      .rail-title { font-size: calc(1.5vw * var(--rail-header)); font-weight: 600; color: var(--rail-c-wordmark); letter-spacing: 0.18em; }
       .rail-clock { text-align: right; color: #d8576b; }
-      .rail-clock-local { font-size: calc(1.35vw * var(--rail-header)); color: #fdca26; }
+      .rail-clock-local { font-size: calc(1.35vw * var(--rail-header)); color: var(--rail-c-clock); }
       .rail-clock-utc { font-size: calc(0.85vw * var(--rail-header)); opacity: 0.7; }
 
       /* The collector's build, bottom right. margin-top:auto pushes it to the
@@ -149,7 +159,7 @@
       .rail-panel { border-top: 1px solid #7201a855; padding-top: 0.9vh; }
       .rail-panel-title {
         margin: 0 0 0.5vh; font-size: calc(0.9vw * var(--rail-panel)); font-weight: 600;
-        letter-spacing: 0.22em; color: #ed7953;
+        letter-spacing: 0.22em; color: var(--rail-c-panel-title);
       }
       /* No font-size of its own, on purpose: it inherits .rail-panel-title's
          and therefore already scales with the panel group. Adding one here
@@ -157,8 +167,8 @@
       .rail-panel-note { margin-left: 0.6em; opacity: 0.6; }
 
       .rail-big { display: flex; align-items: baseline; gap: 0.6vw; margin-bottom: 0.6vh; }
-      .rail-big-value { font-size: calc(3.1vw * var(--rail-big)); line-height: 1; color: #fdca26; }
-      .rail-big-note { font-size: calc(0.8vw * var(--rail-big)); letter-spacing: 0.18em; color: #d8576b; }
+      .rail-big-value { font-size: calc(3.1vw * var(--rail-big)); line-height: 1; color: var(--rail-c-big); }
+      .rail-big-note { font-size: calc(0.8vw * var(--rail-big)); letter-spacing: 0.18em; color: var(--rail-c-panel-title); }
 
       /* Two shapes. A plain row is label + right-aligned value. A row with a
          bar puts the bar last and lets it take the slack, so the country codes
@@ -174,11 +184,11 @@
          it had and the two do not trade width as counts change. */
       .rail-row.bars { grid-template-columns: 3.2em auto 1fr 4.5em; }
       .rail-row.muted { opacity: 0.45; }
-      .rail-label { color: #bd3786; }
-      .rail-value { color: #fdca26; text-align: right; font-variant-numeric: tabular-nums; }
-      .rail-value.bad { color: #fb9f3a; font-weight: 600; }
+      .rail-label { color: var(--rail-c-label); }
+      .rail-value { color: var(--rail-c-value); text-align: right; font-variant-numeric: tabular-nums; }
+      .rail-value.bad { color: var(--rail-c-alarm); font-weight: 600; }
       .rail-bar { display: block; height: 0.55vh; background: #46039f55; }
-      .rail-bar-fill { display: block; height: 100%; background: #ed7953; }
+      .rail-bar-fill { display: block; height: 100%; background: var(--rail-c-bars); }
       /* Dimmer than the bar it sits beside: the day's ranking is the headline
          and the hour's shape is the qualifier. vector-effect keeps the stroke
          1px after the viewBox is stretched to the column -- without it the

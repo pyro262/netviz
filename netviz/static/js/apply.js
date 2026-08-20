@@ -151,12 +151,24 @@ function colorHandlers() {
     rippleHighlight: (c, ctx, ex) => ctx.ripples.setColor('highlight', c, ex),
     auroraLow: (c, ctx, ex, patch) => setAurora(ctx, patch, c, null),
     auroraHigh: (c, ctx, ex, patch) => setAurora(ctx, patch, null, c),
+    // The rail takes its colors as CSS custom properties. rail.js must not
+    // learn what a three Color is -- it is three-free and unit-tested that
+    // way, which is also why the arc legend's colors are handed to it as a
+    // function called on every paint rather than as objects.
+    railWordmark: (c, ctx) => ctx.rail.setColor('wordmark', c),
+    railClock: (c, ctx) => ctx.rail.setColor('clock', c),
+    railPanelTitle: (c, ctx) => ctx.rail.setColor('panel-title', c),
+    railBig: (c, ctx) => ctx.rail.setColor('big', c),
+    railLabel: (c, ctx) => ctx.rail.setColor('label', c),
+    railValue: (c, ctx) => ctx.rail.setColor('value', c),
+    railAlarm: (c, ctx) => ctx.rail.setColor('alarm', c),
+    railBars: (c, ctx) => ctx.rail.setColor('bars', c),
   };
   for (const key of Object.keys(target)) {
     out[`appearance.colors.${key}`] = (v, ctx, patch) => {
       // resolveColor returns a HEX STRING -- elements.js is three-free so it can
       // be unit-tested. apply.js may import three, so the wrap happens here, once,
-      // rather than in twelve module setters.
+      // rather than in twenty module setters.
       target[key](new THREE.Color(resolveColor(key, v)), ctx, !isAuto(v), patch);
     };
   }

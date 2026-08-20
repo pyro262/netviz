@@ -112,10 +112,14 @@ function fakeDeps(onWrite = null, onAsk = null) {
   };
 }
 
-test('the twelve element keys match the twelve color settings', () => {
-  assert.equal(ELEMENT_KEYS.length, 12);
+test('the twenty element keys match the twenty color settings', () => {
+  assert.equal(ELEMENT_KEYS.length, 20);
   assert.ok(ELEMENT_KEYS.includes('coastline'));
   assert.ok(ELEMENT_KEYS.includes('auroraHigh'));
+  // The rail's eight joined in 0.7.0, so a preset pick and a Chaos roll reach
+  // the numbers as well as the globe -- both are derived from the catalogue.
+  assert.ok(ELEMENT_KEYS.includes('railWordmark'));
+  assert.ok(ELEMENT_KEYS.includes('railBars'));
 });
 
 test('opening the panel writes nothing', () => {

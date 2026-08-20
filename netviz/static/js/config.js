@@ -368,6 +368,15 @@ export const CONFIG = {
       rippleHighlight: 'auto',
       auroraLow: 'auto',
       auroraHigh: 'auto',
+      // The rail's own text, on the ramp with everything else.
+      railWordmark: 'auto',
+      railClock: 'auto',
+      railPanelTitle: 'auto',
+      railBig: 'auto',
+      railLabel: 'auto',
+      railValue: 'auto',
+      railAlarm: 'auto',
+      railBars: 'auto',
     },
 
     // UnrealBloomPass(strength, radius, threshold), then a Reinhard knee on the

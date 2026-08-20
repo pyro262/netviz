@@ -458,7 +458,7 @@ test('a darker ramp tightens the cap', (t) => {
 
 test('every element has a schema path defaulting to auto', () => {
   const keys = [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)];
-  assert.equal(keys.length, 12);
+  assert.equal(keys.length, 20);
   for (const k of keys) {
     const path = `appearance.colors.${k}`;
     assert.ok(paths().includes(path), `${path} missing from schema`);
