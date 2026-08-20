@@ -55,6 +55,10 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 REPO = Path(__file__).resolve().parent.parent
+# Its own port. verify_rules and verify_menu share 8499, verify_settings and
+# verify_walk share 8399, verify_rules_editor owns 8599, verify_tuner 8699,
+# verify_theme 8799, verify_milkyway 8198 -- an eighth verifier reusing any of
+# them would read as a flaky test rather than the resource conflict it is.
 PORT = int(os.environ.get("NETVIZ_VERIFY_PORT", "8197"))
 URL = f"http://127.0.0.1:{PORT}/"
 
@@ -324,7 +328,7 @@ def far_side_oval_points(page):
     """Screen positions of points ON THE FAR-SIDE OVAL, in drawing-buffer
     pixels, bottom-up.
 
-    NOT the disc's centre, which is what a first cut of this case sampled and
+    NOT the disc's center, which is what a first cut of this case sampled and
     which is why it stayed green under an injected break: the sub-camera point
     is at some mid-latitude, and no far-side oval projects anywhere near it. The
     leak this case exists for appears exactly where the hidden oval lies, so
