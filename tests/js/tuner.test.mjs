@@ -220,7 +220,7 @@ test('randomizeScope partitions every row, and rolled matches the flag', () => {
   assert.equal(scope.rolled.length + scope.held.length, rows.length);
   assert.deepEqual([...scope.rolled, ...scope.held].map((r) => r.path).sort(),
                    rows.map((r) => r.path).sort());
-  // Today's numbers, as of 0.6.1 -- stated so a change is deliberate rather
+  // Today's numbers, as of 0.7.0 -- stated so a change is deliberate rather
   // than unnoticed.
   // The held side grew by the twenty catalogue colors, which are rolled by
   // Theme's own randomizer rather than by the slider scope.
