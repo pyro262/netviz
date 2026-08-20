@@ -8,7 +8,7 @@ import {
 import { settingLabel } from '../../netviz/static/js/settings.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
 import {
-  tunerRows, isRandomized, randomizeScope, clearsArcs,
+  GROUPS, tunerRows, isRandomized, randomizeScope, clearsArcs,
 } from '../../netviz/static/js/tuner.js';
 
 test('a keep writes only the rows that were touched', () => {
@@ -863,4 +863,55 @@ test('every row Randomize moves carries a mark, and the copy counts the same', (
   }
   assert.match(randomizeScopeLine(scope), new RegExp(`\\b${scope.count}\\b`));
   assert.match(randomizeScopeLine(scope), new RegExp(`\\b${scope.heldCount}\\b`));
+});
+
+test('a section randomize moves every row it marks, sliders and colors alike', () => {
+  // The Rail section is the case that forced this: its five text sizes were
+  // taken out of the roll, so its SLIDER count is zero while its eight colors
+  // are still marked. A heading that marks eight rows and offers no button --
+  // or offers one that rolls nothing -- is the same lie the scope line exists
+  // to prevent, one layer down.
+  const dom = panelDom();
+  withPanelGlobals(dom, () => {
+    const previewed = [];
+    const panel = createSettingsPanel({ preview: noteApplier(previewed), root: dom.root });
+    panel.open();
+    const rows = tunerRows();
+    for (const g of GROUPS) {
+      const mine = rows.filter((r) => r.group === g.id);
+      const marked = mine.filter(panelRolls).length;
+      const btn = dom.root.querySelector(`.tuner-group-random[data-group="${g.id}"]`);
+      assert.equal(!!btn, marked > 0,
+        `${g.id}: ${marked} marked rows but button present=${!!btn}`);
+    }
+    previewed.length = 0;
+    dom.root.querySelector('.tuner-group-random[data-group="rail"]')
+      .dispatch('click', { stopPropagation() {} });
+    const touched = previewed.flatMap((p) => Object.keys(p));
+    assert.ok(touched.length > 0, 'the rail button rolled nothing');
+    assert.ok(touched.every((p) => p.startsWith('appearance.colors.rail')),
+      `rail rolled something else: ${touched.join(', ')}`);
+    assert.ok(!touched.some((p) => p.startsWith('rail.scale.')),
+      'text size must never be rolled');
+    panel.close();
+  });
+});
+
+test('Randomize all never touches the rail text sizes', () => {
+  const dom = panelDom();
+  withPanelGlobals(dom, () => {
+    const previewed = [];
+    const panel = createSettingsPanel({ preview: noteApplier(previewed), root: dom.root });
+    panel.open();
+    previewed.length = 0;
+    dom.root.querySelector('.tuner-randomize').dispatch('click', {});
+    const touched = new Set(previewed.flatMap((p) => Object.keys(p)));
+    for (const p of ['master', 'header', 'panel', 'big', 'row']) {
+      assert.ok(!touched.has(`rail.scale.${p}`),
+        `rail.scale.${p} was rolled; size is legibility, not a look`);
+    }
+    assert.ok([...touched].some((p) => p.startsWith('appearance.colors.rail')),
+      'the rail COLORS should still be rolled');
+    panel.close();
+  });
 });

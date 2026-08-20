@@ -118,6 +118,42 @@ export function ovalEdge(kp, mlt) {
   return 66.5 - 1.7 * k - MIDNIGHT_OFFSET * ((w + 1) / 2);
 }
 
+/** How far past midnight, toward DAWN, the oval is brightest -- in hours of
+ *  magnetic local time. Substorm onset is near 23-01 MLT and the auroral bulge
+ *  expands poleward and westward from there, so the brightest sector in
+ *  satellite imagery sits a little after midnight rather than exactly on it. */
+export const PEAK_MLT = 1.3;
+
+/** What fraction of peak brightness the DAYSIDE oval keeps. Not zero: the cusp
+ *  aurora is real and continuous with the rest of the ring. It is simply faint,
+ *  and daylight finishes the job -- the shader's night gate is a separate term. */
+export const DAY_FLOOR = 0.12;
+
+/**
+ * Relative brightness of the oval at a given magnetic local time.
+ *
+ * THE OVAL IS A RING, AND THAT PART WAS ALREADY RIGHT -- the real thing is
+ * called the auroral oval because it is one, a closed annulus about the
+ * geomagnetic pole, and that is how it looks from orbit. What was wrong was
+ * that it was drawn EVENLY around that ring. Auroral intensity is strongly
+ * weighted to the midnight-through-dawn sector, where substorms break up; the
+ * dayside is faint by comparison. An evenly lit ring reads as a drawn circle
+ * rather than as aurora.
+ *
+ * Only INTENSITY lives here. The edge latitude and the band's width already
+ * vary with local time -- see ovalEdge and ovalThickness -- and they are a
+ * different fact about the same ring.
+ */
+export function ovalBrightness(mlt) {
+  const hours = (((Number(mlt) || 0) % 24) + 24) % 24;
+  // Cosine of the hour angle measured from the PEAK, not from midnight.
+  const w = Math.cos(((hours - PEAK_MLT) * Math.PI) / 12);
+  // (w+1)/2 maps to 0..1; the exponent sharpens the falloff so the bright
+  // sector is a sector rather than half the ring.
+  const shaped = ((w + 1) / 2) ** 1.6;
+  return DAY_FLOOR + (1 - DAY_FLOOR) * shaped;
+}
+
 /** The band is about 60% wider in the midnight sector than at noon. */
 export function ovalThickness(mlt) {
   return 1.0 + 0.3 * (1 + midnightWeight(mlt));

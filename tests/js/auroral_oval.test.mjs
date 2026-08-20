@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   dipoleAxis, magneticFrame, ovalEdge, ovalThickness, raySphere, marchSpan,
+  ovalBrightness, PEAK_MLT, DAY_FLOOR,
 } from '../../netviz/static/js/auroral_oval.js';
 
 /** globe.js's convention, restated here so a change to either is caught. */
@@ -146,4 +147,56 @@ test('a ray that misses the shell entirely gets no span', () => {
 test('a camera inside the shell never marches backwards', () => {
   const s = marchSpan({ x: 0, y: 0, z: 1.03 }, { x: 0, y: 1, z: 0 }, 1, 1.016, 1.05);
   assert.ok(s.start >= 0, 'a negative start samples behind the eye');
+});
+
+// ---------------------------------------------------------------------------
+// Brightness around the ring.
+//
+// The oval being a RING was always right -- that is the real morphology. What
+// was wrong was drawing it EVENLY around that ring, which reads as a drawn
+// circle rather than as aurora.
+
+test('the oval is brightest just after magnetic midnight, not at noon', () => {
+  assert.ok(ovalBrightness(PEAK_MLT) > ovalBrightness(12) * 5,
+    'the midnight sector must dominate the dayside, not merely beat it');
+  assert.ok(ovalBrightness(0) > ovalBrightness(6));
+  assert.ok(ovalBrightness(6) > ovalBrightness(12));
+});
+
+test('the peak sits toward DAWN of midnight, where substorms break up', () => {
+  // Sampled finely rather than asserted at one point: the claim is about where
+  // the maximum IS, and checking only PEAK_MLT would pass for any function
+  // whose peak happens to be somewhere else entirely.
+  let best = { mlt: null, v: -1 };
+  for (let i = 0; i < 2400; i += 1) {
+    const mlt = (i / 100) % 24;
+    const v = ovalBrightness(mlt);
+    if (v > best.v) best = { mlt, v };
+  }
+  assert.ok(Math.abs(best.mlt - PEAK_MLT) < 0.05, `peak at MLT ${best.mlt}`);
+  assert.ok(PEAK_MLT > 0 && PEAK_MLT < 3, 'the peak is just after midnight');
+});
+
+test('the dayside keeps a floor rather than going dark', () => {
+  // The cusp aurora is real and continuous with the rest of the ring; it is
+  // faint, and DAYLIGHT is what finishes it off -- which is the shader's night
+  // gate, a separate term. A hard zero here would put a seam in the ring.
+  for (let mlt = 0; mlt < 24; mlt += 0.25) {
+    assert.ok(ovalBrightness(mlt) >= DAY_FLOOR - 1e-9, `dark at MLT ${mlt}`);
+    assert.ok(ovalBrightness(mlt) <= 1 + 1e-9, `over unity at MLT ${mlt}`);
+  }
+});
+
+test('brightness is continuous across the midnight wrap', () => {
+  assert.ok(Math.abs(ovalBrightness(23.999) - ovalBrightness(0)) < 1e-3,
+    'a seam at MLT 24->0 would draw a notch through the brightest sector');
+  assert.ok(Math.abs(ovalBrightness(-1) - ovalBrightness(23)) < 1e-9,
+    'a negative hour must wrap rather than fall off the end');
+});
+
+test('brightness and the edge are separate facts about the same ring', () => {
+  // ovalEdge and ovalThickness peak at MIDNIGHT exactly; brightness peaks a
+  // little after. Asserted so a future edit cannot quietly collapse the three
+  // into one term -- they are different physics.
+  assert.ok(Math.abs(ovalEdge(3, 0) - ovalEdge(3, PEAK_MLT)) > 1e-6);
 });

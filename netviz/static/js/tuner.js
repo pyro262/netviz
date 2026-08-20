@@ -272,19 +272,27 @@ export const GROUPS = [
     id: 'rail',
     label: 'Rail',
     rows: [
-      // The five scales ARE sliders and DO change the current frame, so all
-      // five are randomized -- and at the top of their range the rail overruns
-      // its column, which is the documented cost of the range chosen knowing it.
-      { path: 'rail.scale.master', label: 'Text size (all of it)', randomize: true },
-      { path: 'rail.scale.header', label: 'Wordmark and clocks', randomize: true },
-      { path: 'rail.scale.panel', label: 'Panel headings', randomize: true },
-      { path: 'rail.scale.big', label: 'Big numbers', randomize: true },
-      { path: 'rail.scale.row', label: 'Rows and foot', randomize: true },
-      // Colors, so `isRandomized` is false for all eight -- this category's own
-      // randomize rolls the five sliders above. The eight are catalogue entries
-      // and Theme's Randomize rolls them with the other twelve. Said out loud in
-      // the section note, so a color row with no mark beside it is explained
-      // rather than looking like an oversight.
+      // NOT RANDOMIZED, and this is the one exception to the rule the flag
+      // otherwise follows. By that rule -- "a row is randomized if changing it
+      // changes the current frame" -- all five qualify. But text size is not a
+      // LOOK the way a color or a glow is; it is legibility, and it is the one
+      // thing on the rail somebody sets once for their own room and their own
+      // eyes. A roll that resizes the numbers makes the wall unreadable and
+      // hands back a Revert as the only way out, which is not a fair trade for
+      // a button whose whole appeal is that it is safe to press.
+      //
+      // At the top of the range the rail also overruns its column and rows get
+      // dropped -- the documented cost of a range chosen knowing it, and not
+      // something a random roll should be able to inflict.
+      { path: 'rail.scale.master', label: 'Text size (all of it)', randomize: false },
+      { path: 'rail.scale.header', label: 'Wordmark and clocks', randomize: false },
+      { path: 'rail.scale.panel', label: 'Panel headings', randomize: false },
+      { path: 'rail.scale.big', label: 'Big numbers', randomize: false },
+      { path: 'rail.scale.row', label: 'Rows and foot', randomize: false },
+      // Colors, and they ARE rolled -- as catalogue entries, by the same roll
+      // that reaches the other twelve. So every row in this section that
+      // Randomize touches is a color, and the five sizes above are the ones it
+      // deliberately leaves alone. Said out loud in the section note.
       { path: 'appearance.colors.railWordmark', label: 'Wordmark color', randomize: false },
       { path: 'appearance.colors.railClock', label: 'Clock color', randomize: false },
       { path: 'appearance.colors.railPanelTitle', label: 'Panel heading color', randomize: false },

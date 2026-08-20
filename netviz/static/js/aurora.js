@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { nextPollDelay, auroraFromReading } from './schedule.js';
 import {
   GEOMAG_POLE_LAT, GEOMAG_POLE_LON, R_INNER, R_OUTER, OVAL_WIDTH,
-  MIDNIGHT_OFFSET,
+  MIDNIGHT_OFFSET, PEAK_MLT, DAY_FLOOR,
 } from './auroral_oval.js';
 
 // NOAA publishes planetary Kp on 3-hour boundaries and the collector polls once
@@ -76,6 +76,11 @@ const VERT = /* glsl */`
 // GLSL cannot import. THE TWO COPIES MUST MOVE TOGETHER; the constants are
 // interpolated from that module's exports so at least the numbers cannot
 // drift, and tests/js/aurora.test.mjs asserts the interpolation is still there.
+// NO BACKTICKS BELOW THIS LINE, in code or in comments. The whole shader is one
+// template literal, so a backtick inside a GLSL comment ENDS it -- the file then
+// parses as JavaScript right up to the point where the shader stopped being a
+// string, and the error surfaces dozens of lines later on an unrelated
+// identifier. This has now cost two debugging rounds; write 'x' or X, not `x`.
 const FRAG = /* glsl */`
   uniform vec3 pole;        // dipole axis, local space
   uniform vec3 sunDir;      // toward the sun, local space
@@ -196,11 +201,26 @@ const FRAG = /* glsl */`
       // A slow substorm-like brightening drifting around the oval.
       float pulse = 0.75 + 0.25 * sin(phi * 2.0 - time * 0.13);
 
+      // ovalBrightness(), in GLSL. THE RING WAS ALWAYS THE RIGHT SHAPE -- the
+      // real thing is called the auroral oval because it is one -- but it was
+      // drawn EVENLY around that ring, which reads as a drawn circle rather
+      // than as aurora. Intensity is strongly weighted to the
+      // midnight-through-dawn sector, where substorms break up; the dayside is
+      // faint by comparison and keeps only a floor, because the cusp aurora is
+      // real and continuous with the rest of the ring. Daylight finishes it
+      // off, and that is the separate night gate below.
+      //
+      // phi is radians from magnetic midnight, so the peak's offset in HOURS
+      // becomes an angle at 15 degrees an hour.
+      float peak = cos(phi - ${glslFloat(PEAK_MLT)} * (TAU / 24.0));
+      float mltGain = ${glslFloat(DAY_FLOOR)}
+                    + (1.0 - ${glslFloat(DAY_FLOOR)}) * pow(max(0.0, (peak + 1.0) * 0.5), 1.6);
+
       // Daylight drowns it, exactly as it does in life.
       float night = 1.0 - smoothstep(-0.25, 0.10, dot(n, sun));
       // Falls with height, so the base is bright and the tops are thin -- which
       // is what makes a curtain read as standing up rather than as a slab.
-      float density = exp(-alt * 2.6) * band * shape * pulse * night * f;
+      float density = exp(-alt * 2.6) * band * shape * pulse * mltGain * night * f;
       acc += mix(lowColor, highColor, smoothstep(0.12, 0.7, alt)) * density * stepLen;
     }
 

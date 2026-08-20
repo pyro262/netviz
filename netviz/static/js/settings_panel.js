@@ -46,7 +46,8 @@ import { loadThemes, saveTheme, deleteTheme, themeNames, capturePaths }
   from './themestore.js';
 import { isAuto, AUTO, resolveColor, ELEMENT_T, ELEMENT_LITERAL } from './elements.js';
 import { RAMPS, THEME_SKIES } from './ramp.js';
-import { randomizePatch, RANDOMIZE_PATHS } from './randomize_color.js';
+import { randomizePatch, randomizeColors, RANDOMIZE_PATHS }
+  from './randomize_color.js';
 
 /** The patch a Keep writes: the touched paths at their current values.
  *
@@ -1100,15 +1101,38 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
     return { n, refused };
   }
 
+  /** Roll the CATALOGUE COLORS that have a row in this category.
+   *
+   *  A category's own button has to move every row it marks, and the rail's
+   *  eight colors are marked -- they are catalogue entries, so the panel's
+   *  Randomize reaches them. Rolling them from the same generator the whole
+   *  catalogue uses keeps one source of "what is a legal element color",
+   *  including its luminance floor. */
+  function rollGroupColors(rows) {
+    const keys = ELEMENT_KEYS.filter((k) => rows.some((r) => r.path === elementPath(k)));
+    if (!keys.length) return 0;
+    const rolled = randomizeColors(Math.random);
+    const patch = {};
+    for (const k of keys) patch[elementPath(k)] = rolled[k];
+    return writePatch(patch) ? keys.length : 0;
+  }
+
   function randomizeGroup(id) {
     if (id === 'theme') {
+      // Theme's button is the WHOLE catalogue, not just the twelve rows it
+      // draws: the roller also reaches the two arc colors, the two surface
+      // tints and the three atmosphere numbers, which have no row anywhere.
       randomizeColorsAll();
       const n = RANDOMIZE_PATHS.length;
       setNote(`Randomized ${n} color${n === 1 ? '' : 's'}. "Revert" puts them back.`);
       return;
     }
-    const { n, refused } = rollRows(groupRows(id));
-    const done = `Randomized ${n} setting${n === 1 ? '' : 's'}. "Revert" puts them back.`;
+    const mine = groupRows(id);
+    const { n, refused } = rollRows(mine);
+    const colors = rollGroupColors(mine);
+    const total = n + colors;
+    const done = `Randomized ${total} setting${total === 1 ? '' : 's'}. `
+               + '"Revert" puts them back.';
     setNote(refused.length ? `${done} Refused: ${refused.join(', ')}.` : done);
   }
 
@@ -1149,9 +1173,15 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
     const head = el('h3', `tuner-group${on ? ' open' : ''}`, group.label);
     head.setAttribute('data-group', group.id);
     head.addEventListener('click', () => toggleGroup(group.id));
+    // PRESENCE FROM THE MARKS, not from the slider scope. A category whose only
+    // rolled rows are catalogue colors -- Rail, once its text sizes were taken
+    // out of the roll -- has a slider count of zero and still has eight things
+    // to roll, and a heading that marked eight rows while offering no button
+    // would be the same kind of lie the scope line exists to prevent.
+    const rolls = rows.some(panelRolls);
     const count = group.id === 'theme'
-      ? RANDOMIZE_PATHS.length : randomizeScope(rows).count;
-    if (count) {
+      ? RANDOMIZE_PATHS.length : rows.filter(panelRolls).length;
+    if (rolls) {
       const btn = el('button', 'tuner-group-random', 'randomize');
       btn.setAttribute('data-group', group.id);
       btn.title = group.id === 'theme'
@@ -1204,7 +1234,11 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
     const actions = el('div', 'tuner-actions');
     // Leftmost: Randomize MAKES pending changes, so it belongs beside Revert,
     // which is what undoes them -- and as far as possible from Close.
-    const randomBtn = el('button', 'tuner-randomize', 'Randomize');
+    // "Randomize all", not "Randomize": every category heading now carries its
+    // own randomize, so an unqualified label on the one at the top reads as a
+    // fourth button of the same kind rather than as the one that does all of
+    // them at once.
+    const randomBtn = el('button', 'tuner-randomize', 'Randomize all');
     // The tooltip keeps the LONGER version -- the held rows by name. The scope
     // itself is printed under the header rather than living only here: a wall
     // display is not hovered.
@@ -1292,8 +1326,10 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
         // colors are catalogue entries and Theme's randomize rolls them with
         // the rest. This section's own button rolls its five text scales.
         section.append(el('p', 'tuner-lead tuner-group-note',
-          'The eight rail colors are part of the theme, so this section\'s '
-          + 'randomize rolls the five text sizes and Theme\'s rolls the colors.'));
+          'Randomize leaves the five text sizes alone on purpose -- size is '
+          + 'legibility, not a look, and it is the one thing you set once for '
+          + 'your own room. The eight colors are part of the theme and are '
+          + 'rolled with it.'));
       }
       for (const spec of mine) section.append(renderRow(spec));
       body.append(section);

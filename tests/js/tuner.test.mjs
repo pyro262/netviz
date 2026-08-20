@@ -124,6 +124,19 @@ const RANDOMIZE_EXCLUDED = [
   'arcs.flow.speed',
   'arcs.block.speed',
   'arcs.highlight.speed',
+  // THE ONE EXCEPTION to the rule this list otherwise enforces. By "a row is
+  // randomized if changing it changes the current frame", all five of these
+  // qualify -- they resize the rail's text immediately. They are excluded
+  // anyway, because text size is not a LOOK the way a color or a glow is; it
+  // is legibility, set once for a particular room and a particular pair of
+  // eyes. A roll that resizes the numbers makes the wall unreadable and offers
+  // Revert as the only way back, which is not a fair trade for a button whose
+  // whole appeal is that it is safe to press.
+  'rail.scale.master',
+  'rail.scale.header',
+  'rail.scale.panel',
+  'rail.scale.big',
+  'rail.scale.row',
 ];
 
 test('every slider declares randomize explicitly, never by default', () => {
@@ -155,7 +168,7 @@ test('tunerRows refuses a slider with no randomize flag', () => {
   assert.equal(tunerRows().length, 82, 'the table was not put back');
 });
 
-test('the randomized set is 47 sliders, and the excluded ones are named', () => {
+test('the randomized set is 42 sliders, and the excluded ones are named', () => {
   // A count alone is passed by a swap. The names are what hold the rule: the
   // camera's distance is IN despite living in "Camera pacing" (it is how big
   // the globe is, visible in the first frame), the star ramp is OUT despite
@@ -164,7 +177,7 @@ test('the randomized set is 47 sliders, and the excluded ones are named', () => 
   const rows = tunerRows();
   const on = rows.filter((r) => r.control === 'slider' && r.randomize);
   const off = rows.filter((r) => r.control === 'slider' && !r.randomize);
-  assert.equal(on.length, 47, `randomized ${on.length} sliders`);
+  assert.equal(on.length, 42, `randomized ${on.length} sliders`);
   assert.deepEqual(off.map((r) => r.path).sort(), [...RANDOMIZE_EXCLUDED].sort());
   assert.ok(on.some((r) => r.path === 'camera.distance'),
             'camera.distance is a look setting and must be randomized');
@@ -222,10 +235,11 @@ test('randomizeScope partitions every row, and rolled matches the flag', () => {
                    rows.map((r) => r.path).sort());
   // Today's numbers, as of 0.7.0 -- stated so a change is deliberate rather
   // than unnoticed.
-  // The held side grew by the twenty catalogue colors, which are rolled by
-  // Theme's own randomizer rather than by the slider scope.
-  assert.equal(scope.count, 47);
-  assert.equal(scope.heldCount, 35);
+  // The held side carries the twenty catalogue colors -- rolled by the panel's
+  // own randomizer rather than by this slider scope -- plus the five rail text
+  // sizes, which nothing rolls at all.
+  assert.equal(scope.count, 42);
+  assert.equal(scope.heldCount, 40);
 });
 
 test('the scope moves with the table rather than being written down', () => {
@@ -234,11 +248,11 @@ test('the scope moves with the table rather than being written down', () => {
   const group = GROUPS.find((g) => g.id === 'arcs');
   const removed = group.rows.pop();
   try {
-    assert.equal(randomizeScope().count, 46);
+    assert.equal(randomizeScope().count, 41);
   } finally {
     group.rows.push(removed);
   }
-  assert.equal(randomizeScope().count, 47, 'the table was not put back');
+  assert.equal(randomizeScope().count, 42, 'the table was not put back');
 });
 
 // ------------------------------------------------- the rows that rebuild --
