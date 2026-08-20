@@ -45,6 +45,10 @@ let aurora = null;
 // as aurora/clouds/lightning -- an off-at-boot layer has nothing to colour.
 let atmosphere = null;
 const sunLocal = new THREE.Vector3();
+// The eye in the globe's own local space -- the aurora raymarch's ray origin.
+// Scratch, reused every frame: a per-frame allocation in a render loop that
+// runs for months is a garbage collector the wall does not need.
+const camLocal = new THREE.Vector3();
 // Set at mount, always -- the field arrives over the network, so unlike the
 // baked layers this one is not part of globe. Mounted unconditionally now
 // (see boot() below): only null in the brief window before boot() runs.
@@ -64,7 +68,7 @@ function updateSun(globe, camera) {
   sunLocal.copy(sunVec).applyQuaternion(globe.group.quaternion.clone().invert());
   globe.material.uniforms.sunDir.value.copy(sunLocal);
   if (globe.cityPoints) globe.cityPoints.material.uniforms.sunDir.value.copy(sunLocal);
-  if (aurora) aurora.update(0, sunLocal);   // sun only; time advances in the loop
+  if (aurora) aurora.update(0, sunLocal, camLocal);   // time advances in the loop
   if (clouds) clouds.update(sunLocal);      // lit by the same terminator
 }
 
@@ -548,7 +552,15 @@ async function boot() {
     arcs.update(dt);
     ripples.update(dt);
     if (lightning) lightning.update(dt);
-    if (aurora) aurora.mesh.material.uniforms.time.value += dt;
+    if (aurora) {
+      // The camera every frame, not with the sun every few seconds: the sun
+      // moves a degree an hour and the camera walks continuously, so a ray
+      // origin refreshed on the sun's cadence would lag the view badly enough
+      // to shear the curtains at the limb.
+      camLocal.copy(camera.position);
+      globe.group.worldToLocal(camLocal);
+      aurora.update(dt, sunLocal, camLocal);
+    }
     globe.updateFlashes(dt);
     stars.update(dt);
     milkyway.update(dt);
