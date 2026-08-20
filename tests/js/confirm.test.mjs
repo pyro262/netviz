@@ -186,3 +186,63 @@ test('closing removes the document listener it added', () => {
     assert.equal(dom.document.listenerCount('keydown'), 0, 'listener leaked');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The third answer: a Close over pending work can keep, discard, or not close.
+
+test('a third button appears only when altLabel is given', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const c = createConfirm({ root: dom.root });
+    c.ask({ title: 't', will: ['a'], confirmLabel: 'Yes', cancelLabel: 'No' });
+    assert.equal(dom.root.querySelector('.confirm-alt'), null);
+    c.close();
+    c.ask({ title: 't', will: ['a'], confirmLabel: 'Yes', cancelLabel: 'No',
+            altLabel: 'Keep and close', onAlt: () => {} });
+    const foot = dom.root.querySelector('.confirm-foot');
+    assert.deepEqual(foot.children.map((b) => b.className),
+                     ['confirm-yes', 'confirm-alt', 'confirm-no']);
+    c.close();
+  });
+});
+
+test('the alt runs its callback and closes', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    let ran = 0;
+    const c = createConfirm({ root: dom.root });
+    c.ask({ title: 't', will: ['a'], altLabel: 'Keep and close',
+            onAlt: () => { ran += 1; } });
+    dom.root.querySelector('.confirm-alt').dispatch('click', {});
+    assert.equal(ran, 1);
+    assert.equal(c.isOpen(), false);
+  });
+});
+
+test('cancel is still focused, still Escape, with three buttons present', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    let canceled = 0;
+    const c = createConfirm({ root: dom.root });
+    c.ask({ title: 't', will: ['a'], altLabel: 'Keep and close', onAlt: () => {},
+            onCancel: () => { canceled += 1; } });
+    assert.equal(dom.root.querySelector('.confirm-no').focused, true);
+    assert.equal(dom.root.querySelector('.confirm-alt').focused, false);
+    dom.document.dispatch('keydown', { key: 'Escape', stopPropagation() {} });
+    assert.equal(canceled, 1);
+    assert.equal(c.isOpen(), false);
+  });
+});
+
+test('an acknowledgement takes precedence over an alt button', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const c = createConfirm({ root: dom.root });
+    c.ask({ title: 'Nothing to do', will: [], altLabel: 'Keep and close',
+            onAlt: () => {} });
+    const foot = dom.root.querySelector('.confirm-foot');
+    assert.deepEqual(foot.children.map((b) => b.className), ['confirm-no'],
+      'a yes/no/alt over an action with no effect is three meaningless answers');
+    c.close();
+  });
+});

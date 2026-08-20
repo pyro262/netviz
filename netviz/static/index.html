@@ -360,6 +360,14 @@
          Escape does, and it is the answer a stray click should land on. */
       .confirm-foot .confirm-no { border-color: #7201a8; }
       .confirm-foot .confirm-yes { opacity: .85; }
+      /* Between the two it separates. Deliberately not styled as a second
+         primary: the alt is the answer somebody reaches for on purpose, not the
+         one a stray click lands on. */
+      .confirm-alt {
+        background: #7201a833; border: 1px solid #7201a8; color: #f0d9ff;
+        padding: 6px 12px; border-radius: 3px; cursor: pointer;
+      }
+      .confirm-alt:hover { background: #7201a855; }
       .confirm-foot button:focus { outline: 1px solid #fdca26; outline-offset: 1px; }
 
       /* What MATCH accepts, spelled out. Dim and small: it is reference

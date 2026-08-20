@@ -104,6 +104,21 @@ export function createConfirm({ root } = {}) {
         if (fn) fn();
       });
       foot.append(yes);
+      // The third answer, for the one question that has three: a Close over
+      // pending work can keep them, discard them, or not close at all. It is
+      // rendered BETWEEN yes and cancel so the destructive answer is never the
+      // one adjacent to the safe default -- and it is inside `nothingToDo`'s
+      // guard because a dialog over an action with no effect must not gain a
+      // second meaningless answer.
+      if (opts.altLabel) {
+        const alt = el('button', 'confirm-alt', opts.altLabel);
+        alt.addEventListener('click', () => {
+          const fn = opts.onAlt;
+          close();
+          if (fn) fn();
+        });
+        foot.append(alt);
+      }
     }
     const no = el('button', 'confirm-no',
                   nothingToDo ? (opts.dismissLabel || 'Close')

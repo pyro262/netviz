@@ -53,6 +53,7 @@ REQUIRED_SELECTORS = (
     ".tuner-mark",
     ".tuner-row",
     ".confirm-box",
+    ".confirm-alt",
 )
 
 
