@@ -495,6 +495,11 @@ function panelDom() {
         if (i >= 0) this.parentNode.children.splice(i, 1);
         this.parentNode = null;
       },
+      replaceChildren(...cs) {
+        for (const c of this.children.slice()) c.parentNode = null;
+        this.children = [];
+        for (const c of cs) this.appendChild(c);
+      },
       contains(o) { let n = o; while (n) { if (n === this) return true; n = n.parentNode; } return false; },
       querySelectorAll(sel) {
         const out = [];
@@ -628,4 +633,119 @@ test('Revert can restore every path Randomize can write', () => {
 
 test('there is no separate theme panel left to open', async () => {
   await assert.rejects(() => import('../../netviz/static/js/theme_panel.js'));
+});
+
+// ---------------------------------------------------------------------------
+// Saved themes: the picker, Save and Delete.
+
+import { THEME_KEY, loadThemes, saveTheme, themeNames }
+  from '../../netviz/static/js/themestore.js';
+import { KEY as SETTINGS_KEY, savePatch, clearPatch }
+  from '../../netviz/static/js/rulestore.js';
+
+function themeStorage(initial = {}) {
+  const map = new Map(Object.entries(initial));
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: (k) => map.delete(k),
+    peek: (k) => map.get(k),
+  };
+}
+
+const optionValues = (dom) =>
+  dom.root.querySelector('.theme-preset').children.map((o) => o.value);
+
+test('the picker lists built-ins, a separator, then saved names', () => {
+  const dom = panelDom();
+  const storage = themeStorage();
+  saveTheme(storage, 'wall night', { 'appearance.theme': 'custom' });
+  withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({ preview: noteApplier(), storage, root: dom.root });
+    panel.open();
+    const opts = optionValues(dom);
+    assert.deepEqual(opts.slice(0, 6),
+      ['plasma', 'viridis', 'magma', 'inferno', 'cividis', 'custom']);
+    assert.equal(opts[opts.length - 1], 'wall night');
+    panel.close();
+  });
+});
+
+test('saving captures the live values and is not a Keep', () => {
+  const dom = panelDom();
+  const storage = themeStorage();
+  withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({
+      preview: noteApplier(), storage, root: dom.root,
+      prompt: () => 'wall night',
+    });
+    panel.open();
+    dom.root.querySelector('.theme-save').dispatch('click', {});
+    const saved = loadThemes(storage).themes['wall night'];
+    assert.ok(saved, 'nothing was saved');
+    assert.ok('appearance.colors.cities' in saved, 'the catalogue was not captured');
+    assert.ok('appearance.customRamp' in saved);
+    assert.equal(storage.peek(SETTINGS_KEY), undefined,
+      'saving a theme is not a Keep');
+    panel.close();
+  });
+});
+
+test('saving over an existing name asks first, and cancel leaves it alone', () => {
+  const dom = panelDom();
+  const storage = themeStorage();
+  saveTheme(storage, 'a', { 'appearance.theme': 'viridis' });
+  const asked = [];
+  withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({
+      preview: noteApplier(), storage, root: dom.root,
+      prompt: () => 'a', confirmer: { ask: (q) => asked.push(q) },
+    });
+    panel.open();
+    dom.root.querySelector('.theme-save').dispatch('click', {});
+    assert.equal(asked.length, 1);
+    assert.match(asked[0].title, /replace/i);
+    assert.match(asked[0].will.join(' '), /"a"/);
+    // No onCancel to run: confirm.js's Cancel simply closes, and the guard is
+    // that nothing was written before the answer.
+    assert.deepEqual(loadThemes(storage).themes.a, { 'appearance.theme': 'viridis' });
+    panel.close();
+  });
+});
+
+test('a built-in name is refused rather than shadowing a netviz palette', () => {
+  const dom = panelDom();
+  const storage = themeStorage();
+  withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({
+      preview: noteApplier(), storage, root: dom.root, prompt: () => 'plasma',
+    });
+    panel.open();
+    dom.root.querySelector('.theme-save').dispatch('click', {});
+    assert.deepEqual(loadThemes(storage).themes, {});
+    assert.match(dom.root.querySelector('.tuner-note').textContent, /own palettes/);
+    panel.close();
+  });
+});
+
+test('delete is offered for a saved theme and never for a built-in', () => {
+  const dom = panelDom();
+  const storage = themeStorage();
+  saveTheme(storage, 'a', {});
+  withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({ preview: noteApplier(), storage, root: dom.root });
+    panel.open();
+    // plasma is the shipped default, so a built-in is selected on open.
+    assert.equal(dom.root.querySelector('.theme-delete'), null);
+    panel.close();
+  });
+});
+
+test('a saved theme survives Reset', () => {
+  const storage = themeStorage();
+  saveTheme(storage, 'a', { 'appearance.theme': 'custom' });
+  savePatch(storage, { 'rail.enabled': true });
+  clearPatch(storage, ['arcs.custom', 'arcs.rules']);
+  assert.deepEqual(themeNames(loadThemes(storage).themes), ['a'],
+    'the library is its own key and Reset never reaches it');
 });

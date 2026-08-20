@@ -7,7 +7,7 @@ same one confirm.js dialog -- because 0.7.0 merged `js/theme_panel.js` INTO
 mechanism it had is now that panel's. Read
 `docs/notes/settings-and-panels.md`'s theme section before touching this file.
 
-Eight cases, from spec section 11:
+Nine cases, from spec section 11 plus 0.7.0's saved themes:
 
   1. the panel opens, mounts on `document.body` (never `#stage`), narrows
      `#stage` by exactly its own width, and each toggle costs exactly one
@@ -1131,6 +1131,91 @@ def case8_stop_edit_forks_then_restores(page, cx, cy) -> bool:
 
 # --------------------------------------------------------------------- run --
 
+def case9_saved_theme_survives_reload(page, cx, cy) -> bool:
+    """9: a theme saved by name is in the picker after a full page reload, with
+    the colors it held.
+
+    The whole point of the library is that it outlives the session, and the
+    only honest proof of that is a real reload -- an in-memory check would pass
+    against a library that never reached localStorage at all.
+
+    Three things are read afterward, because each alone is passed by a bug:
+    the NAME is in the picker (the schema's enum accepted it, which requires
+    setThemeLibrary to have run at boot BEFORE the stored patch was validated);
+    the stored patch under that name carries the element colors; and selecting
+    it puts the saved color back on the wall rather than merely on the row.
+
+    Saving is driven through the panel's own Save button with `window.prompt`
+    stubbed, not by calling themestore directly: the button, the prompt and the
+    capture are the path an operator takes, and a test that skips them proves
+    the store works while the control might not."""
+    name = "9: a saved theme survives a reload, colors and all"
+    saved_name = "verify wall"
+    close_any_open_panel(page)
+    page.evaluate("(k) => window.localStorage.removeItem(k)", "netviz.themes.v1")
+    reset_theme_defaults(page, element_keys(page))
+
+    if not open_theme_panel(page, cx, cy):
+        return report(name, False, "could not open the merged panel")
+
+    # A color to recognise on the far side of the reload.
+    set_element_color(page, row_index(page, element_keys(page), "cities"), "#00ff88")
+    page.wait_for_timeout(200)
+
+    saved = page.evaluate("""(n) => {
+      const real = window.prompt;
+      window.prompt = () => n;
+      try {
+        const b = document.querySelector('.theme-save');
+        if (!b) return false;
+        b.click();
+        return true;
+      } finally { window.prompt = real; }
+    }""", saved_name)
+    page.wait_for_timeout(300)
+    stored = page.evaluate(
+        "(k) => window.localStorage.getItem(k)", "netviz.themes.v1")
+    has_color = bool(stored) and "#00ff88" in stored
+
+    close_any_open_panel(page)
+    page.reload(wait_until="load")
+    page.wait_for_function("window.__netvizReady === true", timeout=20_000)
+    page.wait_for_timeout(1500)
+
+    if not open_theme_panel(page, cx, cy):
+        return report(name, False, "could not reopen the panel after the reload")
+    options = page.evaluate(
+        "() => [...document.querySelector('.theme-preset').children].map((o) => o.value)")
+    in_picker = saved_name in options
+
+    # Select it: applying a saved name must put its colors on the wall, which is
+    # what makes the library worth having rather than a list of names.
+    applied = page.evaluate("""(n) => {
+      const sel = document.querySelector('.theme-preset');
+      if (!sel || ![...sel.children].some((o) => o.value === n)) return null;
+      const lib = JSON.parse(window.localStorage.getItem('netviz.themes.v1') || '{}');
+      const out = window.__netviz.settings.apply(lib[n] || {});
+      return {rejected: out.rejected.length};
+    }""", saved_name)
+    page.wait_for_timeout(300)
+    live = read_live(page, "appearance.colors.cities")
+
+    # Clean up: this case writes a real library entry and a real stored patch.
+    page.evaluate("(k) => window.localStorage.removeItem(k)", "netviz.themes.v1")
+    close_any_open_panel(page)
+    reset_theme_defaults(page, element_keys(page))
+
+    ok = (saved and has_color and in_picker
+          and applied is not None and applied["rejected"] == 0
+          and str(live).lower() == "#00ff88")
+    return report(
+        name, ok,
+        f"Save clicked={saved}; library carries the color={has_color}; after "
+        f"reload the name is in the picker={in_picker} (options={options}); "
+        f"applying it rejected={applied and applied['rejected']} and cities is "
+        f"now {live!r} (want '#00ff88')")
+
+
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= case1_geometry(page, cx, cy)
@@ -1141,6 +1226,7 @@ def run(page, cx, cy) -> bool:
     ok &= case6_randomize_then_close_asks(page, cx, cy)
     ok &= case7_background_refused_under_new_cap(page, cx, cy)
     ok &= case8_stop_edit_forks_then_restores(page, cx, cy)
+    ok &= case9_saved_theme_survives_reload(page, cx, cy)
     return ok
 
 

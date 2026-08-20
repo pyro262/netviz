@@ -595,7 +595,7 @@ async function boot() {
   // the same reason rail.mount() leaves the resize to its caller: a relayout
   // rebuilds the composer's render targets.
   const settingsPanel = createSettingsPanel({
-    preview, storage, root: document.body, onLayout: resize, confirmer,
+    preview, settings, storage, root: document.body, onLayout: resize, confirmer,
   });
   // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
   // rules, then reload so config.js and /config.json decide again from the

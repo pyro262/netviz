@@ -39,8 +39,11 @@
 // to them -- the exact failure `traffic.extraResolvers` was just fixed for.
 import { GROUPS, tunerRows, isRandomized, randomizeScope, clearsArcs, groupRows }
   from './tuner.js';
-import { defaultOf, entry, settingLabel, relativeLuminance } from './settings.js';
+import { defaultOf, entry, settingLabel, relativeLuminance, setThemeLibrary,
+  BUILTIN_THEMES } from './settings.js';
 import { savePatch } from './rulestore.js';
+import { loadThemes, saveTheme, deleteTheme, themeNames, capturePaths }
+  from './themestore.js';
 import { isAuto, AUTO, resolveColor, ELEMENT_T, ELEMENT_LITERAL } from './elements.js';
 import { RAMPS, THEME_SKIES } from './ramp.js';
 import { randomizePatch, RANDOMIZE_PATHS } from './randomize_color.js';
@@ -444,7 +447,6 @@ export const ELEMENT_KEYS = [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_L
 const THEME_PATH = 'appearance.theme';
 const RAMP_PATH = 'appearance.customRamp';
 const STOP_COUNT = 10;
-const PRESET_IDS = ['plasma', 'viridis', 'magma', 'inferno', 'cividis'];
 
 const elementPath = (key) => `appearance.colors.${key}`;
 const copyOf = (v) => (Array.isArray(v) ? v.slice() : v);
@@ -465,7 +467,12 @@ export function allPaths(rows = tunerRows()) {
 }
 
 export function createSettingsPanel({ preview, settings, storage, root, onClose,
-                                      onLayout, confirmer } = {}) {
+                                      onLayout, confirmer, prompt } = {}) {
+  // Injected so the unit suite can answer it. A panel that can only be tested
+  // against a real browser's window.prompt is a panel whose save path is not
+  // tested at all.
+  const promptFn = prompt || ((msg) => (typeof window !== 'undefined'
+    ? window.prompt(msg) : null));
   const mount = root || document.body;
   let node = null;
   // Which categories are expanded. UI STATE, NOT A SETTING: no schema path, no
@@ -625,6 +632,7 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
 
   function syncPreset() {
     if (presetSelect) presetSelect.value = defaultOf(THEME_PATH);
+    syncDeleteButton();
   }
 
   function syncGradient() {
@@ -665,6 +673,128 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
     return writePatch(patch);
   }
 
+  /** Rebuild the picker from the built-ins plus the library.
+   *
+   *  A disabled `<option>` separates them rather than an <optgroup>: the fake
+   *  DOM the unit suite runs against implements createElement and append and
+   *  nothing else, and a control that is only correct in a real browser is a
+   *  control whose correctness is untested. */
+  function syncPresetOptions() {
+    if (!presetSelect) return;
+    presetSelect.replaceChildren();
+    for (const id of BUILTIN_THEMES) {
+      const opt = el('option', null, id);
+      opt.value = id;
+      presetSelect.append(opt);
+    }
+    const names = themeNames(loadThemes(storage).themes);
+    if (names.length) {
+      const sep = el('option', 'theme-sep', '--- saved ---');
+      sep.disabled = true;
+      presetSelect.append(sep);
+      for (const name of names) {
+        const opt = el('option', null, name);
+        opt.value = name;
+        presetSelect.append(opt);
+      }
+    }
+    presetSelect.value = defaultOf(THEME_PATH);
+    syncDeleteButton();
+  }
+
+  /** Delete is ABSENT while a built-in is selected, not disabled: netviz's own
+   *  palettes cannot be deleted, and a greyed button advertises an action
+   *  nobody in the room can take. Same rule the menu follows for a panel it was
+   *  not built with. */
+  function syncDeleteButton() {
+    if (!node) return;
+    const holder = node.querySelector('.theme-pick');
+    if (!holder) return;
+    const existing = holder.querySelector('.theme-delete');
+    const deletable = !BUILTIN_THEMES.includes(defaultOf(THEME_PATH));
+    if (deletable && !existing) {
+      const btn = el('button', 'theme-delete', 'Delete');
+      btn.title = 'Remove this saved theme from this display. The colors stay '
+                + 'on the wall.';
+      btn.addEventListener('click', askDelete);
+      holder.append(btn);
+    } else if (!deletable && existing) {
+      existing.remove();
+    }
+  }
+
+  /** Save the LIVE look under a name -- pending, un-Kept changes included,
+   *  because "save this look" means the one on the wall. It is deliberately NOT
+   *  a Keep: keeping is a statement about what this display starts with, saving
+   *  is a statement about a look worth coming back to, and the note line says
+   *  which one just happened so the two are never confused. */
+  function saveThemeAs(name) {
+    const patch = {};
+    for (const path of capturePaths()) patch[path] = copyOf(defaultOf(path));
+    const out = saveTheme(storage, name, patch);
+    if (!out.ok) { setNote(out.error); return; }
+    setThemeLibrary(themeNames(loadThemes(storage).themes));
+    syncPresetOptions();
+    setNote(`Saved the current colors as "${name}". This is not a Keep -- `
+          + 'anything pending is still pending.');
+  }
+
+  function askSave() {
+    const name = (promptFn('Name this theme') || '').trim();
+    if (!name) return;
+    if (BUILTIN_THEMES.includes(name)) {
+      setNote(`"${name}" is one of netviz's own palettes -- pick another name.`);
+      return;
+    }
+    const existing = loadThemes(storage).themes;
+    if (!Object.prototype.hasOwnProperty.call(existing, name)) { saveThemeAs(name); return; }
+    askThen({
+      title: `Replace the saved theme "${name}"?`,
+      lead: 'A theme with this name is already saved on this display.',
+      will: [
+        `Replace the saved theme "${name}" with the colors on screen now.`,
+        'Lose the colors that theme held, which are not written down anywhere else.',
+      ],
+      wont: [
+        'Change what is on the wall right now.',
+        'Keep anything -- saving a theme and keeping a setting are different things.',
+        'Touch any other saved theme.',
+      ],
+      confirmLabel: `Yes, replace "${name}"`,
+      cancelLabel: 'No, keep the saved one',
+    }, () => saveThemeAs(name));
+  }
+
+  function askDelete() {
+    const name = defaultOf(THEME_PATH);
+    if (BUILTIN_THEMES.includes(name)) return;
+    askThen({
+      title: `Delete the saved theme "${name}"?`,
+      lead: "This removes it from this display's list of saved themes.",
+      will: [
+        `Delete the saved theme "${name}".`,
+        'Leave the colors it holds on the wall, as Custom, until you change them.',
+      ],
+      wont: [
+        'Change what is on the wall right now.',
+        "Touch netviz's own palettes, or any other theme you have saved.",
+        'Change anything on the collector, or on any other display.',
+      ],
+      confirmLabel: `Yes, delete "${name}"`,
+      cancelLabel: 'No, keep it',
+    }, () => {
+      const out = deleteTheme(storage, name);
+      if (!out.ok) { setNote(out.error); return; }
+      setThemeLibrary(themeNames(loadThemes(storage).themes));
+      // The look stays on the wall as Custom -- deleting a NAME is not deleting
+      // the colors, and dropping the display back to plasma on a delete would
+      // be a second, unasked-for change.
+      write(THEME_PATH, 'custom');
+      syncPresetOptions();
+      setNote(`Deleted "${name}". The colors are still on screen, as Custom.`);
+    });
+  }
+
   function renderThemeExtras() {
     const wrap = el('div', 'theme-gradient-wrap');
     gradientBar = el('div', 'theme-gradient');
@@ -683,21 +813,17 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
 
     const pick = el('div', 'theme-pick');
     presetSelect = el('select', 'theme-preset');
-    for (const id of PRESET_IDS) {
-      const opt = el('option', '', id);
-      opt.value = id;
-      presetSelect.append(opt);
-    }
-    // `custom` is offered only once the display HAS one: a picker listing a
-    // palette nobody has made is a control that cannot be chosen.
-    const customOpt = el('option', '', 'custom');
-    customOpt.value = 'custom';
-    presetSelect.append(customOpt);
     presetSelect.title = 'The palette. Every color below follows it, unless '
-                        + 'you have set that one yourself.';
+                        + 'you have set that one yourself. Anything you have '
+                        + 'saved is listed under the netviz palettes.';
     presetSelect.addEventListener('change', () => write(THEME_PATH, presetSelect.value));
+    const saveBtn = el('button', 'theme-save', 'Save…');
+    saveBtn.title = 'Keep the colors on screen now under a name, so you can '
+                  + 'come back to them. This is not the same as "Keep".';
+    saveBtn.addEventListener('click', askSave);
     summaryLine = el('div', 'theme-summary', headerLine());
-    pick.append(presetSelect, summaryLine);
+    pick.append(presetSelect, saveBtn, summaryLine);
+    syncPresetOptions();
 
     const out = el('div', 'theme-extras');
     out.append(wrap, pick);

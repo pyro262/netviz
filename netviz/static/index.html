@@ -648,6 +648,17 @@
          wherever that panel draws them. */
       .theme-extras { margin-bottom: 0.6rem; }
       .theme-pick { display: flex; align-items: baseline; gap: 0.5rem; }
+      .theme-save, .theme-delete {
+        background: #ffffff10; border: 1px solid #7201a8; color: inherit;
+        padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;
+      }
+      .theme-save:hover, .theme-delete:hover { background: #7201a855; }
+      /* The disabled row between netviz's own palettes and this display's
+         saved ones. An <option>, not an <optgroup>: the unit suite's DOM fake
+         implements createElement and append and nothing else, and a control
+         that is only correct in a real browser is one whose correctness is
+         untested. */
+      .theme-sep { color: #7201a8; }
       .theme-summary { color: #9c96b8; margin: 0.3rem 0 0; font-style: italic; }
       /* An open <option> list is drawn by the browser, not by this stylesheet,
          and it falls back to a WHITE background -- under `color: inherit` over
