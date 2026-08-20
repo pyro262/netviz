@@ -180,10 +180,18 @@ export function createTestPanel({ settings, confirmer, runner, root, onClose } =
     // failure -- including the passes.
     const failed = lines.filter((l) => l.status === 'fail').length;
     const skipped = lines.filter((l) => l.status === 'skipped').length;
-    const done = failed
-      ? `${failed} of ${lines.length} checks failed.`
-      : `All ${lines.length} checks passed.`;
-    setNote(skipped ? `${done} ${skipped} could not run.` : done);
+    // "All 4 checks passed. 2 could not run." was the first cut, and it
+    // contradicts itself in one breath. A skip is neither a pass nor a failure,
+    // so the passes are counted rather than assumed from the absence of
+    // failures.
+    const passed = lines.length - failed - skipped;
+    let done;
+    if (failed) done = `${failed} of ${lines.length} checks failed.`;
+    else if (skipped) done = `${passed} of ${lines.length} checks passed.`;
+    else done = `All ${lines.length} checks passed.`;
+    setNote(skipped
+      ? `${done} ${skipped} could not run.`
+      : done);
   }
 
   function close() {

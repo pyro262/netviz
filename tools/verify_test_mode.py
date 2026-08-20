@@ -319,9 +319,10 @@ def case5_self_test_pauses_and_pollutes_nothing(page, cx, cy) -> bool:
     out = page.evaluate("""() => {
       const el = document.querySelector('.test-panel');
       const rows = [...el.querySelectorAll('.test-report-row')];
+      const cls = (c) => rows.filter((r) => r.className.includes(c)).length;
       return {
         lines: rows.length,
-        passes: rows.filter((r) => r.className.includes('pass')).length,
+        passes: cls('pass'), fails: cls('fail'), skips: cls('skip'),
         note: (el.querySelector('.test-note') || {}).textContent || '',
         labels: rows.map((r) => (r.querySelector('.test-report-label') || {}).textContent),
       };
@@ -331,10 +332,19 @@ def case5_self_test_pauses_and_pollutes_nothing(page, cx, cy) -> bool:
     reset_test_paths(page)
 
     moved = [k for k in before if abs((after[k] or 0) - (before[k] or 0)) > 1e-9]
-    ok = (out["lines"] == 4 and out["passes"] == 4 and not moved)
+    # A SKIP IS NOT A FAILURE, and demanding four passes would make this case
+    # depend on where the camera happens to be looking: `test.geo.landmarks`
+    # skips honestly when a landmark is behind the limb, and `test.geo.home`
+    # when the collector has served no home position. What is asserted is one
+    # line per ticked check, NO failures, and -- the point of the case -- that
+    # the rail's counters did not move.
+    ok = (out["lines"] == 4 and out["fails"] == 0
+          and out["passes"] + out["skips"] == 4 and not moved)
     return report(name, ok,
-                  f"{out['lines']} report lines for 4 ticked checks ({out['passes']} "
-                  f"passed), note={out['note']!r}; rail rate/min before={before} "
+                  f"{out['lines']} report lines for 4 ticked checks "
+                  f"({out['passes']} passed, {out['skips']} skipped, "
+                  f"{out['fails']} failed -- failures must be 0), "
+                  f"note={out['note']!r}; rail rate/min before={before} "
                   f"after={after}, counters moved={moved or 'none'} -- sample arcs "
                   f"must never reach the counters")
 

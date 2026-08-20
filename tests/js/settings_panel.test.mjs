@@ -461,7 +461,8 @@ test('nothing pending is still no question at all', () => {
 // querySelectorAll and `[data-group="..."]`, which the collapsible sections
 // need and no earlier panel did.
 
-import { createSettingsPanel, allPaths } from '../../netviz/static/js/settings_panel.js';
+import { createSettingsPanel, allPaths, panelRolls, panelScope }
+  from '../../netviz/static/js/settings_panel.js';
 import { RANDOMIZE_PATHS } from '../../netviz/static/js/randomize_color.js';
 
 function matches(node, sel) {
@@ -841,4 +842,25 @@ test('Keep persists a theme row, not just the tuner rows it always could', () =>
   } finally {
     CONFIG.appearance.colors.cities = saved;
   }
+});
+
+test('every row Randomize moves carries a mark, and the copy counts the same', () => {
+  // THE PANEL MUST NOT LIE ABOUT ITS OWN BUTTON. `isRandomized` is a flag about
+  // SLIDERS -- "does changing this change the current frame" -- and it is false
+  // for every color row. 0.7.0's Randomize also rolls the whole element
+  // catalogue, so a panel that marked only the sliders printed "changes only
+  // the 47 settings marked below" and then moved 69. verify_tuner's case 12
+  // caught it on the wall; this holds it down here.
+  const rows = tunerRows();
+  const scope = panelScope(rows);
+  const marked = rows.filter(panelRolls).map((r) => r.path);
+  assert.equal(scope.count, marked.length);
+  assert.equal(scope.count + scope.heldCount, rows.length,
+    'the two sides must be a partition, or the copy says "the other N" untruthfully');
+  for (const p of RANDOMIZE_PATHS) {
+    if (!rows.some((r) => r.path === p)) continue;   // no row on this panel
+    assert.ok(marked.includes(p), `${p} is rolled but carries no mark`);
+  }
+  assert.match(randomizeScopeLine(scope), new RegExp(`\\b${scope.count}\\b`));
+  assert.match(randomizeScopeLine(scope), new RegExp(`\\b${scope.heldCount}\\b`));
 });

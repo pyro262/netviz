@@ -221,6 +221,26 @@ export const REBUILD_MARK = '↻';
  * is what a person can act on, where "the rows whose `randomize` flag is set"
  * is this file talking to itself.
  */
+/** Whether THIS PANEL's Randomize will move a row.
+ *
+ *  NOT `isRandomized` alone. That flag is about sliders -- "does changing this
+ *  change the current frame" -- and it is false for every color row. But 0.7.0's
+ *  Randomize also rolls the whole element catalogue, so a panel that marked only
+ *  the sliders printed "changes only the 47 settings marked below" and then
+ *  moved 69. A display that miscounts its own button is the exact failure the
+ *  scope line was written to prevent, and verify_tuner's case 12 caught it. */
+export function panelRolls(spec) {
+  return isRandomized(spec) || RANDOMIZE_PATHS.includes(spec.path);
+}
+
+/** The scope as the PANEL means it: sliders plus the catalogue colors it rolls.
+ *  Shaped like `randomizeScope()`'s return so one line of copy serves both. */
+export function panelScope(rows = tunerRows()) {
+  const rolled = rows.filter(panelRolls);
+  const held = rows.filter((r) => !panelRolls(r));
+  return { rolled, held, count: rolled.length, heldCount: held.length };
+}
+
 export function randomizeScopeLine(scope = randomizeScope()) {
   const { count, heldCount } = scope;
   return `Randomize changes only the ${count} settings that affect how the `
@@ -855,8 +875,8 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
     //
     // The gutter is reserved on EVERY row (the span is emitted empty for the
     // rest) so the labels stay in one column and marking a row shifts nothing.
-    const mark = el('span', 'tuner-mark', isRandomized(spec) ? RANDOM_MARK : '');
-    if (isRandomized(spec)) {
+    const mark = el('span', 'tuner-mark', panelRolls(spec) ? RANDOM_MARK : '');
+    if (panelRolls(spec)) {
       row.classList.add('tuner-can-random');
       mark.title = 'Randomize can change this setting.';
     }
@@ -1188,7 +1208,7 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
     // The tooltip keeps the LONGER version -- the held rows by name. The scope
     // itself is printed under the header rather than living only here: a wall
     // display is not hovered.
-    randomBtn.title = randomizeTooltip();
+    randomBtn.title = randomizeTooltip(panelScope());
     randomBtn.addEventListener('click', randomize);
     const revertBtn = el('button', 'tuner-revert', 'Revert');
     revertBtn.title = 'Put the settings you changed back to how they were when '
@@ -1237,7 +1257,7 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
     // different things (what the panel does with your changes, what one button
     // touches), and the mark's key has to be findable at a glance rather than
     // read out of a block.
-    node.append(el('p', 'tuner-lead tuner-scope', randomizeScopeLine()));
+    node.append(el('p', 'tuner-lead tuner-scope', randomizeScopeLine(panelScope())));
 
     // The rebuild key, in its own paragraph for the same reason the scope is:
     // a mark on a row is only a key if something on the panel says what it
