@@ -104,6 +104,19 @@ REPO = Path(__file__).resolve().parent.parent
 # resource conflict it is.
 PORT = int(os.environ.get("NETVIZ_VERIFY_PORT", "8799"))
 
+
+# A PAGE LOAD ON THIS HOST IS NOT FAST, and the default 30s is not enough
+# margin. Measured under SwiftShader with the live scene running: four
+# consecutive reloads took 9.0, 9.5, 10.1 and 10.2 seconds to fire `load`, with
+# `__netvizReady` following 0.1s later every time. That is on an IDLE machine --
+# tools/verify_release.sh runs nine of these back to back against a container it
+# has just rebuilt, and a 20s budget is barely twice the quiet cost.
+#
+# It is a real cost, not a stall: unlike page.screenshot (see the note in
+# verify_aurora.py) the navigation always completes. So the timeout is set from
+# the measurement with room, rather than the failure being tuned around.
+NAV_TIMEOUT_MS = 90_000
+
 STORE_KEY = "netviz.settings.v1"
 
 RESULTS: list[tuple[str, bool, str]] = []
@@ -1211,7 +1224,7 @@ def case9_saved_theme_survives_reload(page, cx, cy) -> bool:
     has_color = bool(stored) and "#00ff88" in stored
 
     close_any_open_panel(page)
-    page.reload(wait_until="load")
+    page.reload(wait_until="load", timeout=NAV_TIMEOUT_MS)
     page.wait_for_function("window.__netvizReady === true", timeout=20_000)
     page.wait_for_timeout(1500)
 

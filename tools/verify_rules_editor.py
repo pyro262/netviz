@@ -36,6 +36,19 @@ REPO = Path(__file__).resolve().parent.parent
 # conflict it actually is.
 PORT = int(os.environ.get("NETVIZ_VERIFY_PORT", "8599"))
 
+
+# A PAGE LOAD ON THIS HOST IS NOT FAST, and the default 30s is not enough
+# margin. Measured under SwiftShader with the live scene running: four
+# consecutive reloads took 9.0, 9.5, 10.1 and 10.2 seconds to fire `load`, with
+# `__netvizReady` following 0.1s later every time. That is on an IDLE machine --
+# tools/verify_release.sh runs nine of these back to back against a container it
+# has just rebuilt, and a 20s budget is barely twice the quiet cost.
+#
+# It is a real cost, not a stall: unlike page.screenshot (see the note in
+# verify_aurora.py) the navigation always completes. So the timeout is set from
+# the measurement with room, rather than the failure being tuned around.
+NAV_TIMEOUT_MS = 90_000
+
 # A cap, not a duration: case 7 stops as soon as all three country rules
 # have real traffic and the rail has redrawn. Simulated browser time and
 # the synthetic feed's own pace are not sized against each other, so
@@ -311,7 +324,7 @@ def reload_survives_case(page) -> bool:
       return true;
     }""")
     page.wait_for_timeout(400)
-    page.reload(wait_until="load")
+    page.reload(wait_until="load", timeout=NAV_TIMEOUT_MS)
     page.wait_for_function("window.__netvizReady === true", timeout=20_000)
     page.wait_for_timeout(1500)
     result = page.evaluate("""async () => {
@@ -436,7 +449,7 @@ def reset_case(page, cx, cy) -> bool:
     page.evaluate("""() => document.querySelector('.menu [data-id="reset"]')
                        .dispatchEvent(new MouseEvent('click', {bubbles: true}))""")
     page.wait_for_timeout(400)
-    with page.expect_navigation(wait_until="load", timeout=20_000):
+    with page.expect_navigation(wait_until="load", timeout=NAV_TIMEOUT_MS):
         page.evaluate("() => document.querySelector('.confirm-yes').click()")
     page.wait_for_function("window.__netvizReady === true", timeout=20_000)
     page.wait_for_timeout(1000)
@@ -743,11 +756,14 @@ def builtin_colors_case(page, cx, cy) -> bool:
     They were two ramp-position sliders on the tuning panel until 0.6.1 --
     one panel for "what color is a block", another for "what color is this
     rule", and the rail's legend a third place claiming both were amber.
-    They now sit IN the custom-arc list rather than in a section above it, first
-    and last, which is the engine's real precedence: a block is never
-    recolored by a rule, and a flow no rule claims falls through to the last
-    row. The panel's hint says the list is checked top to bottom, and that
-    was only true of the middle of it while the defaults sat outside.
+    They sit IN the custom-arc list rather than in a section of their own --
+    0.6.1 put them first and last, and 0.7.0 moved BOTH TO THE TOP. That was a
+    deliberate call, not a drift: with the fallback on the bottom the panel's
+    hint claimed the list was "checked top to bottom", which is false of a row
+    that matches whatever nothing else claimed. The hint now describes what the
+    engine does and the layout no longer has to stand in for precedence. PANEL
+    ORDER IS LAYOUT; the engine's precedence is unchanged, and `flow` must never
+    be moved above the custom rows in PRECEDENCE or it would claim everything.
     What is checked here is that the swatch writes the real setting, that it
     reaches the arcs already in the air (a color that only applied to the
     next spawn reads as a dead control on a wall where a block lives 18s),
@@ -762,14 +778,15 @@ def builtin_colors_case(page, cx, cy) -> bool:
       const rows = [...document.querySelectorAll('.custom-arc-fixed')];
       const before = { block: c.cfg('arcs.block.color', null), flow: c.cfg('arcs.flow.color', null) };
       const swatches = rows.map((r) => r.querySelector('input[type=color]').value);
-      // The two fixed rows are IN the list, first and last, with the
-      // editable rules between them -- one list in the engine's own
-      // precedence order. Asserted here so a future edit cannot quietly pull
-      // them back out into a section of their own.
+      // Both fixed rows are IN the list and are the FIRST TWO, with the
+      // editable rules below them. Asserted here so a future edit cannot
+      // quietly pull them back out into a section of their own, and so the
+      // 0.7.0 move is a decision on the record rather than something that
+      // drifted.
       const list = [...document.querySelector('.custom-arc-list').children];
       return { count: rows.length, before, swatches,
                firstIsFixed: list[0].className === 'custom-arc-fixed',
-               lastIsFixed: list[list.length - 1].className === 'custom-arc-fixed',
+               secondIsFixed: list[1].className === 'custom-arc-fixed',
                inList: rows.every((r) => r.parentElement.className === 'custom-arc-list'),
                autoDisabled: rows.map((r) => r.querySelector('button').disabled) };
     }""")
@@ -814,7 +831,7 @@ def builtin_colors_case(page, cx, cy) -> bool:
 
     ok = (state.get("count") == 2
           and state.get("inList") and state.get("firstIsFixed")
-          and state.get("lastIsFixed")
+          and state.get("secondIsFixed")
           and after.get("stored") == "#00ff88"
           and greened and restored
           and after.get("undoEnabled") is True
@@ -826,8 +843,9 @@ def builtin_colors_case(page, cx, cy) -> bool:
           and back.get("undoDisabled") is True)
     return report("10: the built-in arc colors are set from the rules panel", ok,
                   f"rows={state.get('count')} in one list="
-                  f"{state.get('inList')} first/last={state.get('firstIsFixed')}"
-                  f"/{state.get('lastIsFixed')} before={state.get('before')} "
+                  f"{state.get('inList')} first two="
+                  f"{state.get('firstIsFixed')}/{state.get('secondIsFixed')} "
+                  f"before={state.get('before')} "
                   f"live went green={greened} and back={restored}; "
                   f"after={after} back={back}")
 
