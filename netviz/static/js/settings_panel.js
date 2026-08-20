@@ -618,7 +618,14 @@ export function createSettingsPanel({ preview, settings, storage, root, onClose,
     } else if (refs.color) {
       refs.color.value = resolvedSwatch(path, v);
       refs.swatchText.textContent = String(v);
-      if (refs.autoBtn) refs.autoBtn.disabled = !isAuto(v);
+      // DISABLED WHEN ALREADY AUTO, which is the state in which clicking it
+      // would do nothing -- the same rule renderRow applies when it builds the
+      // button. This line was inverted from 0.6.0 until 0.7.0 and nothing
+      // caught it: `appearance.background` was the only allowAuto row on this
+      // panel, and its swatch is the one control an operator rarely returns to
+      // the theme. The merge put twelve element rows through the same syncRow
+      // and verify_theme.py's case 5 went red on the first live run.
+      if (refs.autoBtn) refs.autoBtn.disabled = isAuto(v);
     } else if (refs.check) {
       refs.check.checked = !!v;
     }

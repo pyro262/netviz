@@ -6,6 +6,7 @@ import {
   RANDOM_MARK, REBUILD_MARK, rebuildNoteLine,
 } from '../../netviz/static/js/settings_panel.js';
 import { settingLabel } from '../../netviz/static/js/settings.js';
+import { CONFIG } from '../../netviz/static/js/config.js';
 import {
   tunerRows, isRandomized, randomizeScope, clearsArcs,
 } from '../../netviz/static/js/tuner.js';
@@ -748,4 +749,54 @@ test('a saved theme survives Reset', () => {
   clearPatch(storage, ['arcs.custom', 'arcs.rules']);
   assert.deepEqual(themeNames(loadThemes(storage).themes), ['a'],
     'the library is its own key and Reset never reaches it');
+});
+
+test('the return-to-theme button is disabled only when the row IS on auto', () => {
+  // INVERTED FROM 0.6.0 UNTIL 0.7.0, and nothing caught it: syncRow set
+  // `disabled = !isAuto(v)`, so the button was dead exactly when clicking it
+  // would have done something. `appearance.background` was the only allowAuto
+  // row on this panel then, and its swatch is the one control an operator
+  // rarely returns to the theme, so it went unnoticed until the merge put
+  // twelve element rows through the same path.
+  // A REAL applier: `noteApplier` records the patch and writes nothing, so
+  // `defaultOf` would still say `auto` and this test would pass a panel whose
+  // button never updates at all. The button's state is derived from the LIVE
+  // value, so the live value has to move.
+  const saved = CONFIG.appearance.colors.bordersWorld;
+  const writing = {
+    apply: (patch) => {
+      for (const [path, v] of Object.entries(patch)) {
+        const parts = path.split('.');
+        let o = CONFIG;
+        for (const k of parts.slice(0, -1)) o = o[k];
+        o[parts[parts.length - 1]] = v;
+      }
+      return { applied: Object.keys(patch), rejected: [] };
+    },
+  };
+  const dom = panelDom();
+  try {
+    withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({ preview: writing, root: dom.root });
+    panel.open();
+    // The fake's querySelector takes one simple selector, so the section is
+    // found first and the rows read out of it -- which is also what the page
+    // does, and keeps the fake from growing a descendant-combinator parser.
+    const section = dom.root.querySelector('.tuner-group-body[data-group="theme"]');
+    const row = section.querySelectorAll('.tuner-row')[1];
+    const btn = row.querySelector('.theme-revert-el');
+    assert.ok(btn, 'no return-to-theme button on an element row');
+    assert.equal(btn.disabled, true, 'a fresh row is on auto: nothing to undo');
+    const swatch = row.querySelector('.tuner-color');
+    swatch.value = '#aa5500';
+    swatch.dispatch('change', {});
+    assert.equal(btn.disabled, false,
+      'the row now carries an override and the undo must be clickable');
+    btn.dispatch('click', {});
+    assert.equal(btn.disabled, true, 'back on auto, so nothing left to undo');
+    panel.close();
+    });
+  } finally {
+    CONFIG.appearance.colors.bordersWorld = saved;
+  }
 });

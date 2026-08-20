@@ -988,7 +988,10 @@ def case6_randomize_then_close_asks(page, cx, cy) -> bool:
                       "could not open the panel")
 
     preset_before = page.evaluate("() => document.querySelector('.theme-preset').value")
-    clicked = click_panel_button(page, ".theme-randomize")
+    # The Theme SECTION's own randomize, not the panel-wide one: `.tuner-randomize`
+    # in the header rolls every category, and this case is about the twelve
+    # element colors specifically.
+    clicked = click_panel_button(page, '.tuner-group-random[data-group="theme"]')
     page.wait_for_timeout(300)
     no_dialog = not confirm_is_really_open(confirm_state(page))
     dirty_count = page.evaluate(
