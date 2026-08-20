@@ -410,7 +410,7 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       // `arcs.flow.color` were settings that stored, persisted, read back
       // correctly and changed nothing on the display, which is the worst
       // shape a bug can take. Nothing wrote them until the color-rules panel
-      // did -- except the theme panel's Chaos, whose two arc colors were
+      // did -- except the theme panel's Randomize, whose two arc colors were
       // silently no-ops.
       if (key === 'color') spec.hex = value;
       if (COLOR_KEYS.includes(key)) {

@@ -37,10 +37,10 @@ Eight cases, from spec section 11:
      `auto`, and its swatch immediately matches the theme's current color at
      that element's own `t` -- read from `js/elements.js`'s table via the
      page's own `resolveColor()`, not recomputed here;
-  6. Chaos marks all twelve element rows dirty in one click, asks nothing
-     itself, and leaves the preset selector alone (chaos never touches the
-     ramp) -- then Close, now facing twelve pending changes, DOES ask, and
-     answering yes discards all twelve and reverts the wall;
+  6. Randomize marks every element row dirty in one click, asks nothing
+     itself, and leaves the preset selector alone (the randomizer never touches the
+     ramp) -- then Close, now facing every pending change, DOES ask, and
+     answering yes discards them all and reverts the wall;
   7. `appearance.background` is not a row on this panel -- it lives on the
      tuning panel -- but its DERIVED luminance cap moves with the active
      ramp, and this is the one place that interaction can be exercised end to
@@ -280,7 +280,7 @@ def close_any_open_panel(page):
 
 
 def element_keys(page):
-    """The twelve element keys, read from the page's own module rather than
+    """The element keys, read from the page's own module rather than
     hardcoded here -- a schema change moves this list with the code, the same
     argument case9 in verify_tuner.py makes for `tuner.js`'s `randomize`
     flag."""
@@ -818,7 +818,7 @@ def case4_override_survives_auto_does_not(page, cx, cy) -> bool:
     did NOT move when the preset was switched from the panel's own selector.
     Traced to `theme_panel.js`'s `syncRow()`: on `THEME_PATH` or `RAMP_PATH`
     it called `syncPreset()`/`syncGradient()` only and never re-synced any of
-    the twelve element rows, so an `auto` row's on-screen swatch went stale
+    the element rows, so an `auto` row's on-screen swatch went stale
     until the panel was closed and reopened -- even though `resolveColor()`
     and the actual wall (via `applyTheme`'s fan-out in `js/apply.js`) were
     both correct the whole time. Fixed in `dfef972` (theme panel: re-sync
@@ -922,39 +922,39 @@ def _first_int(text):
     return int(m.group()) if m else None
 
 
-def case6_chaos_then_close_asks(page, cx, cy) -> bool:
-    """6: Chaos marks every element row dirty and asks nothing; Close, now
-    facing everything Chaos rolled, DOES ask, and Yes discards all of it.
+def case6_randomize_then_close_asks(page, cx, cy) -> bool:
+    """6: Randomize marks every element row dirty and asks nothing; Close, now
+    facing everything Randomize rolled, DOES ask, and Yes discards all of it.
 
-    THE PENDING COUNT IS NOT TWELVE AND MUST NOT BE HARDCODED. Chaos rolls
-    more than the twelve element rows -- the arc colors, the surface tints
+    THE PENDING COUNT IS NOT THE ROW COUNT AND MUST NOT BE HARDCODED. Randomize rolls
+    more than the element rows -- the arc colors, the surface tints
     and the atmosphere numbers have no row on this panel but are snapshotted
     and reverted with everything else (see `allPaths()` unioning in
-    `CHAOS_PATHS`). This case asserted `"12" in count_text` and went red the
+    `RANDOMIZE_PATHS`). This case asserted `"12" in count_text` and went red the
     day the roller grew, reporting a working build as broken: the literal
     encoded one release's arithmetic rather than the property. What is
     actually required is that the three readings AGREE -- the marked rows,
     the footer's count and the dialog's count all describe the same pending
     state -- and that the footer's number is at least the number of rows,
-    since every row Chaos marks is also pending.
+    since every row Randomize marks is also pending.
 
     RED FIRST, MEASURED: `theme_panel.js`'s `closeQuestion` was changed to
     unconditionally `return null;` (the question never fires, whatever is
     pending). Result: `asked=False`, `title=None`, `answered=False` -- the
-    panel closed on the very first Close click with twelve unkept colors
-    silently discarded and no dialog ever drawn -- while the Chaos half
-    (`dirty rows=12/12`, `no dialog from chaos=True`) still read exactly as
+    panel closed on the very first Close click with a full roll of unkept colors
+    silently discarded and no dialog ever drawn -- while the Randomize half
+    (`dirty rows=N/N`, `no dialog from the randomizer=True`) still read exactly as
     it does against working code, which is why both halves live in one
-    case: a version that checked only Chaos would report this build
+    case: a version that checked only Randomize would report this build
     healthy. Restored and re-run clean before this file was finished."""
     keys = element_keys(page)
     reset_theme_defaults(page, keys)
     if not open_theme_panel(page, cx, cy):
-        return report("6: Chaos dirties every row, and Close then asks", False,
+        return report("6: Randomize dirties every row, and Close then asks", False,
                       "could not open the panel")
 
     preset_before = page.evaluate("() => document.querySelector('.theme-preset').value")
-    clicked = click_panel_button(page, ".theme-chaos")
+    clicked = click_panel_button(page, ".theme-randomize")
     page.wait_for_timeout(300)
     no_dialog = not confirm_is_really_open(confirm_state(page))
     dirty_count = page.evaluate(
@@ -979,8 +979,8 @@ def case6_chaos_then_close_asks(page, cx, cy) -> bool:
           and preset_after == preset_before and counts_agree
           and clicked_close and asked and answered and gone)
     return report(
-        "6: Chaos dirties every row and asks nothing, Close then asks", ok,
-        f"chaos clicked={clicked} no dialog from chaos={no_dialog} dirty "
+        "6: Randomize dirties every row and asks nothing, Close then asks", ok,
+        f"the randomizer clicked={clicked} no dialog from the randomizer={no_dialog} dirty "
         f"rows={dirty_count}/{len(keys)} preset unchanged={preset_after == preset_before} "
         f"({preset_before!r} -> {preset_after!r}) footer={count_text!r} "
         f"(footer={footer_n} dialog={dialog_n} agree={counts_agree}); Close "
@@ -1129,7 +1129,7 @@ def run(page, cx, cy) -> bool:
     ok &= case3_presets_recolor(page, cx, cy)
     ok &= case4_override_survives_auto_does_not(page, cx, cy)
     ok &= case5_revert_el_returns_to_theme(page, cx, cy)
-    ok &= case6_chaos_then_close_asks(page, cx, cy)
+    ok &= case6_randomize_then_close_asks(page, cx, cy)
     ok &= case7_background_refused_under_new_cap(page, cx, cy)
     ok &= case8_stop_edit_forks_then_restores(page, cx, cy)
     return ok

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CHAOS_PATHS } from '../../netviz/static/js/randomize_color.js';
+import { RANDOMIZE_PATHS } from '../../netviz/static/js/randomize_color.js';
 import { createThemePanel, ELEMENT_KEYS } from '../../netviz/static/js/theme_panel.js';
 import { RAMPS } from '../../netviz/static/js/ramp.js';
 import { AUTO } from '../../netviz/static/js/elements.js';
@@ -116,7 +116,7 @@ test('the twenty element keys match the twenty color settings', () => {
   assert.equal(ELEMENT_KEYS.length, 20);
   assert.ok(ELEMENT_KEYS.includes('coastline'));
   assert.ok(ELEMENT_KEYS.includes('auroraHigh'));
-  // The rail's eight joined in 0.7.0, so a preset pick and a Chaos roll reach
+  // The rail's eight joined in 0.7.0, so a preset pick and a randomize roll reach
   // the numbers as well as the globe -- both are derived from the catalogue.
   assert.ok(ELEMENT_KEYS.includes('railWordmark'));
   assert.ok(ELEMENT_KEYS.includes('railBars'));
@@ -195,25 +195,25 @@ test('close() force-closes with no question, even with something pending', () =>
   assert.equal(panel.isOpen(), false);
 });
 
-test('chaos marks everything it rolled dirty, so Revert covers the whole roll', () => {
-  // Derived from CHAOS_PATHS, not a literal count: Chaos reaches past the
+test('randomize marks everything it rolled dirty, so Revert covers the whole roll', () => {
+  // Derived from RANDOMIZE_PATHS, not a literal count: the randomizer reaches past the
   // twelve element rows into the arc colors, the surface tints and the
   // atmosphere, and a path it can write but Revert cannot restore is a
   // one-way door. Adding to the roller must not silently escape the undo.
   const panel = createThemePanel(fakeDeps());
   panel.open();
-  panel.chaos(() => 0.5);
+  panel.randomize(() => 0.5);
   const pending = panel.pendingPaths();
-  assert.equal(pending.length, CHAOS_PATHS.length);
-  for (const p of CHAOS_PATHS) {
+  assert.equal(pending.length, RANDOMIZE_PATHS.length);
+  for (const p of RANDOMIZE_PATHS) {
     assert.ok(pending.includes(p), `${p} was rolled but is not pending`);
   }
 });
 
-test('chaos never touches the theme or the custom ramp', () => {
+test('randomize never touches the theme or the custom ramp', () => {
   const panel = createThemePanel(fakeDeps());
   panel.open();
-  panel.chaos(() => 0.5);
+  panel.randomize(() => 0.5);
   const patch = panel.pendingPatch();
   assert.equal('appearance.theme' in patch, false);
   assert.equal('appearance.customRamp' in patch, false);
@@ -228,4 +228,12 @@ test('setElement back to auto is still a touched row', () => {
   panel.setElement('cities', AUTO);
   assert.deepEqual(panel.pendingPaths(), ['appearance.colors.cities']);
   assert.equal(panel.pendingPatch()['appearance.colors.cities'], AUTO);
+});
+
+test('there is no Shuffle button', () => {
+  const panel = createThemePanel(fakeDeps());
+  panel.open();
+  assert.equal(typeof panel.randomize, 'function');
+  assert.equal(panel.chaos, undefined);
+  panel.close();
 });

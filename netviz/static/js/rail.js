@@ -464,7 +464,7 @@ export function panels(snapshot, extra, colors, lightning) {
   // Two problems with that, both real: a legend split across the rail is not
   // a legend, it is two footnotes; and the color word is a second claim about
   // the same thing as the swatch beside it, so a recolor -- through the
-  // theme, the tuning panel or Chaos -- leaves the rail insisting the arcs
+  // theme, the tuning panel or Randomize -- leaves the rail insisting the arcs
   // are amber while they are green. The swatch cannot lie; it is sampled from
   // the live display every paint. So the swatch got bigger and the word went.
   //

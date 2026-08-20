@@ -93,7 +93,7 @@ export const CONFIG = {
   arcs: {
     bodyOpacity: 0.18,
 
-    // `color: 'auto'` means "follow the ramp at colorAt". Only Chaos writes a
+    // `color: 'auto'` means "follow the ramp at colorAt". Only Randomize writes a
     // hex here; every other path leaves the class on the theme.
     flow:  { life: 4.0,  tube: 0.0032, color: 'auto', colorAt: 0.30, gain: 1.0,
              speed: 0.9,  lift: 0.28, maxRise: 0.24, bloomScale: 1.25 },

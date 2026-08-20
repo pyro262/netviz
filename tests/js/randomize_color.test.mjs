@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomizeRamp, chaosColors, MIN_ELEMENT_LUMINANCE } from
+import { randomizeColors, MIN_ELEMENT_LUMINANCE } from
   '../../netviz/static/js/randomize_color.js';
-import { relativeLuminance, maxBackgroundLuminance } from '../../netviz/static/js/settings.js';
+import { relativeLuminance } from '../../netviz/static/js/settings.js';
 import { ELEMENT_T, ELEMENT_LITERAL } from '../../netviz/static/js/elements.js';
-import { setActiveRamp } from '../../netviz/static/js/ramp.js';
 
 /** Deterministic source, so a one-in-a-thousand bad roll is a test failure and
  *  not something that reaches the wall. */
@@ -13,24 +12,10 @@ function seeded(seed) {
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
 }
 
-test('a random ramp has ten valid stops with monotonic lightness', () => {
-  for (let seed = 0; seed < 2000; seed += 1) {
-    const stops = randomizeRamp(seeded(seed));
-    assert.equal(stops.length, 10, `seed ${seed}`);
-    let last = -1;
-    for (const hex of stops) {
-      assert.match(hex, /^#[0-9a-f]{6}$/, `seed ${seed} stop ${hex}`);
-      const L = relativeLuminance(hex);
-      assert.ok(L >= last, `seed ${seed}: lightness went down at ${hex}`);
-      last = L;
-    }
-  }
-});
-
-test('chaos rolls every element and never goes under the floor', () => {
+test('the randomizer rolls every element and never goes under the floor', () => {
   const keys = [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)];
   for (let seed = 0; seed < 2000; seed += 1) {
-    const out = chaosColors(seeded(seed));
+    const out = randomizeColors(seeded(seed));
     assert.deepEqual(Object.keys(out).sort(), keys.sort(), `seed ${seed}`);
     for (const [k, hex] of Object.entries(out)) {
       assert.match(hex, /^#[0-9a-f]{6}$/, `seed ${seed} ${k}`);
@@ -40,42 +25,21 @@ test('chaos rolls every element and never goes under the floor', () => {
   }
 });
 
-test('chaos never touches the sky', () => {
-  const out = chaosColors(seeded(7));
+test('the randomizer never touches the sky', () => {
+  const out = randomizeColors(seeded(7));
   assert.equal(out.background, undefined);
   assert.equal(out['appearance.background'], undefined);
 });
 
-test('a random ramp always leaves the shipped sky legal under its own cap', () => {
-  // The "legal cap" property the spec lists for randomizeRamp: whatever ramp
-  // comes out, the shipped ground (#0b0916) must still sit under the cap that
-  // ramp derives -- apply.js sets the custom sky by direct assignment,
-  // bypassing coerce, so nothing today would refuse or even report a ramp
-  // that broke this. Measured over 200k seeds: it holds, but only by 5.5%
-  // (worst cap 0.00342 against the shipped sky's 0.00324), so this is worth
-  // holding down rather than trusting by eye.
-  const floor = relativeLuminance('#0b0916');
-  try {
-    for (let seed = 0; seed < 2000; seed += 1) {
-      const stops = randomizeRamp(seeded(seed));
-      setActiveRamp(stops);
-      assert.ok(maxBackgroundLuminance() > floor,
-                 `seed ${seed}: cap ${maxBackgroundLuminance()} <= shipped sky ${floor}`);
-    }
-  } finally {
-    setActiveRamp('plasma');
-  }
-});
-
-// ---------------------------------------------------------------- chaos v2 --
-// Chaos was "not as chaotic as envisioned" on the wall: every element rolled
+// ----------------------------------------------------------- the whole roll --
+// The roll was "not as chaotic as envisioned" on the wall: every element rolled
 // lightness 0.45-0.85 and saturation 0.55-1.0, so twelve mid-bright colors of
 // similar weight, and it touched no arc, no surface tint and no atmosphere --
 // leaving the brightest, most-moving thing on the display untouched.
 
 import {
-  minLightnessFor, arcLuminanceFloor, chaosPatch, CHAOS_PATHS,
-  MIN_TINT_LIGHTNESS, MAX_TINT_SATURATION, ATMOSPHERE_CHAOS, hslToHex,
+  minLightnessFor, arcLuminanceFloor, randomizePatch, RANDOMIZE_PATHS,
+  MIN_TINT_LIGHTNESS, MAX_TINT_SATURATION, ATMOSPHERE_RANDOM, hslToHex,
 } from '../../netviz/static/js/randomize_color.js';
 
 test('the lightness floor is per hue, not one conservative number', () => {
@@ -100,10 +64,10 @@ test('every hue at its own floor still clears the visibility floor', () => {
   }
 });
 
-test('chaos now spans dark to bright instead of one band', () => {
+test('the roll now spans dark to bright instead of one band', () => {
   let lo = 1; let hi = 0;
   for (let seed = 0; seed < 2000; seed += 1) {
-    for (const hex of Object.values(chaosColors(seeded(seed)))) {
+    for (const hex of Object.values(randomizeColors(seeded(seed)))) {
       const L = relativeLuminance(hex);
       assert.ok(L >= MIN_ELEMENT_LUMINANCE, `seed ${seed}: ${hex} is invisible`);
       if (L < lo) lo = L;
@@ -111,8 +75,8 @@ test('chaos now spans dark to bright instead of one band', () => {
     }
   }
   // The old band bottomed out around 0.09 and could not reach the extremes.
-  assert.ok(lo < 0.05, `darkest chaos color L=${lo} -- still not dark enough`);
-  assert.ok(hi > 0.75, `brightest chaos color L=${hi} -- still not bright enough`);
+  assert.ok(lo < 0.05, `darkest rolled color L=${lo} -- still not dark enough`);
+  assert.ok(hi > 0.75, `brightest rolled color L=${hi} -- still not bright enough`);
 });
 
 test('the arc floor is DERIVED from the sky, not invented', () => {
@@ -124,17 +88,17 @@ test('the arc floor is DERIVED from the sky, not invented', () => {
   assert.ok(arcLuminanceFloor(0.0065, 0.18, 2.85) > floor);
 });
 
-test('chaosPatch rolls the arcs, the planet and the limb -- never the sky', () => {
-  const patch = chaosPatch(seeded(11), { skyLuminance: 0.00324 });
-  for (const p of CHAOS_PATHS) assert.ok(p in patch, `${p} missing from the patch`);
+test('randomizePatch rolls the arcs, the planet and the limb -- never the sky', () => {
+  const patch = randomizePatch(seeded(11), { skyLuminance: 0.00324 });
+  for (const p of RANDOMIZE_PATHS) assert.ok(p in patch, `${p} missing from the patch`);
   assert.equal(patch['appearance.background'], undefined, 'the sky must never be rolled');
-  assert.equal(Object.keys(patch).length, CHAOS_PATHS.length);
+  assert.equal(Object.keys(patch).length, RANDOMIZE_PATHS.length);
 });
 
 test('rolled arcs stay visible against the sky, across every seed', () => {
   const floor = arcLuminanceFloor(0.00324, 0.18, 2.85);
   for (let seed = 0; seed < 2000; seed += 1) {
-    const patch = chaosPatch(seeded(seed), { skyLuminance: 0.00324 });
+    const patch = randomizePatch(seeded(seed), { skyLuminance: 0.00324 });
     // flow and block only -- highlight arcs take their color from the rule
     // that matched them, so a class-level color there is never drawn.
     for (const cls of ['flow', 'block']) {
@@ -151,7 +115,7 @@ test('surface tints leave every channel alive, so the map stays readable', () =>
   // smear however light the third one is. Caught at seed 119 (a saturated blue
   // at l=0.5, L=0.11) before the saturation cap existed.
   for (let seed = 0; seed < 2000; seed += 1) {
-    const patch = chaosPatch(seeded(seed), { skyLuminance: 0.00324 });
+    const patch = randomizePatch(seeded(seed), { skyLuminance: 0.00324 });
     for (const p of ['appearance.surface.dayTint', 'appearance.surface.nightTint']) {
       const hex = patch[p].replace('#', '');
       for (let c = 0; c < 3; c += 1) {
@@ -164,12 +128,35 @@ test('surface tints leave every channel alive, so the map stays readable', () =>
 
 test('atmosphere rolls stay inside the schema bounds and never vanish', () => {
   for (let seed = 0; seed < 2000; seed += 1) {
-    const patch = chaosPatch(seeded(seed), { skyLuminance: 0.00324 });
-    for (const [path, [min, max]] of Object.entries(ATMOSPHERE_CHAOS)) {
+    const patch = randomizePatch(seeded(seed), { skyLuminance: 0.00324 });
+    for (const [path, [min, max]] of Object.entries(ATMOSPHERE_RANDOM)) {
       const v = patch[path];
       assert.ok(v >= min && v <= max, `seed ${seed} ${path}=${v} outside [${min},${max}]`);
     }
     assert.ok(patch['appearance.atmosphere.strength'] > 0,
       `seed ${seed}: a strength of 0 removes the limb entirely`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 0.7.0: Shuffle is deleted and Chaos is renamed.
+
+import * as rc from '../../netviz/static/js/randomize_color.js';
+
+test('the ramp roller is gone, not merely unused', () => {
+  assert.equal(rc.randomizeRamp, undefined,
+    'its only consumer was Shuffle; an orphaned export is a control nothing offers');
+});
+
+test('the surviving randomizer is named for what the button says', () => {
+  assert.equal(typeof rc.randomizePatch, 'function');
+  assert.equal(typeof rc.randomizeColors, 'function');
+  assert.ok(Array.isArray(rc.RANDOMIZE_PATHS));
+  assert.equal(rc.chaosPatch, undefined, 'the old name is gone, not aliased');
+  assert.equal(rc.CHAOS_PATHS, undefined);
+});
+
+test('RANDOMIZE_PATHS covers all twenty catalogue entries', () => {
+  const colorPaths = rc.RANDOMIZE_PATHS.filter((p) => p.startsWith('appearance.colors.'));
+  assert.equal(colorPaths.length, 20);
 });

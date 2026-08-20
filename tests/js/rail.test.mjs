@@ -347,7 +347,7 @@ test('the legend rides at the top of CUSTOM ARCS, naming what each arc means', (
   assert.deepEqual(legend.rows.map((r) => r.legend === true), [true, true, false]);
   // The color WORD is gone from both labels on purpose: the swatch is
   // sampled from the live display and cannot lie, while "amber" survives a
-  // recolor through the theme, the tuning panel or Chaos and then contradicts
+  // recolor through the theme, the tuning panel or Randomize and then contradicts
   // the arcs it names.
   for (const row of legend.rows.filter((r) => r.legend)) {
     assert.doesNotMatch(row.label, /amber|violet|purple|orange/i,

@@ -630,12 +630,22 @@
          because a <select> is neither, and the gradient bar. */
       .theme-panel { width: var(--theme-panel-width); }
       .theme-summary { color: #9c96b8; margin: 0.3rem 0 0; font-style: italic; }
-      .theme-preset {
-        font: inherit; color: inherit; background: #ffffff10;
-        border: 1px solid #ffffff22; border-radius: 3px; padding: 0.1rem 0.35rem;
+      /* An open <option> list is drawn by the browser, not by this stylesheet,
+         and it falls back to a WHITE background -- under `color: inherit` over
+         a near-transparent `#ffffff10` that is light grey on white and
+         unreadable. Both the control AND its option children need an explicit
+         background; setting it on the control alone fixes the closed state and
+         leaves the open list exactly as broken. Applied to every select in the
+         panels so it cannot come back one dropdown at a time. */
+      .theme-preset, .custom-arc-end {
+        font: inherit; background: #1a1430; color: #e9e2ff;
+        border: 1px solid #7201a8; border-radius: 3px; padding: 0.1rem 0.35rem;
         cursor: pointer;
       }
-      .theme-preset:hover { background: #ffffff20; border-color: #ffffff3d; }
+      .theme-preset option, .custom-arc-end option {
+        background: #1a1430; color: #e9e2ff;
+      }
+      .theme-preset:hover, .custom-arc-end:hover { border-color: #9333ea; }
       /* The stop handles sit ABOVE the bar rather than inside a shared flex
          row, because a <input type=color> has a fixed intrinsic size that a
          flex track cannot spread evenly to ten even stops -- percentage

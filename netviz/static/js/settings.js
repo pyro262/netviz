@@ -85,7 +85,7 @@ function arcClass(cls, keys) {
     color: { type: 'color', allowAuto: true, strategy: 'uniform',
              help: 'A color for this arc class of your own, used instead of '
                  + 'the palette\'s. Left alone, the arc follows the palette, '
-                 + 'which is what a fresh display shows. Chaos sets this; '
+                 + 'which is what a fresh display shows. Randomize sets this; '
                  + 'nothing else does.' },
     colorAt: { type: 'number', min: 0, max: 1, strategy: 'uniform',
                help: 'Position on the plasma ramp, 0 (indigo) to 1 (pale '

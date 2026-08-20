@@ -24,7 +24,7 @@
 //
 // TWO WAYS TO WRITE:
 //   preview   the UNWRAPPED applier. Every edit -- a stop, an element color,
-//             a preset pick, Randomize ramp, Chaos -- goes through this, so
+//             a preset pick, Randomize -- goes through this, so
 //             the wall changes and NOTHING is stored. A reload is the escape
 //             hatch that makes experimenting free.
 //   settings  the persisting applier (main.js's `withPersistence(preview,
@@ -34,10 +34,10 @@
 import { RAMPS, THEME_SKIES } from './ramp.js';
 import { ELEMENT_T, ELEMENT_LITERAL, AUTO, isAuto, resolveColor } from './elements.js';
 import { defaultOf, entry, settingLabel, relativeLuminance } from './settings.js';
-import { randomizeRamp, chaosPatch, CHAOS_PATHS } from './randomize_color.js';
+import { randomizePatch, RANDOMIZE_PATHS } from './randomize_color.js';
 
 /** The twelve element keys, in the same order apply.js's colorHandlers()
- *  declares them -- also the order chaosColors() returns, so a chaos patch
+ *  declares them -- also the order randomizeColors() returns, so a randomized patch
  *  and a row list never have to be reconciled against each other. */
 export const ELEMENT_KEYS = [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)];
 
@@ -51,15 +51,15 @@ function elementPath(key) { return `appearance.colors.${key}`; }
 /** Every path this panel snapshots, and therefore every path Revert, Keep and
  *  Close can act on.
  *
- *  CHAOS_PATHS is unioned in rather than listed here: Chaos reaches beyond the
+ *  RANDOMIZE_PATHS is unioned in rather than listed here: the randomizer reaches beyond the
  *  twelve element rows -- the two arc colors, the two surface tints, the three
- *  atmosphere numbers -- and a path Chaos can WRITE but Revert cannot RESTORE
+ *  atmosphere numbers -- and a path it can WRITE but Revert cannot RESTORE
  *  is a one-way door. Deriving the set from the roller means adding something
- *  to Chaos cannot silently escape the undo. The extra paths have no row on
+ *  to the randomizer cannot silently escape the undo. The extra paths have no row on
  *  this panel; they are snapshotted and reverted all the same. */
 function allPaths() {
   const base = [THEME_PATH, RAMP_PATH, ...ELEMENT_KEYS.map(elementPath)];
-  return [...new Set([...base, ...CHAOS_PATHS])];
+  return [...new Set([...base, ...RANDOMIZE_PATHS])];
 }
 
 function copyOf(v) { return Array.isArray(v) ? v.slice() : v; }
@@ -353,25 +353,25 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
     return writePatch(patch);
   }
 
-  /** Roll a whole new coherent ramp and fork to custom in one call, for the
-   *  same reason setStop's first edit does. */
-  function doRandomizeRamp(rand = Math.random) {
-    const stops = randomizeRamp(rand);
-    writePatch({ [RAMP_PATH]: stops, [THEME_PATH]: 'custom' });
-  }
-
-  /** Chaos: the whole display rolled independently, ignoring the ramp -- see
+  /** The whole display rolled independently, ignoring the ramp -- see
    *  randomize_color.js. Never touches the theme or the custom ramp, so a
-   *  Revert on a chaos click puts back what was rolled and nothing about which
+   *  Revert on a roll puts back what was rolled and nothing about which
    *  preset was active.
+   *
+   *  WITH THE RAMP ROLLER GONE, NOTHING GENERATES A COHERENT PALETTE ANY MORE.
+   *  This one forks every element to an explicit override, after which picking
+   *  a preset recolors nothing -- a preset only touches elements still on
+   *  `auto`. Revert and the per-element `↺` are the ways back, and saved themes
+   *  are what make a roll worth keeping; that is why those two changes shipped
+   *  together.
    *
    *  The arc floor is derived from the sky that is actually on screen, not
    *  from the shipped one: a display running a brighter ground needs brighter
    *  arcs to stay legible, and that relationship is the luminance cap's own,
    *  inverted. */
-  function chaos(rand = Math.random) {
+  function randomize(rand = Math.random) {
     const sky = defaultOf('appearance.background');
-    writePatch(chaosPatch(rand, {
+    writePatch(randomizePatch(rand, {
       skyLuminance: relativeLuminance(
         isAuto(sky) ? THEME_SKIES[defaultOf(THEME_PATH)] ?? THEME_SKIES.plasma : sky),
       bodyOpacity: defaultOf('arcs.bodyOpacity'),
@@ -507,17 +507,11 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
                         + 'you have set that one yourself.';
     presetSelect.addEventListener('change', () => write(THEME_PATH, presetSelect.value));
 
-    const randomBtn = el('button', 'theme-randomize-ramp', 'Shuffle palette');
-    randomBtn.title = 'A fresh set of colors that still look like they belong '
-                     + 'together. Saves as your own palette, so the one you '
-                     + 'started from is still there to go back to.';
-    randomBtn.addEventListener('click', () => doRandomizeRamp());
-
-    const chaosBtn = el('button', 'theme-chaos', 'Chaos');
-    chaosBtn.title = 'Every color picked at random, ignoring the palette -- the '
-                    + 'arcs and the planet too. It will be ugly. Nothing '
-                    + 'disappears, and Revert puts it all back in one click.';
-    chaosBtn.addEventListener('click', () => chaos());
+    const randomBtn = el('button', 'theme-randomize', 'Randomize');
+    randomBtn.title = 'Every color picked at random, ignoring the palette -- the '
+                    + 'arcs and the planet too. Nothing disappears, and Revert '
+                    + 'puts it all back in one click.';
+    randomBtn.addEventListener('click', () => randomize());
 
     const revertBtn = el('button', 'tuner-revert', 'Revert');
     revertBtn.title = 'Put everything you changed back to how it was when '
@@ -537,7 +531,7 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
     // that have nobody there to answer a dialog.
     closeBtn.addEventListener('click', () => requestClose());
 
-    actions.append(presetSelect, randomBtn, chaosBtn, revertBtn, keepBtn, closeBtn);
+    actions.append(presetSelect, randomBtn, revertBtn, keepBtn, closeBtn);
     head.append(actions);
 
     const sticky = el('div', 'tuner-sticky');
@@ -614,6 +608,6 @@ export function createThemePanel({ settings, preview, confirmer, onLayout, root 
 
   return {
     open, close: closePanel, requestClose, isOpen,
-    setStop, setElement, resetElement, headerLine, pendingPatch, pendingPaths, chaos,
+    setStop, setElement, resetElement, headerLine, pendingPatch, pendingPaths, randomize,
   };
 }
