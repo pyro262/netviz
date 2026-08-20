@@ -37,11 +37,13 @@
 // Persisting all 39 would freeze three dozen values at today's config.js
 // numbers, after which the display silently stops tracking any later change
 // to them -- the exact failure `traffic.extraResolvers` was just fixed for.
-import { tunerRows, isRandomized, randomizeScope, clearsArcs } from './tuner.js';
-import { defaultOf, entry, settingLabel } from './settings.js';
+import { GROUPS, tunerRows, isRandomized, randomizeScope, clearsArcs, groupRows }
+  from './tuner.js';
+import { defaultOf, entry, settingLabel, relativeLuminance } from './settings.js';
 import { savePatch } from './rulestore.js';
-import { isAuto, AUTO } from './elements.js';
-import { THEME_SKIES } from './ramp.js';
+import { isAuto, AUTO, resolveColor, ELEMENT_T, ELEMENT_LITERAL } from './elements.js';
+import { RAMPS, THEME_SKIES } from './ramp.js';
+import { randomizePatch, RANDOMIZE_PATHS } from './randomize_color.js';
 
 /** The patch a Keep writes: the touched paths at their current values.
  *
@@ -434,10 +436,47 @@ function el(tag, cls, text) {
  *   relayout rebuilds the composer's render targets, so it must happen once
  *   per toggle and not once per module that would like it to.
  */
-export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
-                                      confirmer } = {}) {
+/** The element keys, in the same order apply.js's colorHandlers() declares
+ *  them -- also the order randomizeColors() returns, so a randomized patch and
+ *  a row list never have to be reconciled against each other. */
+export const ELEMENT_KEYS = [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)];
+
+const THEME_PATH = 'appearance.theme';
+const RAMP_PATH = 'appearance.customRamp';
+const STOP_COUNT = 10;
+const PRESET_IDS = ['plasma', 'viridis', 'magma', 'inferno', 'cividis'];
+
+const elementPath = (key) => `appearance.colors.${key}`;
+const copyOf = (v) => (Array.isArray(v) ? v.slice() : v);
+
+/** Every path this panel snapshots, and therefore every path Revert, Keep and
+ *  Close can act on.
+ *
+ *  RANDOMIZE_PATHS is unioned in rather than listed: the randomizer reaches
+ *  beyond the rows the panel draws -- the two arc colors, the two surface
+ *  tints, the three atmosphere numbers -- and a path it can WRITE but Revert
+ *  cannot RESTORE is a one-way door. Deriving the set from the roller means
+ *  adding something to the randomizer cannot silently escape the undo. The
+ *  extra paths have no row here; they are snapshotted and reverted all the
+ *  same. Moved intact from theme_panel.allPaths() when the two panels merged. */
+export function allPaths(rows = tunerRows()) {
+  const base = [THEME_PATH, RAMP_PATH, ...rows.map((r) => r.path)];
+  return [...new Set([...base, ...RANDOMIZE_PATHS])];
+}
+
+export function createSettingsPanel({ preview, settings, storage, root, onClose,
+                                      onLayout, confirmer } = {}) {
   const mount = root || document.body;
   let node = null;
+  // Which categories are expanded. UI STATE, NOT A SETTING: no schema path, no
+  // persistence. Theme opens, the other eight start closed, every time. A
+  // persisted collapse state is one more thing that can disagree with what is
+  // on screen, for a control whose whole cost is one click.
+  let openGroups = new Set(['theme']);
+  let gradientBar = null;
+  let presetSelect = null;
+  let summaryLine = null;
+  let stopRefs = [];
   // The value every row held when the panel opened -- what Revert returns to,
   // and what Keep re-baselines onto.
   let snapshot = new Map();
@@ -472,6 +511,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     const revert = node.querySelector('.tuner-revert');
     if (keep) keep.disabled = n === 0 || !storage;
     if (revert) revert.disabled = n === 0;
+    if (summaryLine) summaryLine.textContent = headerLine();
   }
 
   function markDirty(path, value) {
@@ -503,6 +543,29 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     return true;
   }
 
+  /** Several paths in one apply, for the edits that are one decision but two
+   *  writes -- a gradient stop forking the preset to `custom`, or a whole
+   *  randomized roll. One `preview.apply()` call, so the fan-out that recolors
+   *  every auto element runs once rather than once per key. */
+  function writePatch(patch) {
+    const out = preview.apply(patch) || {};
+    if (out.rejected && out.rejected.length) {
+      setNote(`${out.rejected[0].path}: ${out.rejected[0].why}`);
+      for (const path of Object.keys(patch)) syncRow(path);
+      return false;
+    }
+    setNote('');
+    for (const path of Object.keys(patch)) {
+      current.set(path, copyOf(defaultOf(path)));
+      dirty.add(path);
+      const refs = rowRefs.get(path);
+      if (refs) refs.row.classList.add('tuner-dirty');
+    }
+    for (const path of Object.keys(patch)) syncRow(path);
+    refreshActions();
+    return true;
+  }
+
   /** What a color row's SWATCH should show. `<input type=color>` cannot hold
    *  the string `'auto'` -- the browser silently sanitizes an invalid value
    *  to black, so a stock kiosk (appearance.background defaults to `'auto'`)
@@ -513,12 +576,32 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
    *  shows what the sky actually is rather than a sanitizer's fallback. */
   function resolvedSwatch(path, v) {
     if (!isAuto(v)) return v;
-    return path === 'appearance.background'
-      ? THEME_SKIES[defaultOf('appearance.theme')] : v;
+    if (path === 'appearance.background') {
+      return THEME_SKIES[defaultOf(THEME_PATH)] || THEME_SKIES.plasma;
+    }
+    // A catalogue color on `auto` resolves through the ACTIVE ramp, the same
+    // way the wall resolves it -- one reader, so the swatch and the globe
+    // cannot disagree. A wrong readout that looks confident is worse than no
+    // readout, because it is still believed.
+    const key = ELEMENT_KEYS.find((k) => elementPath(k) === path);
+    return key ? resolveColor(key, AUTO) : v;
   }
 
   /** Put a row's controls back in step with the live value. */
   function syncRow(path) {
+    if (path === THEME_PATH || path === RAMP_PATH) {
+      syncPreset();
+      syncGradient();
+      // Every AUTO color row's displayed color is DERIVED from the active ramp
+      // (resolveColor(key, AUTO)), not stored -- so the instant the ramp moves,
+      // EVERY such row is stale, not just the one path this patch happened to
+      // name. Found live by verify_theme.py case 4: the wall recolored
+      // correctly (apply.js's applyTheme fan-out pushes every auto element),
+      // but the panel kept showing the OLD swatches -- an element the panel
+      // claims is following the theme while the wall disagrees.
+      for (const key of ELEMENT_KEYS) syncRow(elementPath(key));
+      return;
+    }
     const refs = rowRefs.get(path);
     if (!refs) return;
     const v = defaultOf(path);
@@ -532,6 +615,93 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     } else if (refs.check) {
       refs.check.checked = !!v;
     }
+  }
+
+  function activeStops() {
+    const theme = defaultOf(THEME_PATH);
+    if (theme === 'custom') return copyOf(defaultOf(RAMP_PATH));
+    return copyOf(RAMPS[theme] || RAMPS.plasma);
+  }
+
+  function syncPreset() {
+    if (presetSelect) presetSelect.value = defaultOf(THEME_PATH);
+  }
+
+  function syncGradient() {
+    if (!gradientBar) return;
+    const stops = activeStops();
+    gradientBar.style.background = `linear-gradient(to right, ${
+      stops.map((c, i) => `${c} ${(i / (STOP_COUNT - 1)) * 100}%`).join(', ')})`;
+    for (let i = 0; i < STOP_COUNT; i += 1) {
+      if (stopRefs[i]) stopRefs[i].value = stops[i];
+    }
+  }
+
+  /** The one line that says which palette is active and how much of it has
+   *  been overruled.
+   *
+   *  "set by you", not "overridden": the panel is read by whoever walks up to
+   *  the wall, and `override` is the word the code uses for the mechanism, not
+   *  a word that tells a person what they are looking at. Same reason `auto`
+   *  and `ramp` do not appear in any string this file draws. */
+  function headerLine() {
+    const theme = defaultOf(THEME_PATH);
+    const n = ELEMENT_KEYS.filter((k) => !isAuto(defaultOf(elementPath(k)))).length;
+    return n ? `${theme}, ${n} set by you` : String(theme);
+  }
+
+  /** The first stop edit forks the active preset to `custom` IN THE SAME
+   *  apply, so the fan-out that recolors every auto element runs once, not
+   *  once per key. Every stop edit AFTER that sends only the ramp, never
+   *  re-sending the theme: the ~4000-vertex city BufferAttribute rewrite the
+   *  theme fan-out triggers is too expensive to repeat on every drag once the
+   *  fork has already happened. */
+  function setStop(index, hex) {
+    const stops = activeStops();
+    stops[index] = hex;
+    const wasCustom = defaultOf(THEME_PATH) === 'custom';
+    const patch = { [RAMP_PATH]: stops };
+    if (!wasCustom) patch[THEME_PATH] = 'custom';
+    return writePatch(patch);
+  }
+
+  function renderThemeExtras() {
+    const wrap = el('div', 'theme-gradient-wrap');
+    gradientBar = el('div', 'theme-gradient');
+    const handles = el('div', 'theme-stops');
+    stopRefs = [];
+    for (let i = 0; i < STOP_COUNT; i += 1) {
+      const input = el('input', 'theme-stop');
+      input.type = 'color';
+      input.title = `Stop ${i + 1} of ${STOP_COUNT}`;
+      input.style.left = `${(i / (STOP_COUNT - 1)) * 100}%`;
+      input.addEventListener('change', () => setStop(i, input.value));
+      stopRefs.push(input);
+      handles.append(input);
+    }
+    wrap.append(gradientBar, handles);
+
+    const pick = el('div', 'theme-pick');
+    presetSelect = el('select', 'theme-preset');
+    for (const id of PRESET_IDS) {
+      const opt = el('option', '', id);
+      opt.value = id;
+      presetSelect.append(opt);
+    }
+    // `custom` is offered only once the display HAS one: a picker listing a
+    // palette nobody has made is a control that cannot be chosen.
+    const customOpt = el('option', '', 'custom');
+    customOpt.value = 'custom';
+    presetSelect.append(customOpt);
+    presetSelect.title = 'The palette. Every color below follows it, unless '
+                        + 'you have set that one yourself.';
+    presetSelect.addEventListener('change', () => write(THEME_PATH, presetSelect.value));
+    summaryLine = el('div', 'theme-summary', headerLine());
+    pick.append(presetSelect, summaryLine);
+
+    const out = el('div', 'theme-extras');
+    out.append(wrap, pick);
+    return out;
   }
 
   function renderRow(spec) {
@@ -614,7 +784,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
       refs.swatchText = swatchText;
       row.append(color, swatchText);
       // The one-way-door fix: a row that allows `auto` gets a return path
-      // back to it, the same `↺` affordance theme_panel.js gives its twelve
+      // back to it, the same `↺` affordance the Theme section gives its twelve
       // element rows -- otherwise the only way off `auto` (picking a color)
       // has no way back, and one accidental click permanently detaches this
       // display's sky from the theme with nothing on the panel to undo it.
@@ -740,20 +910,109 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
    *  clamps; only `appearance.background` refuses, and Randomize does not touch
    *  it), so this is latent rather than live -- which is exactly when it is
    *  cheap to get right. */
-  function randomize() {
+  /** Every element color rolled independently, ignoring the ramp -- see
+   *  randomize_color.js. Never touches the theme or the custom ramp, so a
+   *  Revert on a roll puts back what was rolled and nothing about which preset
+   *  was active.
+   *
+   *  It forks every element to an explicit override, after which picking a
+   *  preset recolors nothing -- a preset only touches elements still on
+   *  `auto`. Revert and the per-row `↺` are the ways back.
+   *
+   *  The arc floor is derived from the sky ACTUALLY on screen, not from the
+   *  shipped one: a display running a brighter ground needs brighter arcs to
+   *  stay legible, and that relationship is the luminance cap's own, inverted. */
+  function randomizeColorsAll() {
+    const sky = defaultOf('appearance.background');
+    return writePatch(randomizePatch(Math.random, {
+      skyLuminance: relativeLuminance(
+        isAuto(sky) ? THEME_SKIES[defaultOf(THEME_PATH)] ?? THEME_SKIES.plasma : sky),
+      bodyOpacity: defaultOf('arcs.bodyOpacity'),
+    }));
+  }
+
+  /** Roll one category's sliders. `theme` is the exception and not an exception
+   *  to the rule: its rows are colors, so the SLIDER scope is empty, and its
+   *  button rolls the whole catalogue instead -- which is something to do. */
+  function rollRows(rows) {
     let n = 0;
     const refused = [];
-    for (const spec of tunerRows()) {
+    for (const spec of rows) {
       if (!isRandomized(spec)) continue;
       const v = randomizeValue(spec, Math.random);
       if (v === null) continue;
       if (write(spec.path, v)) n += 1;
       else refused.push(spec.label);
     }
+    return { n, refused };
+  }
+
+  function randomizeGroup(id) {
+    if (id === 'theme') {
+      randomizeColorsAll();
+      const n = RANDOMIZE_PATHS.length;
+      setNote(`Randomized ${n} color${n === 1 ? '' : 's'}. "Revert" puts them back.`);
+      return;
+    }
+    const { n, refused } = rollRows(groupRows(id));
     const done = `Randomized ${n} setting${n === 1 ? '' : 's'}. "Revert" puts them back.`;
+    setNote(refused.length ? `${done} Refused: ${refused.join(', ')}.` : done);
+  }
+
+  /** Randomize ALL: every category's roller in turn, Theme's included. The
+   *  printed count comes from what the rollers actually wrote, never a
+   *  literal -- this release moved the counts twice. */
+  function randomize() {
+    const colors = randomizeColorsAll() ? RANDOMIZE_PATHS.length : 0;
+    const { n, refused } = rollRows(tunerRows());
+    const total = n + colors;
+    const done = `Randomized ${total} setting${total === 1 ? '' : 's'}. `
+               + '"Revert" puts them back.';
     setNote(refused.length
       ? `${done} Refused: ${refused.join(', ')}.`
       : done);
+  }
+
+  function toggleGroup(id) {
+    if (openGroups.has(id)) openGroups.delete(id);
+    else openGroups.add(id);
+    if (!node) return;
+    const head = node.querySelector(`.tuner-group[data-group="${id}"]`);
+    const body = node.querySelector(`.tuner-group-body[data-group="${id}"]`);
+    const on = openGroups.has(id);
+    if (head) head.className = `tuner-group${on ? ' open' : ''}`;
+    if (body) body.style.display = on ? '' : 'none';
+  }
+
+  /** One category heading: a disclosure button, and the category's own
+   *  randomize when it has anything to roll.
+   *
+   *  A category with no randomizable rows draws NO button rather than a
+   *  disabled one -- a control that cannot do anything is worse than a missing
+   *  control, the same rule that keeps a menu row absent rather than greyed on
+   *  a locked display. */
+  function renderGroupHead(group, rows) {
+    const on = openGroups.has(group.id);
+    const head = el('h3', `tuner-group${on ? ' open' : ''}`, group.label);
+    head.setAttribute('data-group', group.id);
+    head.addEventListener('click', () => toggleGroup(group.id));
+    const count = group.id === 'theme'
+      ? RANDOMIZE_PATHS.length : randomizeScope(rows).count;
+    if (count) {
+      const btn = el('button', 'tuner-group-random', 'randomize');
+      btn.setAttribute('data-group', group.id);
+      btn.title = group.id === 'theme'
+        ? `Give all ${count} colors a random value, ignoring the palette. `
+          + '"Revert" puts them back in one click.'
+        : `Give this section's ${count} settings a random value inside their `
+          + 'own limits. "Revert" puts them back in one click.';
+      btn.addEventListener('click', (e) => {
+        if (e && e.stopPropagation) e.stopPropagation();   // not a collapse
+        randomizeGroup(group.id);
+      });
+      head.append(btn);
+    }
+    return head;
   }
 
   function open() {
@@ -762,6 +1021,18 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
     current = new Map();
     dirty = new Set();
     rowRefs = new Map();
+    stopRefs = [];
+    // Fresh every open: Theme expanded, the other eight closed. See openGroups.
+    openGroups = new Set(['theme']);
+
+    // Snapshot EVERY path Revert can be asked to restore, not just the ones
+    // with a row -- see allPaths(). renderRow() re-seeds the ones it draws,
+    // which is harmless: it writes the same live value.
+    for (const path of allPaths()) {
+      const v = defaultOf(path);
+      snapshot.set(path, copyOf(v));
+      current.set(path, copyOf(v));
+    }
 
     node = el('div', 'tuner-panel');
     // No backdrop. The rules panel has one because editing a list is a modal
@@ -844,16 +1115,39 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
       node.append(el('p', 'tuner-lead tuner-rebuild-note', rebuildLine));
     }
 
+    // Nine collapsible categories. No fitRuleCap equivalent and none is
+    // needed: the panel scrolls and a person is standing at it, so the rail's
+    // "content past the fold is invisible for ever" argument -- which is about
+    // an UNATTENDED display -- does not apply. The sticky header above is what
+    // keeps the buttons reachable.
     const body = el('div', 'tuner-body');
-    let seen = null;
-    for (const spec of tunerRows()) {
-      if (spec.group !== seen) {
-        body.append(el('h3', 'tuner-group', spec.groupLabel));
-        seen = spec.group;
+    const rows = tunerRows();
+    for (const group of GROUPS) {
+      const mine = groupRows(group.id, rows);
+      body.append(renderGroupHead(group, mine));
+      const section = el('div', 'tuner-group-body');
+      section.setAttribute('data-group', group.id);
+      if (!openGroups.has(group.id)) section.style.display = 'none';
+      // The gradient bar and the preset picker are not rows over schema paths
+      // -- the bar edits ten entries of ONE path and the picker writes a path
+      // with no control kind -- so they are drawn here rather than described
+      // in tuner.js's table.
+      if (group.id === 'theme') section.append(renderThemeExtras());
+      if (group.id === 'rail') {
+        // Said out loud, so a color row with no randomize mark beside it is
+        // explained rather than looking like an oversight: the eight rail
+        // colors are catalogue entries and Theme's randomize rolls them with
+        // the rest. This section's own button rolls its five text scales.
+        section.append(el('p', 'tuner-lead tuner-group-note',
+          'The eight rail colors are part of the theme, so this section\'s '
+          + 'randomize rolls the five text sizes and Theme\'s rolls the colors.'));
       }
-      body.append(renderRow(spec));
+      for (const spec of mine) section.append(renderRow(spec));
+      body.append(section);
     }
     node.append(body);
+    syncPreset();
+    syncGradient();
 
     // The class BEFORE the append and the relayout after both: `body.tuner`
     // is what narrows #stage, so setting it last would have the caller

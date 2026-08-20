@@ -450,3 +450,182 @@ test('the close question offers keeping as well as discarding', () => {
 test('nothing pending is still no question at all', () => {
   assert.equal(closeQuestion([]), null);
 });
+
+// ---------------------------------------------------------------------------
+// The merged panel, against a DOM fake.
+//
+// Same discipline as the other panels' fakes: createElement, append/remove,
+// addEventListener/dispatch, class-and-attribute querySelector, never
+// innerHTML -- the module under test never uses it either. Extended here with
+// querySelectorAll and `[data-group="..."]`, which the collapsible sections
+// need and no earlier panel did.
+
+import { createSettingsPanel, allPaths } from '../../netviz/static/js/settings_panel.js';
+import { RANDOMIZE_PATHS } from '../../netviz/static/js/randomize_color.js';
+
+function matches(node, sel) {
+  const m = /^\.([\w-]+)(?:\[([\w-]+)="([^"]*)"\])?$/.exec(sel);
+  if (!m) throw new Error(`fake DOM cannot parse selector ${sel}`);
+  const [, cls, attr, val] = m;
+  if (!node.className || !node.className.split(' ').includes(cls)) return false;
+  if (attr && node.getAttribute(attr) !== val) return false;
+  return true;
+}
+
+function panelDom() {
+  function mk(tag) {
+    const listeners = {};
+    const attrs = {};
+    const node = {
+      tagName: tag, className: '', style: {}, textContent: '', value: '',
+      disabled: false, checked: false, children: [], parentNode: null,
+      classList: {
+        _n: null,
+        add(c) { const p = this._n; if (!p.className.split(' ').includes(c)) p.className = `${p.className} ${c}`.trim(); },
+        remove(c) { const p = this._n; p.className = p.className.split(' ').filter((x) => x && x !== c).join(' '); },
+        contains(c) { return this._n.className.split(' ').includes(c); },
+      },
+      setAttribute(n, v) { attrs[n] = String(v); },
+      getAttribute(n) { return Object.prototype.hasOwnProperty.call(attrs, n) ? attrs[n] : null; },
+      appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
+      append(...cs) { for (const c of cs) this.appendChild(c); },
+      remove() {
+        if (!this.parentNode) return;
+        const i = this.parentNode.children.indexOf(this);
+        if (i >= 0) this.parentNode.children.splice(i, 1);
+        this.parentNode = null;
+      },
+      contains(o) { let n = o; while (n) { if (n === this) return true; n = n.parentNode; } return false; },
+      querySelectorAll(sel) {
+        const out = [];
+        (function walk(n) {
+          for (const c of n.children || []) { if (matches(c, sel)) out.push(c); walk(c); }
+        })(this);
+        return out;
+      },
+      querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
+      addEventListener(t, fn) { (listeners[t] ||= []).push(fn); },
+      removeEventListener(t, fn) { if (listeners[t]) listeners[t] = listeners[t].filter((f) => f !== fn); },
+      dispatch(t, e) { (listeners[t] || []).slice().forEach((fn) => fn(e)); },
+    };
+    node.classList._n = node;
+    return node;
+  }
+  const root = mk('div');
+  const bodyEl = mk('body');
+  const document = {
+    createElement: (t) => mk(t),
+    createTextNode: (t) => { const n = mk('#text'); n.textContent = t; return n; },
+    body: bodyEl,
+    getElementById: () => null,
+    addEventListener() {}, removeEventListener() {},
+  };
+  return { root, document };
+}
+
+function withPanelGlobals(dom, fn) {
+  const realDoc = globalThis.document;
+  globalThis.document = dom.document;
+  try { return fn(); } finally { globalThis.document = realDoc; }
+}
+
+const noteApplier = (into) => ({
+  apply: (patch) => { if (into) into.push(patch); return { applied: Object.keys(patch), rejected: [] }; },
+});
+const groupHead = (dom, id) => dom.root.querySelector(`.tuner-group[data-group="${id}"]`);
+const groupIsOpen = (dom, id) => groupHead(dom, id).className.includes('open');
+
+test('theme opens, the other eight start closed, and nothing is persisted about it', () => {
+  const dom = panelDom();
+  withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({ preview: noteApplier(), root: dom.root });
+    panel.open();
+    const open = dom.root.querySelectorAll('.tuner-group')
+      .filter((h) => h.className.includes('open'))
+      .map((h) => h.getAttribute('data-group'));
+    assert.deepEqual(open, ['theme']);
+    panel.close();
+  });
+});
+
+test('clicking a heading expands it and leaves the others alone', () => {
+  const dom = panelDom();
+  withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({ preview: noteApplier(), root: dom.root });
+    panel.open();
+    groupHead(dom, 'rail').dispatch('click', {});
+    assert.equal(groupIsOpen(dom, 'rail'), true);
+    assert.equal(groupIsOpen(dom, 'theme'), true, 'not an accordion');
+    assert.equal(groupIsOpen(dom, 'camera'), false);
+    panel.close();
+  });
+});
+
+test('a category randomize touches only that category', () => {
+  const dom = panelDom();
+  withPanelGlobals(dom, () => {
+    const previewed = [];
+    const panel = createSettingsPanel({ preview: noteApplier(previewed), root: dom.root });
+    panel.open();
+    previewed.length = 0;
+    dom.root.querySelector('.tuner-group-random[data-group="clouds"]')
+      .dispatch('click', { stopPropagation() {} });
+    const touched = previewed.flatMap((p) => Object.keys(p));
+    assert.ok(touched.length > 0);
+    assert.ok(touched.every((p) => p.startsWith('clouds.')), touched.join(', '));
+    panel.close();
+  });
+});
+
+test('Randomize all covers every category including Theme', () => {
+  const dom = panelDom();
+  withPanelGlobals(dom, () => {
+    const previewed = [];
+    const panel = createSettingsPanel({ preview: noteApplier(previewed), root: dom.root });
+    panel.open();
+    previewed.length = 0;
+    dom.root.querySelector('.tuner-randomize').dispatch('click', {});
+    const touched = new Set(previewed.flatMap((p) => Object.keys(p)));
+    assert.ok([...touched].some((p) => p.startsWith('appearance.colors.')),
+      'theme is in scope');
+    assert.ok([...touched].some((p) => p.startsWith('camera.') || p.startsWith('arcs.')));
+    panel.close();
+  });
+});
+
+test('a category with nothing to roll draws no button', () => {
+  const dom = panelDom();
+  withPanelGlobals(dom, () => {
+    const panel = createSettingsPanel({ preview: noteApplier(), root: dom.root });
+    panel.open();
+    // Every one of the nine has something: eight have sliders and Theme rolls
+    // the catalogue. The rule is asserted as a rule -- a button exists exactly
+    // where the count is non-zero -- rather than by naming a category that
+    // happens to have none today.
+    for (const id of ['theme', 'appearance', 'clouds', 'lightning', 'arcs',
+                      'arcshape', 'surface', 'camera', 'rail']) {
+      const btn = dom.root.querySelector(`.tuner-group-random[data-group="${id}"]`);
+      assert.ok(btn, `${id} has rows to roll and must offer the button`);
+    }
+    panel.close();
+  });
+});
+
+test('the printed scope line comes from randomizeScope, not a literal', () => {
+  const line = randomizeScopeLine(randomizeScope(tunerRows()));
+  assert.match(line, new RegExp(`\\b${randomizeScope(tunerRows()).count}\\b`));
+});
+
+test('Revert can restore every path Randomize can write', () => {
+  // The one-way-door rule, asserted rather than described: a path the roller
+  // reaches but the snapshot never took would be written live and left there
+  // for ever, with the panel's own Revert unable to see it.
+  const snapshotted = new Set(allPaths());
+  for (const p of RANDOMIZE_PATHS) {
+    assert.ok(snapshotted.has(p), `${p} can be rolled but not reverted`);
+  }
+});
+
+test('there is no separate theme panel left to open', async () => {
+  await assert.rejects(() => import('../../netviz/static/js/theme_panel.js'));
+});

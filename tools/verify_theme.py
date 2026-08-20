@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Prove the THEME PANEL against a real page.
+"""Prove the merged settings panel's THEME half against a real page.
 
 Modeled on `tools/verify_tuner.py` -- same rail, same preview/persist split,
-same one confirm.js dialog -- because `js/theme_panel.js` is that panel's
-sibling and shares its whole mechanism. Read
+same one confirm.js dialog -- because 0.7.0 merged `js/theme_panel.js` INTO
+`js/settings_panel.js` as two more collapsible categories, and every
+mechanism it had is now that panel's. Read
 `docs/notes/settings-and-panels.md`'s theme section before touching this file.
 
 Eight cases, from spec section 11:
@@ -12,10 +13,10 @@ Eight cases, from spec section 11:
      `#stage` by exactly its own width, and each toggle costs exactly one
      `renderer.setSize` -- the same left-rail contract the tuning panel makes,
      proved the same way it was proved there;
-  2. opening the theme panel closes an open TUNING panel through its
-     `requestClose()`, not a force-close -- a pending tuner change raises the
-     one confirm dialog, and Cancel leaves both panels exactly as they were:
-     the tuner still open and dirty, the theme panel never opened;
+  2. on a fresh open the Theme category is expanded and the other eight are
+     not, clicking a heading expands it without collapsing Theme (it is not
+     an accordion), and the open set RESETS on the next open -- collapse
+     state is UI state, never a remembered setting;
   3. each of the five presets visibly recolors the GLOBE, proved by sampling
      the drawing buffer rather than by trusting the schema. A region ON the
      globe disc and a region of empty sky are sampled SEPARATELY -- see
@@ -71,7 +72,7 @@ failed output recorded in each case's own docstring:
     noise and measured signal, not from taste; see that constant's own
     comment for both numbers and how thin the margin actually is.
   - Case 4 needed no injected break: it was found RED against the shipped,
-    unmodified tree (a real pre-existing defect in `theme_panel.js`'s
+    unmodified tree (a real pre-existing defect in the theme panel's
     `syncRow`, since fixed upstream) rather than a synthetic one, arguably
     the strongest evidence this file produced.
 
@@ -155,24 +156,25 @@ def open_menu_and_click(page, data_id: str, cx: float, cy: float) -> bool:
 
 
 def theme_panel_state(page):
-    """`.theme-panel` is a unique class -- the tuning panel's root carries
-    `tuner-panel` alone, the theme panel's carries `tuner-panel theme-panel`
-    (see theme_panel.js's own comment on why the two classes are deliberately
-    different strings). Presence + `document.contains` + a non-zero rect,
-    never the API's own claim -- there is no API claim available here at all:
-    `window.__netviz` exposes `settingsPanel` and `customArcsPanel` but not
-    `themePanel`, so this script never has one to distrust in the first
-    place and drives everything through the DOM and the menu, the same
-    surface a real operator has."""
+    """The merged settings panel, plus its Theme section.
+
+    0.7.0 deleted `theme_panel.js`: the theme is two collapsible categories of
+    the ONE panel now, so there is no second root to look for and no
+    `.theme-panel` class. What is read here is the tuning panel's root plus
+    the Theme section's own row count, which is what every case below actually
+    needs. Presence + `document.contains` + a non-zero rect, never the API's
+    own claim -- this script drives the DOM and the menu, the same surface a
+    real operator has."""
     return page.evaluate("""() => {
-      const el = document.querySelector('.theme-panel');
+      const el = document.querySelector('.tuner-panel');
       if (!el) return {present: false};
       const r = el.getBoundingClientRect();
+      const sec = el.querySelector('.tuner-group-body[data-group="theme"]');
       return {
         present: true, inDocument: document.contains(el),
         mountedOnBody: el.parentElement === document.body,
         w: r.width, h: r.height,
-        rows: el.querySelectorAll('.theme-row').length,
+        rows: sec ? sec.querySelectorAll('.tuner-row').length : 0,
       };
     }""")
 
@@ -280,12 +282,19 @@ def close_any_open_panel(page):
 
 
 def element_keys(page):
-    """The element keys, read from the page's own module rather than
-    hardcoded here -- a schema change moves this list with the code, the same
-    argument case9 in verify_tuner.py makes for `tuner.js`'s `randomize`
-    flag."""
+    """The Theme SECTION's element keys, in the order that section draws them,
+    read from the page's own tables rather than hardcoded here -- a schema
+    change moves this list with the code, the same argument case9 in
+    verify_tuner.py makes for `tuner.js`'s `randomize` flag.
+
+    Deliberately NOT settings_panel.js's ELEMENT_KEYS: that is the whole
+    twenty-entry catalogue, and eight of those are the RAIL's colors, which
+    0.7.0 puts in the Rail section instead. The rows this file indexes are the
+    Theme section's twelve, so the list comes from the same table that decides
+    which rows are drawn there."""
     return page.evaluate(
-        "async () => (await import('./js/theme_panel.js')).ELEMENT_KEYS")
+        "async () => (await import('./js/tuner.js')).groupRows('theme')"
+        "  .map((r) => r.path.replace('appearance.colors.', ''))")
 
 
 def reset_theme_defaults(page, keys):
@@ -306,9 +315,20 @@ def reset_theme_defaults(page, keys):
 
 
 def open_theme_panel(page, cx, cy) -> bool:
-    clicked = open_menu_and_click(page, "theme", cx, cy)
+    """Open the merged panel. Its Theme section is expanded on every fresh
+    open (see settings_panel.js's openGroups), so there is nothing to click
+    after it -- but the section is asserted open rather than assumed, because
+    a collapsed section's rows have a zero rect and every case below indexes
+    them by position."""
+    clicked = open_menu_and_click(page, "settings", cx, cy)
     page.wait_for_timeout(400)
-    return clicked and panel_is_really_open(theme_panel_state(page))
+    if not (clicked and panel_is_really_open(theme_panel_state(page))):
+        return False
+    return bool(page.evaluate(
+        """() => {
+          const h = document.querySelector('.tuner-group[data-group="theme"]');
+          return !!h && h.className.includes('open');
+        }"""))
 
 
 def row_index(page, keys, key):
@@ -316,13 +336,13 @@ def row_index(page, keys, key):
 
 
 def element_row_state(page, idx):
-    """One `.theme-row`'s controls, by index -- the color input's OWN value
+    """One Theme-section row's controls, by index -- the color input's OWN value
     (what the swatch actually shows, which tracks the theme for an `auto`
-    row) and the hex span's text (which theme_panel.js deliberately prints as
-    the literal string 'auto' for an auto row, never a color -- see
-    syncElementRow), plus the dirty class."""
+    row) and the hex span's text (which the panel deliberately prints as the
+    literal string 'auto' for an auto row, never a color -- see syncRow), plus
+    the dirty class."""
     return page.evaluate("""(i) => {
-      const rows = document.querySelectorAll('.theme-row');
+      const rows = document.querySelectorAll('.tuner-group-body[data-group="theme"] .tuner-row');
       const row = rows[i];
       if (!row) return null;
       return {
@@ -335,7 +355,7 @@ def element_row_state(page, idx):
 
 def set_element_color(page, idx, hex_value):
     return page.evaluate("""({i, hex}) => {
-      const rows = document.querySelectorAll('.theme-row');
+      const rows = document.querySelectorAll('.tuner-group-body[data-group="theme"] .tuner-row');
       const row = rows[i];
       const input = row.querySelector('.tuner-color');
       input.value = hex;
@@ -345,7 +365,7 @@ def set_element_color(page, idx, hex_value):
 
 def click_revert_el(page, idx):
     return page.evaluate("""(i) => {
-      const rows = document.querySelectorAll('.theme-row');
+      const rows = document.querySelectorAll('.tuner-group-body[data-group="theme"] .tuner-row');
       const btn = rows[i].querySelector('.theme-revert-el');
       if (!btn) return false;
       btn.click();
@@ -521,11 +541,12 @@ def case1_geometry(page, cx, cy) -> bool:
     tuning panel each shipped once), narrows `#stage` by exactly its own
     width, and each direction costs exactly one `renderer.setSize`.
 
-    RED FIRST, MEASURED: `document.body.classList.add('theme');` in
-    theme_panel.js's `open()` was commented out (leaving the node itself
-    appended normally). Result: `mountedOnBody` still true (the node
-    genuinely is a child of body), but the CSS rule
-    `body.theme #stage { left: ... }` never applied -- `stage` read
+    RED FIRST, MEASURED (against the theme panel, before 0.7.0 merged it into
+    this one -- the mechanism is unchanged and the class is now `tuner`):
+    `document.body.classList.add('theme');` in that panel's `open()` was
+    commented out (leaving the node itself appended normally). Result:
+    `mountedOnBody` still true (the node genuinely is a child of body), but the
+    CSS rule `body.theme #stage { left: ... }` never applied -- `stage` read
     `{w: 2560}` before AND after opening, `narrowed_by=0` against a panel
     width of 380 (`matches=False shifted=False`), while `clicked` and
     `panel present` stayed true -- exactly the failure mode `verify_menu.py`'s
@@ -553,14 +574,14 @@ def case1_geometry(page, cx, cy) -> bool:
     try:
         before = measure()
         n0 = calls()
-        clicked = open_menu_and_click(page, "theme", cx, cy)
+        clicked = open_menu_and_click(page, "settings", cx, cy)
         page.wait_for_timeout(600)
         state = theme_panel_state(page)
         opened = measure()
         n_open = calls() - n0
 
         panel_w = page.evaluate("""() => {
-          const el = document.querySelector('.theme-panel');
+          const el = document.querySelector('.tuner-panel');
           return el ? el.getBoundingClientRect().width : null;
         }""")
 
@@ -595,94 +616,70 @@ def case1_geometry(page, cx, cy) -> bool:
         f"setSize calls open={n_open} close={n_close}; restored exactly={restored}")
 
 
-def case2_closes_tuner_first(page, cx, cy) -> bool:
-    """2: opening the theme panel over a DIRTY tuning panel closes it through
-    `requestClose()`, which asks; Cancel leaves both panels exactly as they
-    were.
+def case2_theme_open_others_closed(page, cx, cy) -> bool:
+    """2: on a fresh open, Theme is expanded and every other category is not.
 
-    RED FIRST, MEASURED: `menu.js`'s `closeOtherPanelsThen` had
-    `askers[i].requestClose(...)` replaced with
-    `askers[i].close(); next(i + 1);` (the force-close, skipping the
-    question). Result: `asked=False`, `tuner still open=False`,
-    `theme opened=True`, `dirty rows=0` -- the tuner panel closed and its
-    dirty `bodyOpacity` change vanished silently on the very first click,
-    before Cancel was ever offered, which is the exact bug the real fix
-    (routing through `requestClose`) exists to prevent. Restored and re-run
-    clean before this file was finished."""
+    THIS CASE REPLACED ONE THAT IS NOW IMPOSSIBLE BY CONSTRUCTION. Until
+    0.7.0 it read "opening the theme panel closes an open TUNING panel through
+    requestClose(), not a force-close" -- there were two panels and the menu
+    enforced mutual exclusion between them. There is one panel now, so there is
+    no second panel to close and nothing left for that case to prove; keeping
+    it would have been a green assertion about a mechanism that no longer
+    exists. What replaced it is the decision the merge actually made: 82 rows
+    all expanded is a scroll nobody reads, so one category opens and the rest
+    wait for a click.
+
+    Both halves, because either alone is passed by a bug: a panel that expanded
+    everything would pass "theme is open", and one that expanded nothing would
+    pass "camera is closed".
+
+    Collapse state is UI STATE, so it is asserted FRESH -- the panel is closed
+    and reopened, and the second open must look exactly like the first. A
+    version that remembered the open set would pass the first read and fail
+    this one."""
+    name = "2: Theme opens, the other categories start closed, on every open"
     close_any_open_panel(page)
     page.wait_for_timeout(250)
 
-    opened_tuner = open_menu_and_click(page, "settings", cx, cy)
-    page.wait_for_timeout(400)
-    if not opened_tuner or not page.evaluate("() => !!document.querySelector('.tuner-panel')"):
-        return report("2: opening the theme panel asks before closing a dirty "
-                      "tuning panel", False, "could not open the tuning panel")
+    def read_groups():
+        return page.evaluate("""() => {
+          const out = {};
+          for (const h of document.querySelectorAll('.tuner-group')) {
+            out[h.getAttribute('data-group')] = h.className.includes('open');
+          }
+          return out;
+        }""")
 
-    base = read_live(page, "arcs.bodyOpacity")
-    out = page.evaluate("""async (target) => {
-      const t = await import('./js/tuner.js');
-      const idx = t.tunerRows().findIndex((r) => r.path === 'arcs.bodyOpacity');
-      const rows = document.querySelectorAll('.tuner-row');
-      const range = rows[idx].querySelector('.tuner-range');
-      range.value = String(target);
-      range.dispatchEvent(new Event('input', {bubbles: true}));
-      return true;
-    }""", 0.6)
-    page.wait_for_timeout(150)
-    moved = read_live(page, "arcs.bodyOpacity")
+    if not open_theme_panel(page, cx, cy):
+        return report(name, False, "could not open the merged panel")
+    first = read_groups()
 
-    # Cancel first: the theme panel must NOT open, and the tuner must still
-    # be dirty with the moved value.
-    clicked = open_menu_and_click(page, "theme", cx, cy)
-    page.wait_for_timeout(300)
-    asked = confirm_state(page)
-    asked_ok = confirm_is_really_open(asked) and asked.get("yes") and asked.get("no")
-    canceled = answer_confirm(page, False)
-    page.wait_for_timeout(400)
-    after_cancel = {
-        "tuner": panel_is_really_open(page.evaluate("""() => {
-          const el = document.querySelector('.tuner-panel:not(.theme-panel)');
-          if (!el) return {present: false};
-          const r = el.getBoundingClientRect();
-          return {present: true, inDocument: document.contains(el),
-                  w: r.width, h: r.height};
-        }""")),
-        "theme": panel_is_really_open(theme_panel_state(page)),
-        "live": read_live(page, "arcs.bodyOpacity"),
-        "dirty": page.evaluate(
-            "() => document.querySelectorAll('.tuner-row.tuner-dirty').length"),
-    }
-    cancel_ok = (asked_ok and canceled and after_cancel["tuner"]
-                 and not after_cancel["theme"]
-                 and abs((after_cancel["live"] or 0) - 0.6) < 1e-9
-                 and after_cancel["dirty"] >= 1)
-
-    # Then confirmed: the tuner closes (reverting), and the theme panel opens.
-    clicked2 = open_menu_and_click(page, "theme", cx, cy)
-    page.wait_for_timeout(300)
-    asked2 = confirm_is_really_open(confirm_state(page))
-    answered2 = answer_confirm(page, True) if asked2 else False
-    page.wait_for_timeout(500)
-    after = {
-        "tuner": page.evaluate("() => !!document.querySelector('.tuner-panel:not(.theme-panel)')"),
-        "theme": panel_is_really_open(theme_panel_state(page)),
-        "live": read_live(page, "arcs.bodyOpacity"),
-    }
-    through_ok = (clicked2 and asked2 and answered2 and not after["tuner"]
-                  and after["theme"] and abs((after["live"] or 0) - base) < 1e-9)
-
+    # Expand something else, then close and reopen: the open set must reset.
+    page.evaluate("""() => {
+      const h = document.querySelector('.tuner-group[data-group="camera"]');
+      if (h) h.click();
+    }""")
+    page.wait_for_timeout(200)
+    after_click = read_groups()
     close_any_open_panel(page)
-    ok = (opened_tuner and abs(moved - 0.6) < 1e-9 and moved != base
-          and cancel_ok and through_ok)
+    page.wait_for_timeout(300)
+    if not open_theme_panel(page, cx, cy):
+        return report(name, False, "could not reopen the merged panel")
+    second = read_groups()
+    close_any_open_panel(page)
+
+    ok = (len(first) == 9
+          and first.get("theme") is True
+          and all(v is False for k, v in first.items() if k != "theme")
+          and after_click.get("camera") is True
+          and after_click.get("theme") is True
+          and second == first)
     return report(
-        "2: opening the theme panel asks before closing a dirty tuning panel, "
-        "and Cancel leaves both alone", ok,
-        f"bodyOpacity base={base} -> drag {moved}; Cancel: asked={asked_ok} "
-        f"tuner still open={after_cancel['tuner']} theme opened="
-        f"{after_cancel['theme']} live still {after_cancel['live']} dirty rows="
-        f"{after_cancel['dirty']} (ok={cancel_ok}); confirmed: tuner gone="
-        f"{not after['tuner']} theme open={after['theme']} live -> "
-        f"{after['live']} (ok={through_ok})")
+        name, ok,
+        f"first open: {first}; after clicking Camera: camera="
+        f"{after_click.get('camera')} theme={after_click.get('theme')} "
+        f"(not an accordion); after close+reopen: {second} "
+        f"(must equal the first open -- collapse state is not remembered)")
 
 
 def case3_presets_recolor(page, cx, cy) -> bool:
@@ -816,7 +813,7 @@ def case4_override_survives_auto_does_not(page, cx, cy) -> bool:
     FOUND RED, NOW GREEN -- this case was written against the spec rather
     than against the code, and on first run it failed: the auto row's swatch
     did NOT move when the preset was switched from the panel's own selector.
-    Traced to `theme_panel.js`'s `syncRow()`: on `THEME_PATH` or `RAMP_PATH`
+    Traced to the theme panel's `syncRow()`: on `THEME_PATH` or `RAMP_PATH`
     it called `syncPreset()`/`syncGradient()` only and never re-synced any of
     the element rows, so an `auto` row's on-screen swatch went stale
     until the panel was closed and reopened -- even though `resolveColor()`
@@ -872,7 +869,7 @@ def case5_revert_el_returns_to_theme(page, cx, cy) -> bool:
     """5: the per-row `↺` returns one overridden element to the theme's
     color and no other.
 
-    RED FIRST, MEASURED: `theme_panel.js`'s `resetElement` was changed to
+    RED FIRST, MEASURED: the theme panel's `resetElement` (now the row's `↺` handler) was changed to
     `function resetElement(key) { return true; }` (a no-op). Result: the
     color value read back `#aa5500`/`#aa5500` -> `#aa5500`/`#aa5500`
     (unchanged) against the theme color `#7a05a6` this case expected --
@@ -938,7 +935,7 @@ def case6_randomize_then_close_asks(page, cx, cy) -> bool:
     state -- and that the footer's number is at least the number of rows,
     since every row Randomize marks is also pending.
 
-    RED FIRST, MEASURED: `theme_panel.js`'s `closeQuestion` was changed to
+    RED FIRST, MEASURED: the theme panel's `closeQuestion` was changed to
     unconditionally `return null;` (the question never fires, whatever is
     pending). Result: `asked=False`, `title=None`, `answered=False` -- the
     panel closed on the very first Close click with a full roll of unkept colors
@@ -958,14 +955,15 @@ def case6_randomize_then_close_asks(page, cx, cy) -> bool:
     page.wait_for_timeout(300)
     no_dialog = not confirm_is_really_open(confirm_state(page))
     dirty_count = page.evaluate(
-        "() => document.querySelectorAll('.theme-row.tuner-dirty').length")
+        '''() => document.querySelectorAll(
+             '.tuner-group-body[data-group="theme"] .tuner-row.tuner-dirty').length''')
     preset_after = page.evaluate("() => document.querySelector('.theme-preset').value")
     count_text = page.evaluate(
         "() => (document.querySelector('.tuner-count') || {}).textContent || ''")
 
     clicked_close, asked, answered, cstate = click_and_confirm(page, ".tuner-close")
     page.wait_for_timeout(300)
-    gone = not page.evaluate("() => !!document.querySelector('.theme-panel')")
+    gone = not page.evaluate("() => !!document.querySelector('.tuner-panel')")
 
     # Derived, not literal: pull the count the panel printed and the count
     # the dialog printed, and require them to agree with each other and to
@@ -993,7 +991,7 @@ def case7_background_refused_under_new_cap(page, cx, cy) -> bool:
     illegal under a stricter one; the write is refused with a reason naming
     the measured luminance and the cap, and the sky is left untouched.
 
-    `appearance.background` is not a theme-panel row -- see settings.js and
+    `appearance.background` is not a Theme-section row -- see settings.js and
     tuner.js -- so this drives `window.__netviz.settings.apply()` directly,
     the one case in this file that does not go through either panel's own
     DOM, because the interaction under test is between the schema's derived
@@ -1068,7 +1066,7 @@ def case8_stop_edit_forks_then_restores(page, cx, cy) -> bool:
     picking the preset back restores its original ten stops exactly, and the
     forked array is still sitting in `appearance.customRamp`, unerased.
 
-    RED FIRST, MEASURED: `theme_panel.js`'s `setStop` was made a no-op
+    RED FIRST, MEASURED: the theme panel's `setStop` was made a no-op
     (`return;` right after computing `stops`, before ever calling
     `writePatch`). Result: `preset before=plasma -> after stop edit=plasma`
     (`forked=False` -- it never reached `'custom'`), and, further down,
@@ -1125,7 +1123,7 @@ def case8_stop_edit_forks_then_restores(page, cx, cy) -> bool:
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= case1_geometry(page, cx, cy)
-    ok &= case2_closes_tuner_first(page, cx, cy)
+    ok &= case2_theme_open_others_closed(page, cx, cy)
     ok &= case3_presets_recolor(page, cx, cy)
     ok &= case4_override_survives_auto_does_not(page, cx, cy)
     ok &= case5_revert_el_returns_to_theme(page, cx, cy)

@@ -96,6 +96,32 @@ import { entry } from './settings.js';
  *  here to the schema, so a wrong path fails loudly instead. */
 export const GROUPS = [
   {
+    // FIRST, and open by default. It is the category a person walking up to the
+    // panel is most likely to want, and the one whose effect is visible in the
+    // same frame.
+    //
+    // The gradient bar and the preset picker are drawn by the panel, not
+    // described here: they are not rows over schema paths -- the bar edits ten
+    // entries of ONE path and the picker writes a path with no control kind in
+    // CONTROL. See settings_panel.js's theme extras.
+    id: 'theme',
+    label: 'Theme',
+    rows: [
+      { path: 'appearance.colors.coastline', label: 'Coastline', randomize: false },
+      { path: 'appearance.colors.bordersWorld', label: 'World borders', randomize: false },
+      { path: 'appearance.colors.admin1', label: 'State/province borders', randomize: false },
+      { path: 'appearance.colors.bordersWatched', label: 'Watched-country borders', randomize: false },
+      { path: 'appearance.colors.countryFlash', label: 'Country flash', randomize: false },
+      { path: 'appearance.colors.cities', label: 'Cities', randomize: false },
+      { path: 'appearance.colors.atmosphere', label: 'Atmosphere glow', randomize: false },
+      { path: 'appearance.colors.rippleFlow', label: 'Flow ripple', randomize: false },
+      { path: 'appearance.colors.rippleBlock', label: 'Block ripple', randomize: false },
+      { path: 'appearance.colors.rippleHighlight', label: 'Highlight ripple', randomize: false },
+      { path: 'appearance.colors.auroraLow', label: 'Aurora low band', randomize: false },
+      { path: 'appearance.colors.auroraHigh', label: 'Aurora high band', randomize: false },
+    ],
+  },
+  {
     id: 'appearance',
     label: 'Appearance',
     rows: [
@@ -242,6 +268,33 @@ export const GROUPS = [
       { path: 'camera.walk.degreesPerSecond', label: 'Walk speed cap', randomize: false },
     ],
   },
+  {
+    id: 'rail',
+    label: 'Rail',
+    rows: [
+      // The five scales ARE sliders and DO change the current frame, so all
+      // five are randomized -- and at the top of their range the rail overruns
+      // its column, which is the documented cost of the range chosen knowing it.
+      { path: 'rail.scale.master', label: 'Text size (all of it)', randomize: true },
+      { path: 'rail.scale.header', label: 'Wordmark and clocks', randomize: true },
+      { path: 'rail.scale.panel', label: 'Panel headings', randomize: true },
+      { path: 'rail.scale.big', label: 'Big numbers', randomize: true },
+      { path: 'rail.scale.row', label: 'Rows and foot', randomize: true },
+      // Colors, so `isRandomized` is false for all eight -- this category's own
+      // randomize rolls the five sliders above. The eight are catalogue entries
+      // and Theme's Randomize rolls them with the other twelve. Said out loud in
+      // the section note, so a color row with no mark beside it is explained
+      // rather than looking like an oversight.
+      { path: 'appearance.colors.railWordmark', label: 'Wordmark color', randomize: false },
+      { path: 'appearance.colors.railClock', label: 'Clock color', randomize: false },
+      { path: 'appearance.colors.railPanelTitle', label: 'Panel heading color', randomize: false },
+      { path: 'appearance.colors.railBig', label: 'Big number color', randomize: false },
+      { path: 'appearance.colors.railLabel', label: 'Row label color', randomize: false },
+      { path: 'appearance.colors.railValue', label: 'Row value color', randomize: false },
+      { path: 'appearance.colors.railAlarm', label: 'Alarm value color', randomize: false },
+      { path: 'appearance.colors.railBars', label: 'Bar and sparkline color', randomize: false },
+    ],
+  },
 ];
 
 const CONTROL = {
@@ -364,4 +417,15 @@ export function tunerRows() {
     }
   }
   return out;
+}
+
+/** One category's rows, for the per-category randomize and its count.
+ *
+ *  Filtered from tunerRows() rather than read off GROUPS directly, so a row
+ *  here has been through the same construction checks -- schema entry present,
+ *  control kind known, randomize flag declared -- as every row the panel draws.
+ *  Reading GROUPS raw would let a category's button roll a row the panel itself
+ *  refused to build. */
+export function groupRows(id, rows = tunerRows()) {
+  return rows.filter((r) => r.group === id);
 }

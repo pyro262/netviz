@@ -150,15 +150,11 @@ test('the rules editor is absent, not disabled, when input is locked', () => {
   assert.equal(ids.includes('customArcs'), false);
 });
 
-test('the menu offers the theme panel', () => {
+test('there is no Theme row -- the theme lives in the settings panel now', () => {
+  // 0.7.0 merged the theme panel into the settings panel as two more
+  // collapsible categories. A menu row pointing at a panel that no longer
+  // exists is worse than a missing one: it is a door with nothing behind it.
   const ids = menuModel({ ...STATE, themePanel: true }).map((i) => i.id);
-  assert.ok(ids.includes('theme'));
-});
-
-test('the theme row is absent, not disabled, with no themePanel to open', () => {
-  // Same rule as customArcsPanel and settingsPanel: a menu built without one must
-  // not draw a row whose click handler is guarded out.
-  const ids = menuModel({ ...STATE, themePanel: false }).map((i) => i.id);
   assert.equal(ids.includes('theme'), false);
 });
 
@@ -474,28 +470,7 @@ test('the settings row opens the panel it was built with', () => {
   });
 });
 
-test('the theme row opens the theme panel it was built with', () => {
-  // Same pattern as "the settings row opens the panel it was built with"
-  // just above.
-  const dom = fakeDom();
-  withFakeGlobals(dom, () => {
-    const opened = [];
-    const menu = createMenu({
-      rig: { pointAt: () => null, lookHere: () => {} },
-      settings: { apply: () => {} },
-      themePanel: { open: () => opened.push(true), isOpen: () => false },
-      root: dom.root,
-    });
-    menu.open(10, 10, { x: 0, y: 0 });
-    const row = findByDataId(dom.root, 'theme');
-    assert.ok(row, 'no theme row drawn');
-    row.dispatch('click', { target: row });
-    assert.deepEqual(opened, [true]);
-    assert.equal(menu.isOpen(), false, 'the menu stayed open over its own action');
-  });
-});
-
-test('opening Theme closes the tuning panel through requestClose(), never close()', () => {
+test('opening Custom arcs closes the tuning panel through requestClose(), never close()', () => {
   // The interaction that already shipped as a real bug once between the
   // rules and tuning panels: a force-close silently discards pending work.
   // closeOtherPanelsThen() must go through requestClose() on settingsPanel,
@@ -515,12 +490,17 @@ test('opening Theme closes the tuning panel through requestClose(), never close(
         requestClose: (cb) => { log.push('settings.requestClose'); if (cb) cb(); },
         isOpen: () => false,
       },
-      themePanel: { open: () => themeOpened.push(true), isOpen: () => false },
+      customArcsPanel: {
+        open: () => themeOpened.push(true),
+        close: () => log.push('customArcs.close'),
+        requestClose: (cb) => { log.push('customArcs.requestClose'); if (cb) cb(); },
+        isOpen: () => false,
+      },
       root: dom.root,
     });
     menu.open(10, 10, { x: 0, y: 0 });
-    const row = findByDataId(dom.root, 'theme');
-    assert.ok(row, 'no theme row drawn');
+    const row = findByDataId(dom.root, 'customArcs');
+    assert.ok(row, 'no custom arcs row drawn');
     row.dispatch('click', { target: row });
     assert.deepEqual(log, ['settings.requestClose'],
       'settingsPanel.close() was called instead of, or as well as, requestClose()');
@@ -528,7 +508,7 @@ test('opening Theme closes the tuning panel through requestClose(), never close(
   });
 });
 
-test('a cancel on the tuning panel confirm leaves it open, with its changes pending, and never opens the theme panel', () => {
+test('a cancel on the tuning panel confirm leaves it open, with its changes pending, and never opens the other panel', () => {
   // requestClose()'s contract: it calls back ONLY when the panel actually
   // closed. A real settingsPanel whose confirm dialog is answered "No" never
   // calls the onClosed callback it was handed -- so this fake reproduces
@@ -548,22 +528,27 @@ test('a cancel on the tuning panel confirm leaves it open, with its changes pend
         requestClose: () => { log.push('settings.requestClose'); /* cancelled: no callback */ },
         isOpen: () => true,
       },
-      themePanel: { open: () => themeOpened.push(true), isOpen: () => false },
+      customArcsPanel: {
+        open: () => themeOpened.push(true),
+        close: () => log.push('customArcs.close'),
+        requestClose: (cb) => { log.push('customArcs.requestClose'); if (cb) cb(); },
+        isOpen: () => false,
+      },
       root: dom.root,
     });
     menu.open(10, 10, { x: 0, y: 0 });
-    const row = findByDataId(dom.root, 'theme');
+    const row = findByDataId(dom.root, 'customArcs');
     row.dispatch('click', { target: row });
     assert.deepEqual(log, ['settings.requestClose'],
       'the tuning panel was force-closed despite the cancel');
     assert.deepEqual(themeOpened, [],
-      'the theme panel opened even though the tuning panel refused to close');
+      'the other panel opened even though the tuning panel refused to close');
   });
 });
 
 test('an open/close cycle leaves no listener behind on document or window, with every panel wired', () => {
-  // The plain "no listener behind" case (below) never wires a customArcsPanel,
-  // settingsPanel or themePanel in at all -- this proves the new three-way
+  // The plain "no listener behind" case (below) never wires a customArcsPanel
+  // or settingsPanel in at all -- this proves the two-way
   // closeOtherPanelsThen() plumbing does not itself leak a document/window
   // listener across an ordinary open/close that never even reaches it.
   const dom = fakeDom();
@@ -573,9 +558,6 @@ test('an open/close cycle leaves no listener behind on document or window, with 
       settings: { apply: () => {} },
       customArcsPanel: { open: () => {}, close: () => {}, isOpen: () => false },
       settingsPanel: {
-        open: () => {}, close: () => {}, requestClose: (cb) => { if (cb) cb(); }, isOpen: () => false,
-      },
-      themePanel: {
         open: () => {}, close: () => {}, requestClose: (cb) => { if (cb) cb(); }, isOpen: () => false,
       },
       root: dom.root,

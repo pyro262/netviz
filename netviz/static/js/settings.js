@@ -524,7 +524,9 @@ export const SCHEMA = {
   },
   'appearance.colors.coastline': {
     type: 'color', allowAuto: true, strategy: 'uniform',
-    help: 'Coastlines.',
+    help: 'Every coastline on the globe. The brightest of the three line '
+        + 'layers, because it is the one that makes the planet readable from '
+        + 'across a room.',
   },
   'appearance.colors.bordersWorld': {
     type: 'color', allowAuto: true, strategy: 'uniform',

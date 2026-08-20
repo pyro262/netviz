@@ -57,6 +57,8 @@ REQUIRED_SELECTORS = (
     ".confirm-box",
     ".confirm-alt",
     ".theme-preset",
+    ".tuner-group-random",
+    ".tuner-group-body",
 )
 
 

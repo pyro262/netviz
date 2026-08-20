@@ -147,7 +147,7 @@ const LAYER_GROUPS = [
  *
  * Builds the menu structure given the display's current state.
  * state is {railOn, layers: {...thirteen keys...}, layersExpanded, testMode,
- * canLookHere, settingsPanel, customArcsPanel, themePanel, canReset}.
+ * canLookHere, settingsPanel, customArcsPanel, canReset}.
  *
  * Returns an array of top-level menu items in this order:
  * - lookHere: action, enabled only when pointer was on globe
@@ -233,17 +233,6 @@ export function menuModel(state) {
       title: 'Opens the tuning panel: the settings that can only be judged '
            + 'by eye, previewed live.',
     },
-    // Enabled when this menu was built with a theme panel to open -- same
-    // rule as the rules and tuning panels just above: a menu built without
-    // one must not draw a row whose click handler is guarded out.
-    ...(state.themePanel ? [{
-      id: 'theme',
-      label: 'Theme…',
-      kind: 'action',
-      enabled: true,
-      title: 'Opens the theme panel: pick a color ramp or build your own, '
-           + 'and give any element its own color.',
-    }] : []),
     // A display-wide control, so it lives beside the other display-wide ones
     // rather than in the rules editor -- which is where it started, under a
     // label ("Reset to collector", then "Discard my rules") that read as
@@ -355,7 +344,7 @@ function clampPosition(node, x, y) {
  * settings.apply -- shows correctly the next time somebody opens it.
  */
 export function createMenu({
-  rig, settings, preview, customArcsPanel, settingsPanel, themePanel, onReset, root,
+  rig, settings, preview, customArcsPanel, settingsPanel, onReset, root,
   hoverDelayMs = HOVER_DELAY_MS,
 }) {
   let node = null;
@@ -472,7 +461,7 @@ export function createMenu({
   /** Close whichever of the OTHER two panels are open before running
    *  `openFn`, which is expected to open the third.
    *
-   *  Sequential, through requestClose() for settingsPanel and themePanel --
+   *  Sequential, through requestClose() for both panels --
    *  each ASKS when it holds changes nobody has kept, and a Cancel on either
    *  question stops the chain right there: `openFn` is never called and the
    *  panel that asked stays open with its changes intact, exactly the
@@ -492,7 +481,6 @@ export function createMenu({
     // silently discard exactly the work that model exists to protect.
     const askers = [];
     if (settingsPanel && skip !== 'settings') askers.push(settingsPanel);
-    if (themePanel && skip !== 'theme') askers.push(themePanel);
     if (customArcsPanel && skip !== 'customArcs') askers.push(customArcsPanel);
     function next(i) {
       if (i >= askers.length) { openFn(); return; }
@@ -531,7 +519,6 @@ export function createMenu({
       // a row whose click handler is guarded out. Same rule as customArcsPanel.
       settingsPanel: !!settingsPanel,
       customArcsPanel: !!customArcsPanel,
-      themePanel: !!themePanel,
       canReset: !!onReset,
     };
   }
@@ -677,9 +664,6 @@ export function createMenu({
           }
           if (item.id === 'settings' && settingsPanel) {
             closeOtherPanelsThen('settings', () => settingsPanel.open());
-          }
-          if (item.id === 'theme' && themePanel) {
-            closeOtherPanelsThen('theme', () => themePanel.open());
           }
           if (item.id === 'reset' && onReset) onReset();
         }));

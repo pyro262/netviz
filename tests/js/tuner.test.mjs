@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GROUPS, tunerRows, stepFor, isRandomized, randomizeScope, clearsArcs,
+  GROUPS, tunerRows, stepFor, isRandomized, randomizeScope, clearsArcs, groupRows,
 } from '../../netviz/static/js/tuner.js';
 import { entry, defaultOf } from '../../netviz/static/js/settings.js';
 import { ARC_REBUILD_KEYS } from '../../netviz/static/js/apply.js';
@@ -18,17 +18,19 @@ test('every row names a path the schema actually declares', () => {
   }
 });
 
-test('the panel shows 57 rows in seven groups', () => {
+test('the panel shows 82 rows in nine groups', () => {
   // As of 0.6.0: 48 rows / six groups before the atmosphere-and-surface
   // group's five numeric rows landed, then 53 before dayTint/nightTint
-  // joined the same group as two color rows. Stated by release because this
+  // joined the same group as two color rows, then 57 through 0.6.1. 0.7.0
+  // absorbed the theme panel: +12 element colors as a Theme category and +13
+  // rail rows (five scales, eight colors). Stated by release because this
   // count has already moved more than once, quietly, before anyone wrote the
   // release next to it.
   const rows = tunerRows();
-  assert.equal(rows.length, 57);
+  assert.equal(rows.length, 82);
   assert.deepEqual([...new Set(rows.map((r) => r.group))],
-                   ['appearance', 'clouds', 'lightning', 'arcs', 'arcshape',
-                    'surface', 'camera']);
+                   ['theme', 'appearance', 'clouds', 'lightning', 'arcs',
+                    'arcshape', 'surface', 'camera', 'rail']);
 });
 
 test('no path appears twice, and no label repeats inside a group', () => {
@@ -140,7 +142,9 @@ test('every slider declares randomize explicitly, never by default', () => {
 test('tunerRows refuses a slider with no randomize flag', () => {
   // The runtime half of the rule above: the throw is what stops an undeclared
   // row from being drawn at all, rather than being quietly excluded.
-  const good = GROUPS[0].rows[0];
+  // A SLIDER row: the flag is only required of sliders, and GROUPS[0] is now
+  // the Theme category, whose twelve rows are colors.
+  const good = GROUPS.find((g) => g.id === 'appearance').rows[0];
   const saved = good.randomize;
   delete good.randomize;
   try {
@@ -148,10 +152,10 @@ test('tunerRows refuses a slider with no randomize flag', () => {
   } finally {
     good.randomize = saved;
   }
-  assert.equal(tunerRows().length, 57, 'the table was not put back');
+  assert.equal(tunerRows().length, 82, 'the table was not put back');
 });
 
-test('the randomized set is 42 sliders, and the excluded ones are named', () => {
+test('the randomized set is 47 sliders, and the excluded ones are named', () => {
   // A count alone is passed by a swap. The names are what hold the rule: the
   // camera's distance is IN despite living in "Camera pacing" (it is how big
   // the globe is, visible in the first frame), the star ramp is OUT despite
@@ -160,7 +164,7 @@ test('the randomized set is 42 sliders, and the excluded ones are named', () => 
   const rows = tunerRows();
   const on = rows.filter((r) => r.control === 'slider' && r.randomize);
   const off = rows.filter((r) => r.control === 'slider' && !r.randomize);
-  assert.equal(on.length, 42, `randomized ${on.length} sliders`);
+  assert.equal(on.length, 47, `randomized ${on.length} sliders`);
   assert.deepEqual(off.map((r) => r.path).sort(), [...RANDOMIZE_EXCLUDED].sort());
   assert.ok(on.some((r) => r.path === 'camera.distance'),
             'camera.distance is a look setting and must be randomized');
@@ -218,8 +222,10 @@ test('randomizeScope partitions every row, and rolled matches the flag', () => {
                    rows.map((r) => r.path).sort());
   // Today's numbers, as of 0.6.1 -- stated so a change is deliberate rather
   // than unnoticed.
-  assert.equal(scope.count, 42);
-  assert.equal(scope.heldCount, 15);
+  // The held side grew by the twenty catalogue colors, which are rolled by
+  // Theme's own randomizer rather than by the slider scope.
+  assert.equal(scope.count, 47);
+  assert.equal(scope.heldCount, 35);
 });
 
 test('the scope moves with the table rather than being written down', () => {
@@ -228,11 +234,11 @@ test('the scope moves with the table rather than being written down', () => {
   const group = GROUPS.find((g) => g.id === 'arcs');
   const removed = group.rows.pop();
   try {
-    assert.equal(randomizeScope().count, 41);
+    assert.equal(randomizeScope().count, 46);
   } finally {
     group.rows.push(removed);
   }
-  assert.equal(randomizeScope().count, 42, 'the table was not put back');
+  assert.equal(randomizeScope().count, 47, 'the table was not put back');
 });
 
 // ------------------------------------------------- the rows that rebuild --
@@ -310,4 +316,41 @@ test('every rebuilding row on the panel is one Randomize can roll', () => {
     if (!clearsArcs(row)) continue;
     assert.ok(isRandomized(row), `${row.path} rebuilds but is held back`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 0.7.0: the theme panel's contents become two more categories here.
+
+test('nine categories, in panel order, theme first', () => {
+  assert.deepEqual(GROUPS.map((g) => g.id),
+    ['theme', 'appearance', 'clouds', 'lightning', 'arcs', 'arcshape',
+     'surface', 'camera', 'rail']);
+});
+
+test('eighty-two rows: 57 + 12 theme + 13 rail', () => {
+  const rows = tunerRows();
+  assert.equal(rows.length, 82);
+  assert.equal(rows.filter((r) => r.group === 'theme').length, 12);
+  assert.equal(rows.filter((r) => r.group === 'rail').length, 13);
+});
+
+test('every row still has a schema entry and a declared randomize flag', () => {
+  for (const row of tunerRows()) {
+    assert.ok(entry(row.path), row.path);
+    if (row.control === 'slider') assert.equal(typeof row.randomize, 'boolean', row.path);
+  }
+});
+
+test('per-category randomize partitions the whole panel exactly once', () => {
+  const rows = tunerRows();
+  const byGroup = GROUPS.map((g) => randomizeScope(groupRows(g.id, rows)).count);
+  assert.equal(byGroup.reduce((a, b) => a + b, 0), randomizeScope(rows).count,
+    'the sum of the parts is the whole -- no row rolled twice, none missed');
+});
+
+test('a category with nothing randomizable reports zero, so no slider button is drawn', () => {
+  // theme's rows are colors, not sliders: isRandomized is false for all twelve,
+  // and the section's button is the panel's own catalogue roller, wired
+  // separately.
+  assert.equal(randomizeScope(groupRows('theme')).count, 0);
 });

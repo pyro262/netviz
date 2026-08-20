@@ -25,7 +25,6 @@ import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
 import { createCustomArcsPanel } from './custom_arcs_panel.js';
 import { createSettingsPanel } from './settings_panel.js';
-import { createThemePanel } from './theme_panel.js';
 import { createConfirm } from './confirm.js';
 import { coerce, settingLabel } from './settings.js';
 import { loadPatch, loadConverted, withPersistence, clearPatch } from './rulestore.js';
@@ -590,17 +589,6 @@ async function boot() {
   const settingsPanel = createSettingsPanel({
     preview, storage, root: document.body, onLayout: resize, confirmer,
   });
-  // The theme panel is settingsPanel's sibling -- same rail, same
-  // preview-then-Keep split, same one confirm dialog -- but takes `settings`
-  // (the persisting applier) rather than `storage` directly: Keep hands it
-  // exactly the touched color paths, and `settings.apply()` is what actually
-  // writes them through to localStorage, the same call the menu and the
-  // rules panel already make for everything else. onLayout is resize(),
-  // called exactly once per open/close -- see theme_panel.js's own comment
-  // for why the panel is a LEFT RAIL and never mounts on #stage.
-  const themePanel = createThemePanel({
-    settings, preview, root: document.body, onLayout: resize, confirmer,
-  });
   // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
   // rules, then reload so config.js and /config.json decide again from the
   // top. The rules are kept because they are the operator's own work -- this
@@ -659,11 +647,11 @@ async function boot() {
     });
   } : null;
   const menu = createMenu({
-    rig, settings, preview, customArcsPanel, settingsPanel, themePanel, onReset,
+    rig, settings, preview, customArcsPanel, settingsPanel, onReset,
     root: document.body,
   });
   input = startInput({
-    canvas: renderer.domElement, rig, menu, customArcsPanel, settingsPanel, themePanel,
+    canvas: renderer.domElement, rig, menu, customArcsPanel, settingsPanel,
   });
   ctx.input = input;
   // The rest of the stored patch (arcs.custom and rail.enabled were already
