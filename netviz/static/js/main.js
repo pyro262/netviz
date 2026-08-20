@@ -26,6 +26,9 @@ import { createMenu } from './menu.js';
 import { createCustomArcsPanel } from './custom_arcs_panel.js';
 import { createTestPanel } from './test_panel.js';
 import { createSelfTest } from './selftest.js';
+import {
+  ovalEdge, ovalThickness, dipoleAxis, magneticFrame, R_INNER, R_OUTER,
+} from './auroral_oval.js';
 import { createSettingsPanel } from './settings_panel.js';
 import { createConfirm } from './confirm.js';
 import { coerce, settingLabel, setThemeLibrary } from './settings.js';
@@ -572,6 +575,19 @@ async function boot() {
       updateSun(globe, camera);
     }
     composer.render();
+    // VERIFIER HOOK, and nothing else reads it. A one-shot callback run
+    // IMMEDIATELY after the composer's render, while the default framebuffer is
+    // still valid -- the renderer is built without `preserveDrawingBuffer`, so
+    // this instant is the only one in which the drawn pixels can be read back
+    // from JavaScript at all. `tools/verify_aurora.py` uses it instead of a
+    // screenshot: a screenshot goes through the browser's compositor, which on
+    // a software rasterizer is both slow and, on this host, prone to stalling
+    // after a few captures. Costs one null check per frame.
+    if (window.__netvizGrab) {
+      const fn = window.__netvizGrab;
+      window.__netvizGrab = null;
+      try { fn(renderer.getContext()); } catch (err) { console.warn('grab', err); }
+    }
   });
 
   // No setConfig here: the page wants the real one, which writes CONFIG so
@@ -782,6 +798,10 @@ async function boot() {
     arcs, globe, ripples, aurora, clouds, lightning, renderer, camera, scene, rig, stars,
     milkyway, input,
     settings, menu, customArcsPanel, settingsPanel,
+    /** The oval's own arithmetic, for verification tooling: a verifier asserting
+     *  the nightside offset must read the same function the shader mirrors, not
+     *  a second copy of it in Python. */
+    oval: { ovalEdge, ovalThickness, dipoleAxis, magneticFrame, R_INNER, R_OUTER },
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
     project(lat, lon) {
