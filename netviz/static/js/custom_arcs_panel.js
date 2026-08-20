@@ -11,7 +11,9 @@
 import { parseRule } from './rules.js';
 import { cfg } from './config.js';
 import { rampHexAt, activeRampStops } from './ramp.js';
-import { serialiseRules, parseImport, exportFilename } from './rulestore.js';
+import { serialiseRules, parseImport, exportFilename, KEY, loadPatch }
+  from './rulestore.js';
+import { stageConversion } from './convert.js';
 
 /** One row per rule: what the boxes show, and why a row is refused.
  *
@@ -169,7 +171,8 @@ const NAME_HELP =
   'Optional. What to call this custom arc in the stats rail -- "storj nodes" says '
   + 'more than the subnet does. Not used for matching.';
 
-export function createCustomArcsPanel({ settings, root, onClose } = {}) {
+export function createCustomArcsPanel({ settings, storage, confirmer, pending,
+                                       root, onClose } = {}) {
   const mount = root || document.body;
   let node = null;
   // The working list, edited row by row. Kept here rather than read back out
@@ -223,13 +226,15 @@ export function createCustomArcsPanel({ settings, root, onClose } = {}) {
     rowRefs = new Map();
     const list = node.querySelector('.custom-arc-list');
     list.replaceChildren();
-    // Blocks first: no rule can claim one. Then the rules, in their own
-    // order. Then Add, which appends at the end of THAT group. Then the
-    // fallback, which is what colors whatever is left.
+    // Both built-ins on top, above the custom rows. PANEL LAYOUT ONLY:
+    // precedence is unchanged and must stay so. `flow` is the FALLBACK -- it
+    // matches whatever nothing else claimed -- so moving it above the custom
+    // rows in PRECEDENCE would make it claim everything and no custom arc
+    // would ever draw again.
     list.append(builtinRow('block'));
+    list.append(builtinRow('flow'));
     for (const row of rows) list.append(renderRow(row));
     list.append(renderAdd());
-    list.append(builtinRow('flow'));
   }
 
   /** One line under the buttons. Import is the only action here whose result
@@ -398,7 +403,7 @@ export function createCustomArcsPanel({ settings, root, onClose } = {}) {
    *  whole list would destroy the rule row somebody may be mid-keystroke in. */
   function refreshBuiltin() {
     if (!node) return;
-    // By POSITION -- block is the first fixed row and flow is the last --
+    // By POSITION -- block is the first fixed row and flow is the second --
     // rather than by a `dataset` attribute read back off the node. The unit
     // suite runs this file against a hand-built DOM fake with no `dataset`,
     // and a panel that only repaints under a real browser is a panel whose
@@ -442,12 +447,19 @@ export function createCustomArcsPanel({ settings, root, onClose } = {}) {
     dirty = false;
     node = el('div', 'custom-arc-panel');
     node.append(el('div', 'custom-arc-title', 'Custom arcs'));
-    // Says what the engine does, and nothing it does not: rows are NOT
-    // draggable in this build, so promising drag-to-reorder here would be a
-    // control that does not exist. Order is changed by deleting and re-adding.
+    // Says what the engine actually does. The old sentence -- "checked top to
+    // bottom, the first enabled rule that matches colors it" -- stopped being
+    // true the moment the two built-in rows moved above the list: the fallback
+    // is on top now, and read top-to-bottom it would claim everything. The
+    // PANEL's order is layout; the ENGINE's precedence is unchanged.
+    //
+    // Rows are NOT draggable in this build either, so promising drag-to-reorder
+    // here would be a control that does not exist. Order is changed by deleting
+    // and re-adding.
     node.append(el('div', 'custom-arc-hint',
-                   'Checked top to bottom -- the first enabled rule that '
-                   + 'matches an arc colors it. Blocks are never recolored.'));
+                   'Blocked arcs are never recolored. Your custom arcs are '
+                   + 'checked in their own order, and whatever none of them '
+                   + 'claims is drawn in the fallback color.'));
 
     // Every form MATCH accepts, with a working example of each, on the panel
     // rather than in a tooltip. A matcher is the one field with no affordance
@@ -522,7 +534,9 @@ export function createCustomArcsPanel({ settings, root, onClose } = {}) {
       draft = out.rules.map((r) => ({ ...r }));
       dirty = true;
       redraw();
-      showNote(`imported ${out.rules.length} rule(s)`);
+      showNote(out.converted
+        ? `imported ${out.rules.length} custom arc(s) from an older file`
+        : `imported ${out.rules.length} custom arc(s)`);
     });
     const importBtn = el('button', 'custom-arc-import', 'Import');
     importBtn.addEventListener('click', () => importInput.click());
@@ -537,7 +551,63 @@ export function createCustomArcsPanel({ settings, root, onClose } = {}) {
     redraw();
     document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('pointerdown', onOutside, true);
+    askConversion();
     return true;
+  }
+
+  // Asked at most ONCE PER SESSION, never once per open. "Not now" is a real
+  // answer and a dialog that reappears every time somebody looks at the panel
+  // is one people learn to dismiss without reading -- which is what would make
+  // the other questions in this panel stop being read too.
+  let conversionAnswered = false;
+
+  function conversionQuestion(descriptors, n) {
+    return {
+      title: `Store your ${n === 1 ? 'custom arc' : `${n} custom arcs`} under the new name?`,
+      lead: 'This display saved them under a name netviz no longer uses. They '
+          + 'are already drawing correctly -- this only decides what is written '
+          + 'in this browser.',
+      will: descriptors.map((d) => d.summary(n)).concat([
+        'Rewrite this display\'s saved settings in this browser only.',
+      ]),
+      wont: [
+        'Change which arcs are drawn, or what color any of them is.',
+        'Change anything on the collector, or on any other display.',
+        'Touch any other setting you have kept.',
+      ],
+      note: 'Answering "not now" leaves it exactly as it is; the display keeps '
+          + 'working either way and you will be asked again after a reload.',
+      confirmLabel: 'Yes, store them under the new name',
+      cancelLabel: 'Not now',
+    };
+  }
+
+  function askConversion() {
+    if (conversionAnswered || !confirmer || !storage) return;
+    const descriptors = pending || [];
+    if (!descriptors.length) return;
+    const raw = loadPatch(storage).patch;
+    const n = descriptors.reduce((sum, d) => sum + d.count(raw), 0);
+    confirmer.ask({
+      ...conversionQuestion(descriptors, n),
+      onConfirm: () => {
+        conversionAnswered = true;
+        // STAGE AND VALIDATE FIRST. A conversion that lands half its entries
+        // reads as "those rules never existed", so the original blob is left
+        // untouched and the reason is named on the panel's own note line.
+        const out = stageConversion(raw, descriptors);
+        if (!out.ok) { showNote(`could not convert -- ${out.error}`); return; }
+        try {
+          storage.setItem(KEY, JSON.stringify(out.next));
+        } catch (e) {
+          showNote(`could not convert -- ${e.message}`);
+          return;
+        }
+        pending = [];
+        showNote(`Stored ${n} custom arc${n === 1 ? '' : 's'} under the new name.`);
+      },
+      onCancel: () => { conversionAnswered = true; },
+    });
   }
 
   return { open, close, isOpen };

@@ -150,12 +150,23 @@ export function parseImport(text) {
   } catch (e) {
     return { error: `not JSON: ${e.message}` };
   }
-  if (!Array.isArray(parsed)) return { error: 'not a list of rules' };
-  const { refused } = compileRules(parsed);
-  if (refused.length) {
-    return { error: refused.map((r) => `rule ${r.index + 1}: ${r.reason}`).join('; ') };
+  // An OLD-FORMAT file is accepted and CONVERTED, and `converted` says so, so
+  // the panel's note can. This is deliberately the opposite call from 0.4.2,
+  // which REFUSED an older export: that file would have drawn wrong -- it had
+  // no color key at all -- where this one is merely old. Refusing a file that
+  // can be read correctly is a control that says no for its own convenience.
+  let list = parsed;
+  let converted = false;
+  if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.rules)) {
+    list = parsed.rules;
+    converted = true;
   }
-  return { rules: parsed, error: null };
+  if (!Array.isArray(list)) return { error: 'not a list of custom arcs' };
+  const { refused } = compileRules(list);
+  if (refused.length) {
+    return { error: refused.map((r) => `entry ${r.index + 1}: ${r.reason}`).join('; ') };
+  }
+  return { rules: list, converted, error: null };
 }
 
 /** The stored patch AS THIS BUILD READS IT, plus what it would take to make

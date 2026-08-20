@@ -171,8 +171,8 @@ test('an import is ALL-or-nothing, unlike a live edit', () => {
     { match: 'DE', color: 'blue' },
   ]));
   assert.equal(out.rules, undefined);
-  assert.match(out.error, /rule 2/);
-  assert.match(out.error, /rule 3/);
+  assert.match(out.error, /entry 2/);
+  assert.match(out.error, /entry 3/);
 });
 
 test('an import refuses what is not a list of rules', () => {
@@ -225,4 +225,16 @@ test('a reset keeps the custom arcs under EITHER name', () => {
                                                   'rail.enabled': true }) });
   clearPatch(s, ['arcs.custom', 'arcs.rules']);
   assert.deepEqual(peek(s), { 'arcs.rules': CONV_RULES });
+});
+
+test('an exported file in the old format imports and says it was converted', () => {
+  const out = parseImport(JSON.stringify({ version: 1, rules: CONV_RULES }));
+  assert.deepEqual(out.rules, CONV_RULES);
+  assert.equal(out.converted, true);
+});
+
+test('a plain list is still the current format and is not reported as converted', () => {
+  const out = parseImport(JSON.stringify(CONV_RULES));
+  assert.deepEqual(out.rules, CONV_RULES);
+  assert.equal(out.converted, false);
 });

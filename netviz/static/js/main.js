@@ -536,7 +536,23 @@ async function boot() {
   // sibling of `#stage`, so the rail's numbers painted straight over the
   // menu's opaque background and it read as transparent. Raising the menu's
   // z-index cannot fix that (measured: 9999 changed nothing).
-  const customArcsPanel = createCustomArcsPanel({ settings, root: document.body });
+  // ONE confirm dialog on the page, built HERE rather than beside the settings
+  // panel below because the custom-arcs panel needs it too: it asks, at most
+  // once a session, before rewriting this display's saved settings under the
+  // schema's new name. Three callers now share it -- that panel's conversion
+  // question, the tuning panel's Keep/Revert/Close, and "Reset to netviz
+  // defaults" further down. A second instance would be a second implementation
+  // of which button is the safe one, and confirm.js's "only one at a time"
+  // guard is per-instance -- two of them could stack two dialogs whose buttons
+  // then disagree about which is on top. Each caller still decides its OWN
+  // words; only the dialog is shared.
+  const confirmer = createConfirm({ root: document.body });
+  // `stored.pending` is what loadConverted() found at boot: the descriptors for
+  // every schema rename this display's memory still predates. The panel asks
+  // about them; nothing writes until somebody says yes.
+  const customArcsPanel = createCustomArcsPanel({
+    settings, storage, confirmer, pending: stored.pending, root: document.body,
+  });
   // Same mount argument as the rules panel: document.body, never #stage.
   //
   // onLayout is resize(), and the panel calls it exactly once per toggle. The
@@ -545,15 +561,6 @@ async function boot() {
   // full viewport's aspect inside a narrower box. One call per direction, for
   // the same reason rail.mount() leaves the resize to its caller: a relayout
   // rebuilds the composer's render targets.
-  //
-  // ONE confirm dialog on the page, built here because two callers need it: the
-  // tuning panel's Keep/Revert/Close and "Reset to netviz defaults" below. A
-  // second instance would be a second implementation of which button is the
-  // safe one, and confirm.js's "only one at a time" guard is per-instance --
-  // two of them could stack two dialogs whose buttons then disagree about which
-  // is on top. Each caller still decides its OWN words; only the dialog is
-  // shared.
-  const confirmer = createConfirm({ root: document.body });
   const settingsPanel = createSettingsPanel({
     preview, storage, root: document.body, onLayout: resize, confirmer,
   });

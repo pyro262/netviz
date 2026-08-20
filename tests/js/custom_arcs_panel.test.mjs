@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { panelRows, readyRules, createCustomArcsPanel, MATCH_FORMS } from '../../netviz/static/js/custom_arcs_panel.js';
+import { pendingConversions } from '../../netviz/static/js/convert.js';
+import { loadPatch } from '../../netviz/static/js/rulestore.js';
 import { parseRule } from '../../netviz/static/js/rules.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
 
@@ -373,6 +375,109 @@ test('the panel is titled and labeled in the new vocabulary', () => {
     assert.equal(dom.root.querySelector('.custom-arc-title').textContent, 'Custom arcs');
     assert.equal(dom.root.querySelector('.custom-arc-add').textContent, '+ Add custom arc');
     assert.equal(applied.length, 0, 'opening alone writes nothing');
+    panel.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 4: the hint, the built-ins on top, and the conversion dialog.
+
+const stubSettings = () => ({ apply: () => ({ applied: [], rejected: [] }) });
+const T4_RULE = { match: '203.0.113.0/24', end: 'either', color: '#00ff88',
+                  name: 'docs net', enabled: true };
+
+function convStorage(initial) {
+  let raw = JSON.stringify(initial);
+  return {
+    getItem: () => raw,
+    setItem: (_k, v) => { raw = String(v); },
+    removeItem: () => { raw = null; },
+    peek: () => (raw === null ? null : JSON.parse(raw)),
+  };
+}
+
+test('the hint describes the order the engine actually uses', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const panel = createCustomArcsPanel({ settings: stubSettings(), root: dom.root });
+    panel.open();
+    const hint = dom.root.querySelector('.custom-arc-hint').textContent;
+    assert.match(hint, /never recolored/i);
+    assert.doesNotMatch(hint, /top to bottom/i,
+      'the built-ins sit above the list, so that sentence is no longer true');
+    panel.close();
+  });
+});
+
+test('the built-in rows are the first and last rows in the list', () => {
+  const dom = fakeDom();
+  const saved = CONFIG.arcs.custom;
+  CONFIG.arcs.custom = [T4_RULE];
+  try {
+    withFakeGlobals(dom, () => {
+      const panel = createCustomArcsPanel({ settings: stubSettings(), root: dom.root });
+      panel.open();
+      const list = dom.root.querySelector('.custom-arc-list');
+      assert.equal(list.children[0].className, 'custom-arc-fixed', 'blocked first');
+      assert.equal(list.children[1].className, 'custom-arc-fixed', 'fallback second');
+      assert.ok(list.children[2].className.startsWith('custom-arc-row'));
+      panel.close();
+    });
+  } finally { CONFIG.arcs.custom = saved; }
+});
+
+test('a pending conversion asks on open, and "not now" writes nothing', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const asked = [];
+    const storage = convStorage({ 'arcs.rules': [T4_RULE] });
+    const panel = createCustomArcsPanel({
+      settings: stubSettings(), storage, root: dom.root,
+      pending: pendingConversions(loadPatch(storage).patch),
+      confirmer: { ask: (q) => { asked.push(q); } },
+    });
+    panel.open();
+    assert.equal(asked.length, 1);
+    assert.match(asked[0].title, /custom arc/i);
+    asked[0].onCancel();
+    assert.deepEqual(Object.keys(storage.peek()), ['arcs.rules'], 'untouched');
+    panel.close();
+  });
+});
+
+test('"convert" writes the staged blob and the panel stops asking', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const asked = [];
+    const storage = convStorage({ 'arcs.rules': [T4_RULE] });
+    const panel = createCustomArcsPanel({
+      settings: stubSettings(), storage, root: dom.root,
+      pending: pendingConversions(loadPatch(storage).patch),
+      confirmer: { ask: (q) => { asked.push(q); } },
+    });
+    panel.open();
+    asked[0].onConfirm();
+    assert.deepEqual(Object.keys(storage.peek()), ['arcs.custom']);
+    panel.close();
+    panel.open();
+    assert.equal(asked.length, 1, 'nothing left to ask about');
+    panel.close();
+  });
+});
+
+test('"not now" does not ask again in the same session', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const asked = [];
+    const storage = convStorage({ 'arcs.rules': [T4_RULE] });
+    const panel = createCustomArcsPanel({
+      settings: stubSettings(), storage, root: dom.root,
+      pending: pendingConversions(loadPatch(storage).patch),
+      confirmer: { ask: (q) => { asked.push(q); } },
+    });
+    panel.open(); asked[0].onCancel(); panel.close();
+    panel.open();
+    assert.equal(asked.length, 1, 'asked once per session, not once per open');
     panel.close();
   });
 });
