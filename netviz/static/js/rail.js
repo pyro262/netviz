@@ -174,7 +174,7 @@ export function versionLabel(snapshot) {
 }
 
 /**
- * The COLOR RULES panel, or null when there is nothing to say.
+ * The CUSTOM ARCS panel, or null when there is nothing to say.
  *
  * Ranked by the last hour rather than by list order, so the busiest rules hold
  * the visible slots and a rule that never fires cannot sit in front of one
@@ -222,7 +222,7 @@ export function rulePanel(rules, counter, nowMs, maxRules) {
   // fitter finds this panel to measure it. A class rather than a `dataset`
   // write: the unit suite's DOM fake and a real HTMLElement disagree about
   // `dataset`, and menu.js has already been bitten by exactly that.
-  return { id: 'rules', title: 'COLOR RULES', note: 'SINCE LOAD', rows };
+  return { id: 'rules', title: 'CUSTOM ARCS', note: 'SINCE LOAD', rows };
 }
 
 /**
@@ -373,7 +373,7 @@ export function fitRuleCap({ available, other, chrome, rowHeight, total, maxRule
   // Everything fits: no reduction to make.
   if (fits >= total) return Math.min(cap, Math.max(1, total));
   // It does not, so one row goes to "+N more" and the rest carry rules. Floored
-  // at 1 rather than 0: a COLOR RULES panel with no rows would drop the "+N
+  // at 1 rather than 0: a CUSTOM ARCS panel with no rows would drop the "+N
   // more" line too and the display would stop saying the rules exist at all,
   // which is the silent truncation the named overflow exists to prevent. Below
   // that floor the scrollbar is what catches it.
@@ -458,7 +458,7 @@ export function panels(snapshot, extra, colors, lightning) {
   // keep claiming amber after a recolor, and a key that disagrees with the
   // display is worse than no key.
   //
-  // ONE BLOCK, AT THE TOP OF THE COLOR RULES PANEL, and the labels say what
+  // ONE BLOCK, AT THE TOP OF THE CUSTOM ARCS PANEL, and the labels say what
   // an arc MEANS rather than what color it is. They used to be two rows, each sitting above the
   // numbers it explained and each reading "amber arcs --" / "violet arcs --".
   // Two problems with that, both real: a legend split across the rail is not
@@ -468,7 +468,7 @@ export function panels(snapshot, extra, colors, lightning) {
   // are amber while they are green. The swatch cannot lie; it is sampled from
   // the live display every paint. So the swatch got bigger and the word went.
   //
-  // It rides INSIDE the COLOR RULES panel rather than standing as a panel of
+  // It rides INSIDE the CUSTOM ARCS panel rather than standing as a panel of
   // its own, because the two built-in classes and the rules are one key: a
   // rule's swatch means exactly what these two mean, and the rules panel in
   // the menu now shows all of them in one list for the same reason. The two
@@ -601,7 +601,7 @@ function paint(root, data, clock, version) {
       // The swatch goes INSIDE the label, not beside it. `.rail-row` is a
       // two-column grid, so prepending the dot as a third child put it in
       // column one, pushed the label into column two, and wrapped the value
-      // onto a second line -- which is what every COLOR RULES row had been
+      // onto a second line -- which is what every CUSTOM ARCS row had been
       // doing since swatches were added, and what the legend rows did the
       // moment they arrived. Nesting keeps the grid at two columns, so the
       // dot travels with the text it names and the value stays on the right
@@ -654,7 +654,7 @@ function paint(root, data, clock, version) {
  * measures #stage next sees the narrowed box rather than the full viewport.
  */
 /**
- * @param counter the renderer's own class counter, for the COLOR RULES panel.
+ * @param counter the renderer's own class counter, for the CUSTOM ARCS panel.
  * @param classColors optional `() => ({block, flow})` of CSS colors, called on
  *   every paint. A function rather than a value because the arc colors are
  *   live settings: `arcs.flow.colorAt` recolors the arcs already on screen, and

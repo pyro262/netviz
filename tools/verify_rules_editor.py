@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the color-rules EDITOR against a real page.
+"""Prove the custom-arcs EDITOR against a real page.
 
 `rules.js`'s arithmetic and `rulestore.js`'s pure half are proved under
 `node --test`. What that cannot prove is the same gap `verify_rules.py`
@@ -11,7 +11,7 @@ actually being in the DOM with a non-zero rect) is exactly the bug that got
 through a unit suite and a code review the same week for the menu itself;
 this script holds the panel to the same standard.
 
-`rules_panel.js` imports nothing from three, but it is driven entirely
+`custom_arcs_panel.js` imports nothing from three, but it is driven entirely
 through DOM nodes mounted by `main.js`'s real boot path, and `arcs.js`
 itself imports three -- there is no local `node_modules` in this repo, so
 none of this reaches under `node --test` at all. A real browser is the
@@ -94,11 +94,11 @@ def panel_open_case(page, cx, cy) -> bool:
     The same split verify_menu.py's whole file is built around: the element
     must actually be `document.contains()`-true with a non-zero bounding
     rect, not merely `isOpen()` saying so."""
-    page.evaluate("() => { const p = document.querySelector('.rules-panel'); if (p) p.remove(); }")
+    page.evaluate("() => { const p = document.querySelector('.custom-arc-panel'); if (p) p.remove(); }")
     clicked = open_menu_and_click(page, "rules", cx, cy)
     page.wait_for_timeout(300)
     state = page.evaluate("""() => {
-      const el = document.querySelector('.rules-panel');
+      const el = document.querySelector('.custom-arc-panel');
       if (!el) return {present: false};
       const r = el.getBoundingClientRect();
       return {present: true, inDocument: document.contains(el), w: r.width, h: r.height};
@@ -121,7 +121,7 @@ def live_recolor_case(page) -> bool:
 
     Two things this repo's own state made non-obvious, both handled below:
     the synthetic collector migrates three NETVIZ_HIGHLIGHT* demo rules into
-    `arcs.rules` before this panel ever opens (`rulesFromNetworks` in
+    `arcs.custom` before this panel ever opens (`rulesFromNetworks` in
     `config.js`), so the row this case adds is NOT at index 0 and the rule
     it becomes is NOT necessarily 'rule1' -- both are read back rather than
     assumed. And `arcs.spawn` rate-caps ordinary flows at
@@ -158,17 +158,17 @@ def live_recolor_case(page) -> bool:
       }
       if (!live.length) return {error: 'no arc slot changed on spawn after retrying'};
 
-      const addBtn = document.querySelector('.rules-add');
+      const addBtn = document.querySelector('.custom-arc-add');
       if (!addBtn) return {error: 'no add-rule button -- is the panel open?'};
-      const before = document.querySelectorAll('.rules-row').length;
+      const before = document.querySelectorAll('.custom-arc-row').length;
       addBtn.click();
-      const rows = document.querySelectorAll('.rules-row');
+      const rows = document.querySelectorAll('.custom-arc-row');
       if (rows.length !== before + 1) {
         return {error: `add did not append exactly one row (${before} -> ${rows.length})`};
       }
       const row = rows[rows.length - 1];           // the one just added, whatever its index
-      const match = row.querySelector('.rules-match');
-      const color = row.querySelector('.rules-color');
+      const match = row.querySelector('.custom-arc-match');
+      const color = row.querySelector('.custom-arc-color');
       match.focus();
       let acc = '';
       for (const ch of '203.0.113.0/24') {
@@ -189,7 +189,7 @@ def live_recolor_case(page) -> bool:
         (mesh) => mesh.material.uniforms.color.value.getHex() === afterHex).length;
       // Handed to case 3: which rule slot our rule became, and the address
       // that reaches it -- case 3 checks THIS rule survives an unrelated bad
-      // row, not literally CONFIG.arcs.rules[0], because the synthetic
+      // row, not literally CONFIG.arcs.custom[0], because the synthetic
       // collector's own NETVIZ_HIGHLIGHT* migration already occupies index 0.
       if (cls !== 'flow' && afterHex !== null) window.__vreRule = {cls, ev};
       return {beforeHex, afterHex, moved, live: live.length, stillFocused, cls,
@@ -210,9 +210,9 @@ def live_recolor_case(page) -> bool:
 def bad_row_case(page) -> bool:
     """3: a bad row costs nothing.
 
-    Adds another row with an unparseable matcher and asserts `.rules-reason`
+    Adds another row with an unparseable matcher and asserts `.custom-arc-reason`
     shows on that row only, and that CASE 2'S RULE -- not literally
-    `arcs.rules[0]`, which on this synthetic collector is already occupied by
+    `arcs.custom[0]`, which on this synthetic collector is already occupied by
     the NETVIZ_HIGHLIGHT* migration -- keeps coloring its arcs: an invalid
     row must not blank out a working one."""
     have_rule = page.evaluate("() => !!window.__vreRule")
@@ -223,25 +223,25 @@ def bad_row_case(page) -> bool:
       const {arcs} = window.__netviz;
       const cl = await import('./js/classify.js');
       const {cls, ev} = window.__vreRule;
-      const goodRow = [...document.querySelectorAll('.rules-row')].find(
-        (r) => r.querySelector('.rules-match').value === '203.0.113.0/24');
+      const goodRow = [...document.querySelectorAll('.custom-arc-row')].find(
+        (r) => r.querySelector('.custom-arc-match').value === '203.0.113.0/24');
 
-      const addBtn = document.querySelector('.rules-add');
-      const before = document.querySelectorAll('.rules-row').length;
+      const addBtn = document.querySelector('.custom-arc-add');
+      const before = document.querySelectorAll('.custom-arc-row').length;
       addBtn.click();
-      const rows = document.querySelectorAll('.rules-row');
+      const rows = document.querySelectorAll('.custom-arc-row');
       if (rows.length !== before + 1) {
         return {error: `add did not append exactly one row (${before} -> ${rows.length})`};
       }
       const badRow = rows[rows.length - 1];
-      const match = badRow.querySelector('.rules-match');
+      const match = badRow.querySelector('.custom-arc-match');
       match.focus();
       match.value = 'nonsense';
       match.dispatchEvent(new Event('input', {bubbles: true}));
       await new Promise((r) => setTimeout(r, 50));
 
-      const badReason = badRow.querySelector('.rules-reason');
-      const goodReason = goodRow ? goodRow.querySelector('.rules-reason') : null;
+      const badReason = badRow.querySelector('.custom-arc-reason');
+      const goodReason = goodRow ? goodRow.querySelector('.custom-arc-reason') : null;
 
       const stillCls = cl.classNameFor(ev);
       const ruleHex = arcs.classColor(cls) ? arcs.classColor(cls).getHex() : null;
@@ -284,7 +284,7 @@ def bad_row_case(page) -> bool:
 def reload_survives_case(page) -> bool:
     """4: it survives a reload.
 
-    Reloads the real page and checks CONFIG.arcs.rules still carries the
+    Reloads the real page and checks CONFIG.arcs.custom still carries the
     rule, and that a fresh arc from the same address takes it -- proving
     the persisted patch, not just the in-memory CONFIG, is what survived."""
     page.reload(wait_until="load")
@@ -293,7 +293,7 @@ def reload_survives_case(page) -> bool:
     result = page.evaluate("""async () => {
       const {arcs} = window.__netviz;
       const m = await import('./js/config.js');
-      const rules = m.CONFIG.arcs.rules || [];
+      const rules = m.CONFIG.arcs.custom || [];
       const has = rules.some((r) => r.match === '203.0.113.0/24');
       const cl = await import('./js/classify.js');
       const cls = cl.classNameFor({k: 'flow', s: '203.0.113.9', d: '198.51.100.7'});
@@ -302,7 +302,7 @@ def reload_survives_case(page) -> bool:
     ok = result["has"] and result["cls"].startswith("rule")
     return report(
         "4: it survives a reload", ok,
-        f"CONFIG.arcs.rules has the rule: {result['has']}, "
+        f"CONFIG.arcs.custom has the rule: {result['has']}, "
         f"a fresh arc classifies as {result['cls']}")
 
 
@@ -336,7 +336,7 @@ def reset_case(page, cx, cy) -> bool:
 
     The control moved out of the rules panel and into the menu, and its
     meaning changed with it: it used to delete the stored patch outright,
-    which took the operator's rule list with it. It now carries `arcs.rules`
+    which took the operator's custom-arc list with it. It now carries `arcs.custom`
     across and drops everything else, so the wall's appearance goes back to
     stock while a list somebody typed survives.
 
@@ -345,11 +345,11 @@ def reset_case(page, cx, cy) -> bool:
     keeps nothing would still put the layer back. So this dirties a
     non-rule setting first (`layers.stars: false`), then checks it is back
     to true afterwards while the test rule is still there -- and that the
-    stored patch now holds `arcs.rules` and nothing else.
+    stored patch now holds `arcs.custom` and nothing else.
     """
     # Close the panel: the menu is what carries the control now, and an open
     # panel would swallow the right-click that opens it.
-    page.evaluate("() => { const p = document.querySelector('.rules-panel'); if (p) p.remove(); }")
+    page.evaluate("() => { const p = document.querySelector('.custom-arc-panel'); if (p) p.remove(); }")
     page.evaluate("() => window.__netviz.settings.apply({'layers.stars': false})")
     page.wait_for_timeout(200)
     before = page.evaluate("""() => ({
@@ -382,7 +382,7 @@ def reset_case(page, cx, cy) -> bool:
         hasNo: !!el.querySelector('.confirm-no'),
         saysWill: text.includes('WILL'), saysWont: text.includes('NOT'),
         namesTheLayer: text.toLowerCase().includes('stars'),
-        promisesRules: text.toLowerCase().includes('color rule'),
+        promisesRules: text.toLowerCase().includes('custom arc'),
         stillStored: window.localStorage.getItem('netviz.settings.v1') !== null,
       };
     }""")
@@ -418,7 +418,7 @@ def reset_case(page, cx, cy) -> bool:
       const m = await import('./js/config.js');
       const raw = window.localStorage.getItem('netviz.settings.v1');
       const stored = raw ? JSON.parse(raw) : null;
-      const rules = m.CONFIG.arcs.rules || [];
+      const rules = m.CONFIG.arcs.custom || [];
       return {
         storedKeys: stored ? Object.keys(stored) : [],
         keptOurRule: rules.some((r) => r.match === '203.0.113.0/24'),
@@ -427,12 +427,12 @@ def reset_case(page, cx, cy) -> bool:
       };
     }""")
     ok = (result["keptOurRule"] and result["starsBack"]
-          and result["storedKeys"] == ["arcs.rules"])
+          and result["storedKeys"] == ["arcs.custom"])
     return report(
         "6: reset keeps the rules and resets the rest", ok,
         f"kept our rule: {result['keptOurRule']}, layers.stars back to default: "
         f"{result['starsBack']}, stored keys now {result['storedKeys']} "
-        f"(want ['arcs.rules']), before={before['stored'] is not None}")
+        f"(want ['arcs.custom']), before={before['stored'] is not None}")
 
 
 def rail_lists_rule_case(page, cx, cy) -> bool:
@@ -460,7 +460,7 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
     first in the list it would claim the lot and starve the other two."""
     page.evaluate("""() => window.__netviz.settings.apply({
       'rail.enabled': true, 'rail.maxRules': 2,
-      'arcs.rules': [
+      'arcs.custom': [
         {match: '0.0.0.0/2', color: '#ff0000', name: 'r-low', enabled: true},
         {match: '64.0.0.0/2', color: '#00ff00', name: 'r-mid', enabled: true},
         {match: '128.0.0.0/1', color: '#0000ff', name: 'r-high', enabled: true},
@@ -482,7 +482,7 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
           const secs = [...document.querySelectorAll('.rail-panel')];
           const sec = secs.find((s) => {
             const h = s.querySelector('.rail-panel-title');
-            return h && h.firstChild && h.firstChild.textContent.trim() === 'COLOR RULES';
+            return h && h.firstChild && h.firstChild.textContent.trim() === 'CUSTOM ARCS';
           });
           if (!sec) return {found: false};
           // `:not(.legend)`. Since 0.6.1 this panel opens with the two
@@ -581,24 +581,24 @@ def keyboard_typing_case(page, cx, cy) -> bool:
     intercepts the keystroke before the input box's own value ever
     changes; a fabricated `Event('input')` would never exercise that path
     at all and would pass whether or not the fix was in place."""
-    if not page.evaluate("() => !!document.querySelector('.rules-panel')"):
+    if not page.evaluate("() => !!document.querySelector('.custom-arc-panel')"):
         open_menu_and_click(page, "rules", cx, cy)
         page.wait_for_timeout(300)
     page.evaluate("() => { const m = document.querySelector('.menu'); if (m) m.remove(); }")
 
-    add_btn = page.query_selector(".rules-add")
+    add_btn = page.query_selector(".custom-arc-add")
     if not add_btn:
         return report("8: the panel's text fields can be typed into", False,
-                       "no .rules-add -- is the panel open?")
+                       "no .custom-arc-add -- is the panel open?")
     add_btn.click()
     page.wait_for_timeout(100)
-    rows = page.query_selector_all(".rules-row")
+    rows = page.query_selector_all(".custom-arc-row")
     if not rows:
         return report("8: the panel's text fields can be typed into", False,
                        "add did not append a row")
     row = rows[-1]
-    match = row.query_selector(".rules-match")
-    name = row.query_selector(".rules-name")
+    match = row.query_selector(".custom-arc-match")
+    name = row.query_selector(".custom-arc-name")
 
     match_text = "203.0.113.10-203.0.113.40"
     name_text = "firewalls"   # carries both 'f' (fullscreen) and 's' (menu)
@@ -609,21 +609,21 @@ def keyboard_typing_case(page, cx, cy) -> bool:
     page.keyboard.type(name_text, delay=15)
 
     result = page.evaluate("""({matchSel, nameSel}) => {
-      const rows = document.querySelectorAll('.rules-row');
+      const rows = document.querySelectorAll('.custom-arc-row');
       const row = rows[rows.length - 1];
       return {
-        matchValue: row.querySelector('.rules-match').value,
-        nameValue: row.querySelector('.rules-name').value,
+        matchValue: row.querySelector('.custom-arc-match').value,
+        nameValue: row.querySelector('.custom-arc-name').value,
         menuOpen: !!document.querySelector('.menu'),
       };
-    }""", {"matchSel": ".rules-match", "nameSel": ".rules-name"})
+    }""", {"matchSel": ".custom-arc-match", "nameSel": ".custom-arc-name"})
 
     ok = (result["matchValue"] == match_text and result["nameValue"] == name_text
           and not result["menuOpen"])
     # Clean up the scratch row so later cases (which assume a known panel
     # state) are not confused by it.
-    row2 = page.query_selector_all(".rules-row")[-1]
-    del_btn = row2.query_selector(".rules-delete")
+    row2 = page.query_selector_all(".custom-arc-row")[-1]
+    del_btn = row2.query_selector(".custom-arc-delete")
     if del_btn:
         del_btn.click()
         page.wait_for_timeout(100)
@@ -653,7 +653,7 @@ def rule_deletion_reclass_case(page) -> bool:
                    sll: [10, 10], dll: [12, 12], b: 500};
       const evB = {k: 'flow', s: '198.51.100.21', d: '198.51.100.22',
                    sll: [20, 20], dll: [22, 22], b: 500};
-      settings.apply({'arcs.rules': [
+      settings.apply({'arcs.custom': [
         {match: '198.51.100.11/32', color: '#ff0000', name: 'ruleA', enabled: true},
         {match: '198.51.100.21/32', color: '#00ff00', name: 'ruleB', enabled: true},
       ]});
@@ -679,7 +679,7 @@ def rule_deletion_reclass_case(page) -> bool:
       const flowHex = arcs.classColor('flow').getHex();
 
       // Delete rule A -- only B remains, now at index 0 (class 'rule1').
-      settings.apply({'arcs.rules': [
+      settings.apply({'arcs.custom': [
         {match: '198.51.100.21/32', color: '#00ff00', name: 'ruleB', enabled: true},
       ]});
       await new Promise((r) => setTimeout(r, 50));
@@ -717,7 +717,7 @@ def builtin_colors_case(page, cx, cy) -> bool:
     They were two ramp-position sliders on the tuning panel until 0.6.1 --
     one panel for "what color is a block", another for "what color is this
     rule", and the rail's legend a third place claiming both were amber.
-    They now sit IN the rule list rather than in a section above it, first
+    They now sit IN the custom-arc list rather than in a section above it, first
     and last, which is the engine's real precedence: a block is never
     recolored by a rule, and a flow no rule claims falls through to the last
     row. The panel's hint says the list is checked top to bottom, and that
@@ -727,47 +727,47 @@ def builtin_colors_case(page, cx, cy) -> bool:
     next spawn reads as a dead control on a wall where a block lives 18s),
     and that the undo returns the class to the theme rather than to a
     remembered hex."""
-    page.evaluate("() => { const p = document.querySelector('.rules-panel'); if (p) p.remove(); }")
+    page.evaluate("() => { const p = document.querySelector('.custom-arc-panel'); if (p) p.remove(); }")
     open_menu_and_click(page, "rules", cx, cy)
     page.wait_for_timeout(300)
 
     state = page.evaluate("""async () => {
       const c = await import('./js/config.js');
-      const rows = [...document.querySelectorAll('.rules-fixed')];
+      const rows = [...document.querySelectorAll('.custom-arc-fixed')];
       const before = { block: c.cfg('arcs.block.color', null), flow: c.cfg('arcs.flow.color', null) };
       const swatches = rows.map((r) => r.querySelector('input[type=color]').value);
       // The two fixed rows are IN the list, first and last, with the
       // editable rules between them -- one list in the engine's own
       // precedence order. Asserted here so a future edit cannot quietly pull
       // them back out into a section of their own.
-      const list = [...document.querySelector('.rules-list').children];
+      const list = [...document.querySelector('.custom-arc-list').children];
       return { count: rows.length, before, swatches,
-               firstIsFixed: list[0].className === 'rules-fixed',
-               lastIsFixed: list[list.length - 1].className === 'rules-fixed',
-               inList: rows.every((r) => r.parentElement.className === 'rules-list'),
+               firstIsFixed: list[0].className === 'custom-arc-fixed',
+               lastIsFixed: list[list.length - 1].className === 'custom-arc-fixed',
+               inList: rows.every((r) => r.parentElement.className === 'custom-arc-list'),
                autoDisabled: rows.map((r) => r.querySelector('button').disabled) };
     }""")
 
     # Set the block class green through the swatch, the way a person would.
     page.eval_on_selector(
-        ".rules-fixed input[type=color]",
+        ".custom-arc-fixed input[type=color]",
         """(el) => { el.value = '#00ff88';
                      el.dispatchEvent(new Event('input', { bubbles: true })); }""")
     page.wait_for_timeout(400)
     after = page.evaluate("""async () => {
       const c = await import('./js/config.js');
       const live = window.__netviz.arcs.classColor('block');
-      const row = document.querySelector('.rules-fixed');
+      const row = document.querySelector('.custom-arc-fixed');
       return { stored: c.cfg('arcs.block.color', null),
                live: { r: live.r, g: live.g, b: live.b },
                undoEnabled: !row.querySelector('button').disabled };
     }""")
 
-    page.eval_on_selector(".rules-fixed button", "(el) => el.click()")
+    page.eval_on_selector(".custom-arc-fixed button", "(el) => el.click()")
     page.wait_for_timeout(400)
     back = page.evaluate("""async () => {
       const c = await import('./js/config.js');
-      const row = document.querySelector('.rules-fixed');
+      const row = document.querySelector('.custom-arc-fixed');
       const live = window.__netviz.arcs.classColor('block');
       return { stored: c.cfg('arcs.block.color', null),
                swatch: row.querySelector('input[type=color]').value,

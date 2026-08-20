@@ -160,7 +160,7 @@ def theme_panel_state(page):
     (see theme_panel.js's own comment on why the two classes are deliberately
     different strings). Presence + `document.contains` + a non-zero rect,
     never the API's own claim -- there is no API claim available here at all:
-    `window.__netviz` exposes `settingsPanel` and `rulesPanel` but not
+    `window.__netviz` exposes `settingsPanel` and `customArcsPanel` but not
     `themePanel`, so this script never has one to distrust in the first
     place and drives everything through the DOM and the menu, the same
     surface a real operator has."""

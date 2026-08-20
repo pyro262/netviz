@@ -147,7 +147,7 @@ const LAYER_GROUPS = [
  *
  * Builds the menu structure given the display's current state.
  * state is {railOn, layers: {...thirteen keys...}, layersExpanded, testMode,
- * canLookHere, settingsPanel, rulesPanel, themePanel, canReset}.
+ * canLookHere, settingsPanel, customArcsPanel, themePanel, canReset}.
  *
  * Returns an array of top-level menu items in this order:
  * - lookHere: action, enabled only when pointer was on globe
@@ -216,9 +216,9 @@ export function menuModel(state) {
     // Absent, not disabled, when the display is locked: the lock says
     // configuring is not on offer, and a greyed row advertises a control
     // nobody in the room can use.
-    ...(state.rulesPanel ? [{
-      id: 'rules',
-      label: 'Color rules…',
+    ...(state.customArcsPanel ? [{
+      id: 'customArcs',
+      label: 'Custom arcs…',
       kind: 'action',
       enabled: true,
       title: 'Opens the editor that gives traffic matching a subnet, '
@@ -318,7 +318,7 @@ function clampPosition(node, x, y) {
 }
 
 /**
- * createMenu({ rig, settings, rulesPanel, settingsPanel, onReset, root }) -> { open(x, y, ndc), close(), isOpen() }
+ * createMenu({ rig, settings, customArcsPanel, settingsPanel, onReset, root }) -> { open(x, y, ndc), close(), isOpen() }
  *
  * `rig` supplies `pointAt(ndc)` (what the pointer was over, for "Look here")
  * and `lookHere(lat, lon)` (the action itself) -- NOT `visit()`, which is the
@@ -328,8 +328,8 @@ function clampPosition(node, x, y) {
  * every click that changes something goes through `settings.apply({path:
  * value})`, because the layer ids in menuModel's submenu ARE schema paths and
  * there is no second way to write one; the menu never touches CONFIG or a
- * live object directly. `rulesPanel` is the color-rules editor
- * (`createRulesPanel`) -- the menu only opens it, it never touches
+ * live object directly. `customArcsPanel` is the custom-arcs editor
+ * (`createCustomArcsPanel`) -- the menu only opens it, it never touches
  * settings.apply for anything the panel owns. `settingsPanel`
  * (`createSettingsPanel`) is the tuning panel, opened the same way; the two
  * panels never coexist -- see `open()`'s own comment on that. `root` is the
@@ -355,7 +355,7 @@ function clampPosition(node, x, y) {
  * settings.apply -- shows correctly the next time somebody opens it.
  */
 export function createMenu({
-  rig, settings, preview, rulesPanel, settingsPanel, themePanel, onReset, root,
+  rig, settings, preview, customArcsPanel, settingsPanel, themePanel, onReset, root,
   hoverDelayMs = HOVER_DELAY_MS,
 }) {
   let node = null;
@@ -477,10 +477,10 @@ export function createMenu({
    *  question stops the chain right there: `openFn` is never called and the
    *  panel that asked stays open with its changes intact, exactly the
    *  guarantee a single requestClose()/onClosed() pair gives one caller,
-   *  extended here to three panels instead of two. rulesPanel force-closes
+   *  extended here to three panels instead of two. customArcsPanel force-closes
    *  instead -- it has no pending-changes concept of its own to lose, since
    *  every edit there already reaches settings.apply() immediately (see
-   *  rules_panel.js's "opening the panel alone never calls settings.apply"
+   *  custom_arcs_panel.js's "opening the panel alone never calls settings.apply"
    *  guarantee, which is the mirror image of why the other two need asking).
    *
    *  `skip` names the panel about to be opened, so it is never closed by its
@@ -489,10 +489,10 @@ export function createMenu({
     const askers = [];
     if (settingsPanel && skip !== 'settings') askers.push(settingsPanel);
     if (themePanel && skip !== 'theme') askers.push(themePanel);
-    const closeRules = !!(rulesPanel && skip !== 'rules');
+    const closeRules = !!(customArcsPanel && skip !== 'customArcs');
     function next(i) {
       if (i >= askers.length) {
-        if (closeRules) rulesPanel.close();
+        if (closeRules) customArcsPanel.close();
         openFn();
         return;
       }
@@ -528,9 +528,9 @@ export function createMenu({
       canLookHere: point !== null,
       // Enabled when this menu was built with a panel to open. A menu
       // constructed without one -- as some tests still are -- must not draw
-      // a row whose click handler is guarded out. Same rule as rulesPanel.
+      // a row whose click handler is guarded out. Same rule as customArcsPanel.
       settingsPanel: !!settingsPanel,
-      rulesPanel: !!rulesPanel,
+      customArcsPanel: !!customArcsPanel,
       themePanel: !!themePanel,
       canReset: !!onReset,
     };
@@ -627,7 +627,7 @@ export function createMenu({
     // any fake that bothers to implement it, which is the whole reason to
     // prefer it over the DOM's convenience accessors here.
     row.setAttribute('data-id', item.id);
-    // The native tooltip, same mechanism settings_panel.js and rules_panel.js
+    // The native tooltip, same mechanism settings_panel.js and custom_arcs_panel.js
     // already use -- no bespoke styled tooltip, which would be more surface
     // for no gain on a display nobody normally hovers. `item.title` is
     // undefined for a row with nothing to say (a schema path with no `help`,
@@ -672,8 +672,8 @@ export function createMenu({
           // rather than letting them overlap. The menu is what dispatches
           // every action, so it is the one place that knows about all three
           // panels; no panel needs to know another exists.
-          if (item.id === 'rules' && rulesPanel) {
-            closeOtherPanelsThen('rules', () => rulesPanel.open());
+          if (item.id === 'customArcs' && customArcsPanel) {
+            closeOtherPanelsThen('customArcs', () => customArcsPanel.open());
           }
           if (item.id === 'settings' && settingsPanel) {
             closeOtherPanelsThen('settings', () => settingsPanel.open());

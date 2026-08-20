@@ -13,7 +13,7 @@ import { zoomBy, decay } from './orbit.js';
 import { pickCameraSphere, dragRotation, axisAngle } from './arcball.js';
 import { isDoubleTap, DOUBLE_TAP } from './menu.js';
 
-export function startInput({ canvas, rig, menu, rulesPanel, settingsPanel, themePanel }) {
+export function startInput({ canvas, rig, menu, customArcsPanel, settingsPanel, themePanel }) {
   // `enabled` is a live GATE, not an early return.
   //
   // It used to return a do-nothing stub, and that stub had to carry the whole
@@ -392,7 +392,7 @@ export function startInput({ canvas, rig, menu, rulesPanel, settingsPanel, theme
     // this the autonomous walk resumed after input.resumeSeconds and a block
     // burst was free to fly the view away while somebody was mid-drag on a
     // slider.
-    if (menu.isOpen() || rulesPanel?.isOpen() || settingsPanel?.isOpen()
+    if (menu.isOpen() || customArcsPanel?.isOpen() || settingsPanel?.isOpen()
         || themePanel?.isOpen()) rig.poke(menuResume);
     // The hand-back ends input's ownership of the view, full stop. Damping
     // 0.85/s has a ~6.2s time constant against a 1e-6 floor, so a fling coasts

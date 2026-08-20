@@ -1,4 +1,4 @@
-// The color-rules editor.
+// The custom-arcs editor.
 //
 // Everything above the DOM line is pure and unit-tested: which rows exist,
 // which of them are valid, and which are ready to apply. The DOM half below
@@ -79,7 +79,7 @@ export function readyRules(rows) {
 // #stage -- paints over everything inside it. The menu hit exactly this and a
 // z-index of 9999 changed nothing.
 
-const cfgRules = () => cfg('arcs.custom', []);
+const cfgCustom = () => cfg('arcs.custom', []);
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -114,25 +114,26 @@ export const MATCH_FORMS = [
 // here rather than inline so the header and the field cannot drift apart, and
 // so the wording is one edit rather than five.
 const MATCH_HELP =
-  'What the rule looks for, one of: a subnet (10.20.50.0/24 or 2001:db8::/32), '
+  'What this custom arc looks for, one of: a subnet (10.20.50.0/24 or 2001:db8::/32), '
   + 'an inclusive address range (203.0.113.10-203.0.113.40), a two-letter '
   + 'country code (DE), or a port with the protocol optional (tcp/443, '
   + 'udp/51820, 443).';
 const END_HELP =
   'Which end of the arc has to match: the source, the destination, or either '
-  + 'end. Country and port rules read the same end.';
+  + 'end. Country and port matchers read the same end.';
 const COLOR_HELP =
-  'The color arcs matching this rule are drawn in. It reaches arcs already on '
+  'The color arcs matching this custom arc are drawn in. It reaches arcs already on '
   + 'screen, not just the next one.';
 // The two built-in classes. Their colors used to be two ramp-position sliders
 // on the TUNING panel, one group away from the arc gains -- so "what color is
-// a block" was answered in one place, "what color is this rule" in another,
+// a block" was answered in one place, "what color is this custom arc" in another,
 // and the rail's legend in a third. They are the same question, so they are
 // asked here.
 //
 // They sit IN the list, not in a block of their own above it, and in their
-// real precedence order: a block is never recolored by a rule, so it is the
-// first row; a flow no rule claims falls through to `arcs.flow`, so it is the
+// real precedence order: a block is never recolored by a custom arc, so it is
+// the first row; a flow no custom arc claims falls through to `arcs.flow`, so
+// it is the
 // last. The panel's own hint says the list is checked top to bottom, and with
 // the defaults pulled out into a separate section that sentence described
 // only the middle of what was on screen. Every row a person can see is now
@@ -149,15 +150,15 @@ const BUILTIN = {
     match: 'any blocked arc',
     end: 'first',
     help: 'The alarm layer: an arc the router refused. Blocks are never '
-        + 'recolored by a rule, whatever the rules below say, which is why '
-        + 'this row is at the top and cannot be turned off.',
+        + 'recolored by a custom arc, whatever the entries below say, which is '
+        + 'why this row is at the top and cannot be turned off.',
   },
   flow: {
     label: 'All other traffic',
     match: 'everything else',
     end: 'fallback',
-    help: 'Every arc no rule above has claimed. Add a rule to carve traffic '
-        + 'out of this one; it cannot be turned off, because something has to '
+    help: 'Every arc no custom arc above has claimed. Add one to carve traffic '
+        + 'out of this row; it cannot be turned off, because something has to '
         + 'color the rest.',
   },
 };
@@ -165,10 +166,10 @@ const AUTO_HELP =
   'Back to the theme. On auto the class takes its color from the active ramp '
   + 'at its own position, so switching themes recolors it with everything else.';
 const NAME_HELP =
-  'Optional. What to call this rule in the stats rail -- "storj nodes" says '
+  'Optional. What to call this custom arc in the stats rail -- "storj nodes" says '
   + 'more than the subnet does. Not used for matching.';
 
-export function createRulesPanel({ settings, root, onClose } = {}) {
+export function createCustomArcsPanel({ settings, root, onClose } = {}) {
   const mount = root || document.body;
   let node = null;
   // The working list, edited row by row. Kept here rather than read back out
@@ -220,7 +221,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
   function redraw() {
     const rows = applyDraft();
     rowRefs = new Map();
-    const list = node.querySelector('.rules-list');
+    const list = node.querySelector('.custom-arc-list');
     list.replaceChildren();
     // Blocks first: no rule can claim one. Then the rules, in their own
     // order. Then Add, which appends at the end of THAT group. Then the
@@ -235,7 +236,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
    *  is invisible on the globe -- a refused file changes nothing, which is
    *  indistinguishable from a file that changed nothing. */
   function showNote(text) {
-    const note = node && node.querySelector('.rules-note');
+    const note = node && node.querySelector('.custom-arc-note');
     if (note) note.textContent = text;
   }
 
@@ -259,14 +260,14 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
   function updateRowDisplay(index, row) {
     const refs = rowRefs.get(index);
     if (!refs || !row) return;
-    refs.wrap.className = `rules-row${row.reason ? ' bad' : ''}`;
-    refs.toggle.className = `rules-toggle${row.enabled ? ' on' : ''}`;
+    refs.wrap.className = `custom-arc-row${row.reason ? ' bad' : ''}`;
+    refs.toggle.className = `custom-arc-toggle${row.enabled ? ' on' : ''}`;
     refs.toggle.textContent = row.enabled ? '✓' : '';
     if (row.reason) {
       if (refs.reason) {
         refs.reason.textContent = row.reason;
       } else {
-        refs.reason = el('div', 'rules-reason', row.reason);
+        refs.reason = el('div', 'custom-arc-reason', row.reason);
         refs.wrap.append(refs.reason);
       }
     } else if (refs.reason) {
@@ -276,17 +277,17 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
   }
 
   function renderRow(row) {
-    const wrap = el('div', `rules-row${row.reason ? ' bad' : ''}`);
+    const wrap = el('div', `custom-arc-row${row.reason ? ' bad' : ''}`);
     wrap.setAttribute('data-index', String(row.index));
 
-    const match = el('input', 'rules-match');
+    const match = el('input', 'custom-arc-match');
     match.value = row.match;
     match.placeholder = '10.20.50.0/24, DE, tcp/443';
     match.title = MATCH_HELP;
     match.addEventListener('input', () => editField(row.index, 'match', match.value));
     wrap.append(match);
 
-    const end = el('select', 'rules-end');
+    const end = el('select', 'custom-arc-end');
     for (const v of ENDS) {
       const opt = el('option', null, END_LABEL[v]);
       opt.value = v;
@@ -297,21 +298,21 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     end.addEventListener('change', () => editField(row.index, 'end', end.value));
     wrap.append(end);
 
-    const swatch = el('input', 'rules-color');
+    const swatch = el('input', 'custom-arc-color');
     swatch.type = 'color';
     swatch.value = /^#[0-9a-f]{6}$/i.test(row.color) ? row.color : '#a855f7';
     swatch.title = COLOR_HELP;
     swatch.addEventListener('input', () => editField(row.index, 'color', swatch.value));
     wrap.append(swatch);
 
-    const name = el('input', 'rules-name');
+    const name = el('input', 'custom-arc-name');
     name.value = row.name;
     name.placeholder = 'label for the rail (optional)';
     name.title = NAME_HELP;
     name.addEventListener('input', () => editField(row.index, 'name', name.value));
     wrap.append(name);
 
-    const on = el('button', `rules-toggle${row.enabled ? ' on' : ''}`, row.enabled ? '✓' : '');
+    const on = el('button', `custom-arc-toggle${row.enabled ? ' on' : ''}`, row.enabled ? '✓' : '');
     // NOT `!row.enabled`: `row` is a snapshot from whenever this closure was
     // built, and a non-structural edit patches the DOM in place without
     // re-rendering the row -- so a captured `row.enabled` goes stale after
@@ -322,7 +323,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     on.addEventListener('click', () => editField(row.index, 'enabled', !draft[row.index].enabled));
     wrap.append(on);
 
-    const del = el('button', 'rules-delete', '✕');
+    const del = el('button', 'custom-arc-delete', '✕');
     del.addEventListener('click', () => {
       draft = draft.filter((_, i) => i !== row.index);
       dirty = true;
@@ -331,7 +332,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     wrap.append(del);
 
     let reasonNode = null;
-    if (row.reason) reasonNode = el('div', 'rules-reason', row.reason);
+    if (row.reason) reasonNode = el('div', 'custom-arc-reason', row.reason);
     if (reasonNode) wrap.append(reasonNode);
 
     rowRefs.set(row.index, { wrap, match, end, swatch, name, toggle: on, reason: reasonNode });
@@ -350,18 +351,18 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
 
   function builtinRow(cls) {
     const spec = BUILTIN[cls];
-    // `rules-fixed`, NOT `rules-row`: that class means "an editable rule" to
-    // this panel's own code and to tools/verify_rules_editor.py, which counts
-    // rules with it. The CSS gives the two selectors the same columns, so the
+    // `custom-arc-fixed`, NOT `custom-arc-row`: that class means "an editable
+    // custom arc" to this panel's own code and to tools/verify_rules_editor.py,
+    // which counts them with it. The CSS gives the two selectors the same columns, so the
     // rows line up under one header while the count stays honest.
-    const wrap = el('div', 'rules-fixed');
+    const wrap = el('div', 'custom-arc-fixed');
     wrap.title = spec.help;
 
-    wrap.append(el('span', 'rules-fixed-match', spec.match));
-    wrap.append(el('span', 'rules-fixed-end', spec.end));
+    wrap.append(el('span', 'custom-arc-fixed-match', spec.match));
+    wrap.append(el('span', 'custom-arc-fixed-end', spec.end));
 
     const onAuto = cfg(`arcs.${cls}.color`, 'auto') === 'auto';
-    const swatch = el('input', 'rules-color');
+    const swatch = el('input', 'custom-arc-color');
     swatch.type = 'color';
     swatch.value = builtinColor(cls);
     swatch.title = spec.help;
@@ -372,13 +373,13 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     });
     wrap.append(swatch);
 
-    wrap.append(el('span', 'rules-fixed-name', onAuto ? `${spec.label} (theme)` : spec.label));
+    wrap.append(el('span', 'custom-arc-fixed-name', onAuto ? `${spec.label} (theme)` : spec.label));
 
     // The flags column, occupied rather than empty: these two rows have no
     // on/off and no delete -- one is never overridden and the other is the
     // fallback -- and a gap where every other row has buttons reads as a row
     // whose buttons failed to draw. The undo lives here instead.
-    const undo = el('button', 'rules-fixed-auto', '↺');
+    const undo = el('button', 'custom-arc-fixed-auto', '↺');
     undo.title = 'Back to the theme. On auto the class takes its color from '
                + 'the active ramp at its own position, so switching themes '
                + 'recolors it with everything else.';
@@ -402,14 +403,14 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     // suite runs this file against a hand-built DOM fake with no `dataset`,
     // and a panel that only repaints under a real browser is a panel whose
     // repaint is untested.
-    const fixed = [...node.querySelectorAll('.rules-fixed')];
+    const fixed = [...node.querySelectorAll('.custom-arc-fixed')];
     if (fixed.length !== 2) return;
     fixed[0].replaceWith(builtinRow('block'));
     fixed[1].replaceWith(builtinRow('flow'));
   }
 
   function renderAdd() {
-    const add = el('button', 'rules-add', '+ Add rule');
+    const add = el('button', 'custom-arc-add', '+ Add custom arc');
     add.addEventListener('click', () => {
       // A new row starts EMPTY and therefore invalid, which is correct: it
       // contributes no rule until it says something, and its own reason line
@@ -437,14 +438,14 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
 
   function open() {
     if (node) return true;
-    draft = (cfgRules() || []).map((r) => ({ ...r }));
+    draft = (cfgCustom() || []).map((r) => ({ ...r }));
     dirty = false;
-    node = el('div', 'rules-panel');
-    node.append(el('div', 'rules-title', 'Color rules'));
+    node = el('div', 'custom-arc-panel');
+    node.append(el('div', 'custom-arc-title', 'Custom arcs'));
     // Says what the engine does, and nothing it does not: rows are NOT
     // draggable in this build, so promising drag-to-reorder here would be a
     // control that does not exist. Order is changed by deleting and re-adding.
-    node.append(el('div', 'rules-hint',
+    node.append(el('div', 'custom-arc-hint',
                    'Checked top to bottom -- the first enabled rule that '
                    + 'matches an arc colors it. Blocks are never recolored.'));
 
@@ -454,22 +455,22 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     // "what can I even type here" is the question the panel has to answer
     // without being asked. A placeholder cannot: it shows one form out of
     // four and disappears on the first keystroke.
-    const legend = el('div', 'rules-legend');
+    const legend = el('div', 'custom-arc-legend');
     for (const [form, example, note] of MATCH_FORMS) {
-      const rowEl = el('div', 'rules-legend-row');
-      rowEl.append(el('span', 'rules-legend-form', form));
-      rowEl.append(el('code', 'rules-legend-eg', example));
-      rowEl.append(el('span', 'rules-legend-note', note));
+      const rowEl = el('div', 'custom-arc-legend-row');
+      rowEl.append(el('span', 'custom-arc-legend-form', form));
+      rowEl.append(el('code', 'custom-arc-legend-eg', example));
+      rowEl.append(el('span', 'custom-arc-legend-note', note));
       legend.append(rowEl);
     }
     node.append(legend);
 
     // A header row, not placeholder text alone: a placeholder vanishes the
     // moment somebody types, which is exactly when they are least sure which
-    // box they are in. Deliberately NOT class `rules-row` -- that selector
+    // box they are in. Deliberately NOT class `custom-arc-row` -- that selector
     // means "an editable rule" to the panel's own code and to the verify
     // tools, and a header answering to it would be counted as a rule.
-    const head = el('div', 'rules-head');
+    const head = el('div', 'custom-arc-head');
     for (const [cls, text, tip] of [
       ['h-match', 'Match', MATCH_HELP],
       ['h-end', 'Applies to', END_HELP],
@@ -479,8 +480,8 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
       // and 'On / Del' wraps to two lines inside that, which drags the whole
       // header row taller than the fields it labels. The tooltip carries the
       // rest.
-      ['h-flags', 'On', 'Turn the rule off without deleting it, or '
-                              + 'remove it. A rule turned off keeps its place '
+      ['h-flags', 'On', 'Turn this custom arc off without deleting it, or '
+                              + 'remove it. One turned off keeps its place '
                               + 'in the order.'],
     ]) {
       const cell = el('span', cls, text);
@@ -488,10 +489,10 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
       head.append(cell);
     }
     node.append(head);
-    node.append(el('div', 'rules-list'));
-    const foot = el('div', 'rules-foot');
+    node.append(el('div', 'custom-arc-list'));
+    const foot = el('div', 'custom-arc-foot');
 
-    const exportBtn = el('button', 'rules-export', 'Export');
+    const exportBtn = el('button', 'custom-arc-export', 'Export');
     exportBtn.addEventListener('click', () => {
       // The display's rules live in one browser; this is the only copy that
       // leaves it. A Blob URL rather than a data: URI so a long list is not
@@ -506,7 +507,7 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     });
     foot.append(exportBtn);
 
-    const importInput = el('input', 'rules-import-input');
+    const importInput = el('input', 'custom-arc-import-input');
     importInput.type = 'file';
     importInput.accept = 'application/json,.json';
     importInput.style.display = 'none';
@@ -523,15 +524,15 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
       redraw();
       showNote(`imported ${out.rules.length} rule(s)`);
     });
-    const importBtn = el('button', 'rules-import', 'Import');
+    const importBtn = el('button', 'custom-arc-import', 'Import');
     importBtn.addEventListener('click', () => importInput.click());
     foot.append(importBtn, importInput);
 
-    const closeBtn = el('button', 'rules-close', 'Close');
+    const closeBtn = el('button', 'custom-arc-close', 'Close');
     closeBtn.addEventListener('click', close);
     foot.append(closeBtn);
     node.append(foot);
-    node.append(el('div', 'rules-note'));
+    node.append(el('div', 'custom-arc-note'));
     mount.appendChild(node);
     redraw();
     document.addEventListener('keydown', onKeyDown, true);

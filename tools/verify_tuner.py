@@ -25,7 +25,7 @@ promises reaches there at all:
     pending and still unstored -- the dialog is the only thing standing
     between a stray click and work nobody wrote down;
   * that the menu's mutual exclusion between the two panels goes through
-    `requestClose()` rather than the force-close, so picking "Color rules..."
+    `requestClose()` rather than the force-close, so picking "Custom arcs..."
     over unkept changes asks instead of discarding them silently, and a
     Cancel leaves the rules panel shut and the changes pending;
   * that the rows whose value is baked into an arc's geometry SAY SO, and
@@ -971,7 +971,7 @@ def case11_small_viewport(page) -> bool:
         f"{not off_after_scroll} (off={off_after_scroll or 'none'})")
 
 
-def rules_panel_open(page) -> bool:
+def custom_arcs_panel_open(page) -> bool:
     """The color-rules panel's own element, on the same terms as the tuning
     panel's: in the document with a non-zero rect."""
     return bool(page.evaluate("""() => {
@@ -983,12 +983,12 @@ def rules_panel_open(page) -> bool:
 
 
 def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
-    """8: opening "Color rules..." over pending changes ASKS, and a Cancel
+    """8: opening "Custom arcs..." over pending changes ASKS, and a Cancel
     leaves everything where it was.
 
     menu.js enforces mutual exclusion between the two panels by closing this
     one before opening the other. While that call was the force-close, an
-    operator with unkept changes who picked "Color rules..." had them discarded
+    operator with unkept changes who picked "Custom arcs..." had them discarded
     SILENTLY -- the exact case the Close question exists for, reached by a door
     that skipped it. So the menu goes through `requestClose(onClosed)` now, and
     both halves are asserted here because either alone is passed by a bug: a
@@ -1005,7 +1005,7 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
     down nowhere."""
     close_panel(page)
     page.wait_for_timeout(250)
-    page.evaluate("() => window.__netviz.rulesPanel && window.__netviz.rulesPanel.close()")
+    page.evaluate("() => window.__netviz.customArcsPanel && window.__netviz.customArcsPanel.close()")
     page.wait_for_timeout(200)
     if not open_menu_and_click(page, "settings", cx, cy):
         return report("8: the menu asks before dropping pending changes for the "
@@ -1028,7 +1028,7 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
     canceled = answer_confirm(page, False)
     page.wait_for_timeout(400)
     after_cancel = {
-        "rules": rules_panel_open(page),
+        "rules": custom_arcs_panel_open(page),
         "tuner": panel_is_really_open(panel_state(page)),
         "live": read_live(page, OPACITY),
         "dirty": page.evaluate(
@@ -1048,7 +1048,7 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
     answered2 = answer_confirm(page, True) if asked2 else False
     page.wait_for_timeout(500)
     after = {
-        "rules": rules_panel_open(page),
+        "rules": custom_arcs_panel_open(page),
         "tuner": panel_is_really_open(panel_state(page)),
         "live": read_live(page, OPACITY),
         "store": read_store(page),
@@ -1058,13 +1058,13 @@ def case8_menu_mutual_exclusion(page, cx, cy) -> bool:
                and abs((after["live"] or 0) - base) < 1e-9
                and after["store"] == store_base)
 
-    page.evaluate("() => window.__netviz.rulesPanel && window.__netviz.rulesPanel.close()")
+    page.evaluate("() => window.__netviz.customArcsPanel && window.__netviz.customArcsPanel.close()")
     page.wait_for_timeout(200)
 
     ok = safe and through and abs(moved - OPACITY_TARGET) < 1e-9 and moved != base
     return report(
         "8: the menu asks before dropping pending changes for the rules panel", ok,
-        f"{OPACITY} base={base} -> drag {moved}; Color rules asked={asked_ok}; after "
+        f"{OPACITY} base={base} -> drag {moved}; Custom arcs asked={asked_ok}; after "
         f"Cancel: rules panel open={after_cancel['rules']} (must be False), tuning "
         f"panel open={after_cancel['tuner']}, live still {after_cancel['live']}, rows "
         f"marked dirty={after_cancel['dirty']}, store unchanged="

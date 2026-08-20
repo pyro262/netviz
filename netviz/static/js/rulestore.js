@@ -141,7 +141,7 @@ export function exportFilename(date) {
  * ALL-or-nothing, and every bad row is named rather than only the first: an
  * import is one deliberate act, so the person doing it can fix the file once
  * instead of discovering its faults one reload at a time. A live edit is the
- * opposite call -- see readyRules() in rules_panel.js.
+ * opposite call -- see readyRules() in custom_arcs_panel.js.
  */
 export function parseImport(text) {
   let parsed;

@@ -218,7 +218,7 @@
          the label says what the arc means, never what color it is -- so it
          is a chip rather than a dot, sized to read from across a room. Keyed
          off the ROW, not its panel: the two legend rows sit at the top of the
-         COLOR RULES panel among rule rows that keep the small dot. */
+         CUSTOM ARCS panel among rows that keep the small dot. */
       #rail .rail-swatch.big { width: 26px; height: 12px; border-radius: 3px;
                                margin-right: 9px; }
       /* A muted row dims its TEXT, never its swatch. The swatch is a sample of
@@ -286,34 +286,34 @@
          the rows it controls. */
       .menu-expand-mark { width: 1.2em; text-align: center; color: #9c96b8; }
 
-      /* --------------------------------------------------------- rules panel --
-         Opened from the menu's "Color rules…" item. Mounted on document.body,
-         never on #stage -- see js/rules_panel.js for why that is load-bearing
+      /* ---------------------------------------------------- custom arcs panel --
+         Opened from the menu's "Custom arcs…" item. Mounted on document.body,
+         never on #stage -- see js/custom_arcs_panel.js for why that is load-bearing
          (the same stacking-context trap the menu itself hit). */
-      .rules-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      .custom-arc-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
                      z-index: 6; background: #12101fee; color: #d8d4ea;
                      border: 1px solid #2a2540; border-radius: 6px; padding: 14px 16px;
                      font: 13px/1.5 ui-monospace, monospace; min-width: 560px;
                      max-height: 70vh; overflow-y: auto; touch-action: auto; }
-      .rules-title { font-size: 15px; margin-bottom: 2px; }
-      .rules-hint { opacity: .55; margin-bottom: 10px; }
-      .rules-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px;
+      .custom-arc-title { font-size: 15px; margin-bottom: 2px; }
+      .custom-arc-hint { opacity: .55; margin-bottom: 10px; }
+      .custom-arc-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px;
                    flex-wrap: wrap; }
-      .rules-row.bad .rules-match { border-color: #e0a020; }
+      .custom-arc-row.bad .custom-arc-match { border-color: #e0a020; }
       /* min-width: 0 is what puts a row on ONE line. A flex item's automatic
          minimum is its min-content width, and an <input>'s min-content comes
          from its `size` attribute -- about 177px -- so the two text fields
          refused to shrink below ~354px between them and pushed the on/off and
          delete buttons onto a second line, under a wrap the reason line needs
          to exist. */
-      .rules-match { flex: 2 1 200px; min-width: 0; }
-      .rules-name { flex: 1 1 120px; min-width: 0; }
-      .rules-end { width: 88px; flex: 0 0 88px; }
+      .custom-arc-match { flex: 2 1 200px; min-width: 0; }
+      .custom-arc-name { flex: 1 1 120px; min-width: 0; }
+      .custom-arc-end { width: 88px; flex: 0 0 88px; }
       /* The header carries the same flex bases as the row below it, so the
          labels sit over the fields they name. Any change to one is a change to
          both. */
       /* ------------------------------------------------ the confirm dialog --
-         Mounted on document.body like the menu and the rules panel, and for
+         Mounted on document.body like the menu and the custom arcs panel, and for
          the same reason: #stage is position:fixed and creates a stacking
          context, so anything inside it is painted under #rail. z-index above
          both, because this one is a question that must not be obscured by
@@ -366,43 +366,43 @@
          material somebody reads once, and it must not compete with the rows
          they came to edit. The example column is fixed-width so the four
          forms line up as a table without being one. */
-      .rules-legend { margin: 0 0 10px; font-size: 12px; opacity: .62; }
-      .rules-legend-row { display: flex; gap: 8px; align-items: baseline;
+      .custom-arc-legend { margin: 0 0 10px; font-size: 12px; opacity: .62; }
+      .custom-arc-legend-row { display: flex; gap: 8px; align-items: baseline;
                           padding: 1px 0; }
-      .rules-legend-form { flex: 0 0 64px; text-transform: uppercase;
+      .custom-arc-legend-form { flex: 0 0 64px; text-transform: uppercase;
                            font-size: 10px; letter-spacing: .08em; opacity: .8; }
-      .rules-legend-eg { flex: 0 0 210px; color: #a855f7; font: inherit;
+      .custom-arc-legend-eg { flex: 0 0 210px; color: #a855f7; font: inherit;
                          white-space: nowrap; }
-      .rules-legend-note { flex: 1 1 auto; min-width: 0; }
-      .rules-head { display: flex; gap: 6px; align-items: center;
+      .custom-arc-legend-note { flex: 1 1 auto; min-width: 0; }
+      .custom-arc-head { display: flex; gap: 6px; align-items: center;
                     margin-bottom: 4px; font-size: 11px; letter-spacing: .08em;
                     text-transform: uppercase; opacity: .5; }
-      .rules-head .h-match { flex: 2 1 200px; min-width: 0; }
-      .rules-head .h-end { flex: 0 0 88px; }
-      .rules-head .h-color { flex: 0 0 44px; }
-      .rules-head .h-name { flex: 1 1 120px; min-width: 0; }
-      .rules-head .h-flags { flex: 0 0 50px; }
-      .rules-panel input, .rules-panel select, .rules-panel button {
+      .custom-arc-head .h-match { flex: 2 1 200px; min-width: 0; }
+      .custom-arc-head .h-end { flex: 0 0 88px; }
+      .custom-arc-head .h-color { flex: 0 0 44px; }
+      .custom-arc-head .h-name { flex: 1 1 120px; min-width: 0; }
+      .custom-arc-head .h-flags { flex: 0 0 50px; }
+      .custom-arc-panel input, .custom-arc-panel select, .custom-arc-panel button {
         background: #0b0916; color: inherit; border: 1px solid #2a2540;
         border-radius: 3px; padding: 3px 6px; font: inherit; }
-      .rules-color { width: 44px; padding: 1px; }
+      .custom-arc-color { width: 44px; padding: 1px; }
       /* The two built-in classes sit IN the rule list, first and last, so the
          columns have to be the rule row's own. Only the swatch is editable;
          the text cells are what the engine does, not fields. */
-      .rules-fixed { display: flex; gap: 6px; align-items: center;
+      .custom-arc-fixed { display: flex; gap: 6px; align-items: center;
                      margin-bottom: 4px; flex-wrap: wrap; }
-      .rules-fixed-match { flex: 2 1 200px; min-width: 0; opacity: .5;
+      .custom-arc-fixed-match { flex: 2 1 200px; min-width: 0; opacity: .5;
                            font-style: italic; }
       /* nowrap: the column is 88px and "fallback" is the widest word that
          goes in it. Wrapped, these two rows stood a line taller than every
          rule between them and the list stopped reading as one table. */
-      .rules-fixed-end { flex: 0 0 88px; opacity: .5; font-style: italic;
+      .custom-arc-fixed-end { flex: 0 0 88px; opacity: .5; font-style: italic;
                          white-space: nowrap; }
-      .rules-fixed-name { flex: 1 1 120px; min-width: 0; opacity: .75; }
-      .rules-fixed-auto { flex: 0 0 50px; }
-      .rules-reason { flex: 1 0 100%; color: #e0a020; opacity: .9; padding-left: 2px; }
-      .rules-add { margin-top: 8px; }
-      .rules-foot { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+      .custom-arc-fixed-name { flex: 1 1 120px; min-width: 0; opacity: .75; }
+      .custom-arc-fixed-auto { flex: 0 0 50px; }
+      .custom-arc-reason { flex: 1 0 100%; color: #e0a020; opacity: .9; padding-left: 2px; }
+      .custom-arc-add { margin-top: 8px; }
+      .custom-arc-foot { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
 
       /* The tuning panel: a LEFT RAIL, mirroring the right one. It is still
          `position: fixed` on the left edge, but `body.tuner` narrows #stage by
@@ -520,7 +520,7 @@
       .tuner-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.18rem 0; }
       /* min-width: 0 on the flex children, or an <input>'s min-content width
          (from its `size` attribute, ~177px) refuses to shrink and pushes the
-         row onto two lines. Same trap the rules panel hit. */
+         row onto two lines. Same trap the custom arcs panel hit. */
       .tuner-label { flex: 1 1 40%; min-width: 0; }
       .tuner-range { flex: 1 1 35%; min-width: 0; }
       .tuner-number { flex: 0 0 5.2rem; min-width: 0; }
@@ -616,10 +616,10 @@
          swatch and the hex readout for the row's tight 347px. */
       .theme-revert-el { flex: 0 0 auto; padding: 0.1rem 0.4rem; }
 
-      .rules-panel button, .rules-panel select,
-      .rules-panel input[type="color"] { cursor: pointer; }
-      .rules-panel button:hover:not(:disabled),
-      .rules-panel select:hover:not(:disabled) {
+      .custom-arc-panel button, .custom-arc-panel select,
+      .custom-arc-panel input[type="color"] { cursor: pointer; }
+      .custom-arc-panel button:hover:not(:disabled),
+      .custom-arc-panel select:hover:not(:disabled) {
         background: #17142b; border-color: #3d3560;
       }
       /* The per-row controls: the enable toggle, the delete cross, "+ Add
@@ -627,8 +627,8 @@
          these two only carry what is specific to each. The delete cross warms
          toward the refusal color the panel already uses for a bad row rather
          than to the alarm amber. */
-      .rules-panel .rules-delete:hover:not(:disabled) { border-color: #7201a8; }
-      .rules-panel input[type="color"]:hover:not(:disabled) { border-color: #3d3560; }
+      .custom-arc-panel .custom-arc-delete:hover:not(:disabled) { border-color: #7201a8; }
+      .custom-arc-panel input[type="color"]:hover:not(:disabled) { border-color: #3d3560; }
 
       .confirm-foot button:hover:not(:disabled) {
         background: #17142b; border-color: #3d3560;

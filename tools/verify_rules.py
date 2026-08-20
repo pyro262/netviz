@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the color rules against a real page.
+"""Prove the custom arcs against a real page.
 
 `rules.js` is three-free and its arithmetic is proved under `node --test`.
 What that cannot prove is the half that decides whether a control is real:
@@ -59,8 +59,8 @@ def live_recolor_case(page) -> bool:
       const m = await import('./js/config.js');
       // Documentation space, so nothing the synthetic feed emits collides
       // with it and the arc being measured is the one spawned here.
-      m.CONFIG.arcs.rules = [{match: '203.0.113.0/24', color: '#22d3ee'}];
-      arcs.setRules(m.CONFIG.arcs.rules);
+      m.CONFIG.arcs.custom = [{match: '203.0.113.0/24', color: '#22d3ee'}];
+      arcs.setRules(m.CONFIG.arcs.custom);
       const before = arcs.classColor('rule1').getHex();
       const ev = {k: 'flow', s: '203.0.113.9', d: '198.51.100.7',
                   sll: [-40, 150], dll: [-45, 160], b: 1000};
@@ -70,8 +70,8 @@ def live_recolor_case(page) -> bool:
       if (!live.length) return {error: 'no arc took the rule color on spawn'};
 
       const t0 = performance.now();
-      m.CONFIG.arcs.rules = [{match: '203.0.113.0/24', color: '#ff00ff'}];
-      const out = arcs.setRules(m.CONFIG.arcs.rules);
+      m.CONFIG.arcs.custom = [{match: '203.0.113.0/24', color: '#ff00ff'}];
+      const out = arcs.setRules(m.CONFIG.arcs.custom);
       const after = arcs.classColor('rule1').getHex();
       // 100ms is the same bound the settings catalogue was verified against.
       await new Promise((r) => setTimeout(r, 100));
@@ -99,8 +99,8 @@ def block_immunity_case(page) -> bool:
     result = page.evaluate("""async () => {
       const {arcs} = window.__netviz;
       const m = await import('./js/config.js');
-      m.CONFIG.arcs.rules = [{match: '198.51.100.0/24', color: '#00ff00'}];
-      arcs.setRules(m.CONFIG.arcs.rules);
+      m.CONFIG.arcs.custom = [{match: '198.51.100.0/24', color: '#00ff00'}];
+      arcs.setRules(m.CONFIG.arcs.custom);
       const ruleHex = arcs.classColor('rule1').getHex();
       const blockHex = arcs.classColor('block').getHex();
       const cl = await import('./js/classify.js');
@@ -132,12 +132,12 @@ def refusal_case(page) -> bool:
     result = page.evaluate("""async () => {
       const {arcs} = window.__netviz;
       const m = await import('./js/config.js');
-      m.CONFIG.arcs.rules = [
+      m.CONFIG.arcs.custom = [
         {match: '203.0.113.0/24', color: '#22d3ee'},
         {match: 'nonsense', color: '#ffffff'},
         {match: '198.51.100.0/24', color: '#ff8800'},
       ];
-      const out = arcs.setRules(m.CONFIG.arcs.rules);
+      const out = arcs.setRules(m.CONFIG.arcs.custom);
       const cl = await import('./js/classify.js');
       // The third row is the SECOND surviving rule, so an event matching it
       // must draw in rule2's color -- the refusal shifts the ones after it
@@ -168,8 +168,8 @@ def country_case(page) -> bool:
       const m = await import('./js/config.js');
       // DE is one of the synthetic feed's ambient countries. On a real
       // deployment this case is about whatever that feed carries.
-      m.CONFIG.arcs.rules = [{match: 'DE', color: '#ff00ff'}];
-      arcs.setRules(m.CONFIG.arcs.rules);
+      m.CONFIG.arcs.custom = [{match: 'DE', color: '#ff00ff'}];
+      arcs.setRules(m.CONFIG.arcs.custom);
       const want = arcs.classColor('rule1').getHex();
       const t0 = performance.now();
       while (performance.now() - t0 < cap * 1000) {

@@ -7,9 +7,9 @@ import { AUTO } from '../../netviz/static/js/elements.js';
 
 // ---------------------------------------------------------------- the DOM --
 //
-// Same discipline as rules_panel.test.mjs's fake: createElement, classList,
+// Same discipline as custom_arcs_panel.test.mjs's fake: createElement, classList,
 // append/appendChild/replaceChildren, addEventListener/dispatch, never
-// innerHTML. Extended with a fake `document.body`, which rules_panel.test.mjs
+// innerHTML. Extended with a fake `document.body`, which custom_arcs_panel.test.mjs
 // never needed -- theme_panel.js toggles `document.body.classList` the same
 // way settings_panel.js does, and a DOM fake that omits it would let a panel
 // that crashes on a real page pass here anyway, which is exactly the kind of

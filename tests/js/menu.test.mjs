@@ -137,17 +137,17 @@ test('Settings is present but disabled until the panel exists', () => {
   assert.equal(byId(menuModel({ ...STATE, settingsPanel: true }), 'settings').enabled, true);
 });
 
-test('the menu offers the rules editor', () => {
-  const ids = menuModel({ ...STATE, rulesPanel: true }).map((i) => i.id);
-  assert.ok(ids.includes('rules'));
+test('the menu offers the custom-arcs editor', () => {
+  const ids = menuModel({ ...STATE, customArcsPanel: true }).map((i) => i.id);
+  assert.ok(ids.includes('customArcs'));
 });
 
 test('the rules editor is absent, not disabled, when input is locked', () => {
   // On a public display the rules are configuration, and the lock exists to
   // say configuring is not on offer. A greyed-out row advertises a control
   // nobody can use.
-  const ids = menuModel({ ...STATE, rulesPanel: false }).map((i) => i.id);
-  assert.equal(ids.includes('rules'), false);
+  const ids = menuModel({ ...STATE, customArcsPanel: false }).map((i) => i.id);
+  assert.equal(ids.includes('customArcs'), false);
 });
 
 test('the menu offers the theme panel', () => {
@@ -156,7 +156,7 @@ test('the menu offers the theme panel', () => {
 });
 
 test('the theme row is absent, not disabled, with no themePanel to open', () => {
-  // Same rule as rulesPanel and settingsPanel: a menu built without one must
+  // Same rule as customArcsPanel and settingsPanel: a menu built without one must
   // not draw a row whose click handler is guarded out.
   const ids = menuModel({ ...STATE, themePanel: false }).map((i) => i.id);
   assert.equal(ids.includes('theme'), false);
@@ -386,12 +386,12 @@ test('open draws the menu when input.lock is not set', () => {
   });
 });
 
-test('a menu built with no rulesPanel draws no Color rules row', () => {
-  // createMenu({ rulesPanel }) is optional -- some callers (this test suite
+test('a menu built with no customArcsPanel draws no Custom arcs row', () => {
+  // createMenu({ customArcsPanel }) is optional -- some callers (this test suite
   // included, until this fix) build a menu without one. `open()` used to
-  // hardcode `rulesPanel: true` into the state it hands menuModel, so that
-  // menu drew a row whose click handler (`if (item.id === 'rules' &&
-  // rulesPanel) rulesPanel.open()`) was permanently guarded out -- a
+  // hardcode `customArcsPanel: true` into the state it hands menuModel, so that
+  // menu drew a row whose click handler (`if (item.id === 'customArcs' &&
+  // customArcsPanel) customArcsPanel.open()`) was permanently guarded out -- a
   // control that is drawn but can never do anything.
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
@@ -399,11 +399,11 @@ test('a menu built with no rulesPanel draws no Color rules row', () => {
       rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
       root: dom.root,
-      // rulesPanel intentionally omitted
+      // customArcsPanel intentionally omitted
     });
     menu.open(10, 10, { x: 0, y: 0 });
     function find(node) {
-      if (node.getAttribute && node.getAttribute('data-id') === 'rules') return node;
+      if (node.getAttribute && node.getAttribute('data-id') === 'customArcs') return node;
       for (const c of node.children || []) { const r = find(c); if (r) return r; }
       return null;
     }
@@ -562,7 +562,7 @@ test('a cancel on the tuning panel confirm leaves it open, with its changes pend
 });
 
 test('an open/close cycle leaves no listener behind on document or window, with every panel wired', () => {
-  // The plain "no listener behind" case (below) never wires a rulesPanel,
+  // The plain "no listener behind" case (below) never wires a customArcsPanel,
   // settingsPanel or themePanel in at all -- this proves the new three-way
   // closeOtherPanelsThen() plumbing does not itself leak a document/window
   // listener across an ordinary open/close that never even reaches it.
@@ -571,7 +571,7 @@ test('an open/close cycle leaves no listener behind on document or window, with 
     const menu = createMenu({
       rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
-      rulesPanel: { open: () => {}, close: () => {}, isOpen: () => false },
+      customArcsPanel: { open: () => {}, close: () => {}, isOpen: () => false },
       settingsPanel: {
         open: () => {}, close: () => {}, requestClose: (cb) => { if (cb) cb(); }, isOpen: () => false,
       },
@@ -598,14 +598,14 @@ test('open draws exactly the rows menuModel describes, not just SOMETHING', () =
   // against menuModel's own output for the equivalent state.
   const dom = fakeDom();
   withFakeGlobals(dom, () => {
-    // A rulesPanel IS supplied here -- createMenu draws the "Color rules"
-    // row only when it has one (state.rulesPanel is `!!rulesPanel`, not a
+    // A customArcsPanel IS supplied here -- createMenu draws the "Custom arcs"
+    // row only when it has one (state.customArcsPanel is `!!customArcsPanel`, not a
     // hardcoded true), or a menu built without a panel would draw a row
     // whose click handler is guarded out and does nothing.
     const menu = createMenu({
       rig: { pointAt: () => null, lookHere: () => {} },
       settings: { apply: () => {} },
-      rulesPanel: { open: () => {}, isOpen: () => false },
+      customArcsPanel: { open: () => {}, isOpen: () => false },
       root: dom.root,
     });
     menu.open(10, 10, { x: 0, y: 0 });
@@ -627,7 +627,7 @@ test('open draws exactly the rows menuModel describes, not just SOMETHING', () =
       // menuModel's own `!!state.layersExpanded` treats undefined as false.
       canLookHere: false,
       settingsPanel: false,
-      rulesPanel: true,
+      customArcsPanel: true,
     };
     const expected = [];
     for (const item of menuModel(expectedState)) {
@@ -1213,7 +1213,7 @@ test('a menu built with no `preview` option attaches no hover listeners and beha
 //
 // The menu was the one surface with no hover description at all -- the
 // tuning panel (`settings_panel.js`) sets `row.title = spec.help` and
-// `rules_panel.js` does the same, so a person could change a color rule or a
+// `custom_arcs_panel.js` does the same, so a person could change a color rule or a
 // bloom setting and read why, but flipping a layer here or resetting the
 // display had nothing. This closes that gap with the SAME native-tooltip
 // mechanism (`row.title`), not a bespoke styled one.
@@ -1337,9 +1337,9 @@ test('the rail and Test mode rows carry a title from their own schema paths', ()
   assert.equal(testMode.title, firstSentence(entry('menu.testMode').help));
 });
 
-test('every action row -- Look here, Color rules, Settings, Reset -- has a hand-written one-sentence title', () => {
-  const model = menuModel({ ...STATE, rulesPanel: true, canReset: true });
-  for (const id of ['lookHere', 'rules', 'settings', 'reset']) {
+test('every action row -- Look here, Custom arcs, Settings, Reset -- has a hand-written one-sentence title', () => {
+  const model = menuModel({ ...STATE, customArcsPanel: true, canReset: true });
+  for (const id of ['lookHere', 'customArcs', 'settings', 'reset']) {
     const item = byId(model, id);
     assert.ok(item, `no row for ${id}`);
     assert.ok(item.title && item.title.length > 0, `${id} row has no title`);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { panelRows, readyRules, createRulesPanel, MATCH_FORMS } from '../../netviz/static/js/rules_panel.js';
+import { panelRows, readyRules, createCustomArcsPanel, MATCH_FORMS } from '../../netviz/static/js/custom_arcs_panel.js';
 import { parseRule } from '../../netviz/static/js/rules.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
 
@@ -100,7 +100,7 @@ test('a rule without gain/bloomScale does not acquire them', () => {
 // Minimal fake, same discipline as menu.test.mjs's: createElement,
 // classList, append/appendChild/replaceChildren, addEventListener/dispatch,
 // never innerHTML. Extended with querySelector (class-only, depth-first) and
-// a plain writable `value`/`textContent`, which rules_panel.js's DOM half
+// a plain writable `value`/`textContent`, which custom_arcs_panel.js's DOM half
 // needs and menu.js's never did.
 
 function fakeDom() {
@@ -198,16 +198,16 @@ test('typing in the match field does not rebuild the row -- the input node stays
   try {
     withFakeGlobals(dom, () => {
       const applied = [];
-      const panel = createRulesPanel({
+      const panel = createCustomArcsPanel({
         settings: { apply: (patch) => { applied.push(patch); return { rejected: [] }; } },
         root: dom.root,
       });
       panel.open();
-      const before = dom.root.querySelector('.rules-match');
-      assert.ok(before, 'no .rules-match rendered');
+      const before = dom.root.querySelector('.custom-arc-match');
+      assert.ok(before, 'no .custom-arc-match rendered');
       before.value = '10.20.50.0/24';
       before.dispatch('input', {});
-      const after = dom.root.querySelector('.rules-match');
+      const after = dom.root.querySelector('.custom-arc-match');
       assert.equal(after, before, 'the match input was replaced by a new node');
       // Live validation still fired on the keystroke. Opening the panel does
       // NOT call settings.apply on its own -- only an actual edit does, so
@@ -238,7 +238,7 @@ test('opening the panel alone never calls settings.apply -- only an edit does', 
   try {
     withFakeGlobals(dom, () => {
       const applied = [];
-      const panel = createRulesPanel({
+      const panel = createCustomArcsPanel({
         settings: { apply: (patch) => { applied.push(patch); return { rejected: [] }; } },
         root: dom.root,
       });
@@ -247,7 +247,7 @@ test('opening the panel alone never calls settings.apply -- only an edit does', 
         'opening the panel called settings.apply with no edit made');
 
       // An actual edit still applies, proving the gate is not just stuck off.
-      const match = dom.root.querySelector('.rules-match');
+      const match = dom.root.querySelector('.custom-arc-match');
       match.value = 'FR';
       match.dispatch('input', {});
       assert.ok(applied.length >= 1, 'an edit after opening did not apply');
@@ -263,16 +263,16 @@ test('adding a row is a structural change and does rebuild the list', () => {
   CONFIG.arcs.custom = [{ match: 'DE', color: '#22d3ee' }];
   try {
     withFakeGlobals(dom, () => {
-      const panel = createRulesPanel({
+      const panel = createCustomArcsPanel({
         settings: { apply: () => ({ rejected: [] }) },
         root: dom.root,
       });
       panel.open();
-      const before = dom.root.querySelector('.rules-match');
-      const addBtn = dom.root.querySelector('.rules-add');
-      assert.ok(addBtn, 'no .rules-add rendered');
+      const before = dom.root.querySelector('.custom-arc-match');
+      const addBtn = dom.root.querySelector('.custom-arc-add');
+      assert.ok(addBtn, 'no .custom-arc-add rendered');
       addBtn.dispatch('click', {});
-      const after = dom.root.querySelector('.rules-match');
+      const after = dom.root.querySelector('.custom-arc-match');
       assert.notEqual(after, before, 'a structural change did not rebuild the row');
     });
   } finally {
@@ -294,13 +294,13 @@ test('the enabled toggle survives more than one click', () => {
   try {
     withFakeGlobals(dom, () => {
       const applied = [];
-      const panel = createRulesPanel({
+      const panel = createCustomArcsPanel({
         settings: { apply: (patch) => { applied.push(patch); return { rejected: [] }; } },
         root: dom.root,
       });
       panel.open();
-      const toggle = dom.root.querySelector('.rules-toggle');
-      assert.ok(toggle, 'no .rules-toggle rendered');
+      const toggle = dom.root.querySelector('.custom-arc-toggle');
+      assert.ok(toggle, 'no .custom-arc-toggle rendered');
       assert.ok(toggle.className.includes(' on'), 'row did not start enabled');
 
       toggle.dispatch('click', {});
@@ -359,4 +359,20 @@ test('every legend example is documentation space, not somebody\'s network', () 
     assert.ok(ALLOWED.some((re) => re.test(addr)),
               `legend example ${addr} is not in documentation or private space`);
   }
+});
+
+test('the panel is titled and labeled in the new vocabulary', () => {
+  const dom = fakeDom();
+  withFakeGlobals(dom, () => {
+    const applied = [];
+    const panel = createCustomArcsPanel({
+      settings: { apply: (p) => { applied.push(p); return { applied: Object.keys(p), rejected: [] }; } },
+      root: dom.root,
+    });
+    panel.open();
+    assert.equal(dom.root.querySelector('.custom-arc-title').textContent, 'Custom arcs');
+    assert.equal(dom.root.querySelector('.custom-arc-add').textContent, '+ Add custom arc');
+    assert.equal(applied.length, 0, 'opening alone writes nothing');
+    panel.close();
+  });
 });

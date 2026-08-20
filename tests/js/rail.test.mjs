@@ -327,12 +327,12 @@ test('versionLabel shows nothing rather than guessing', () => {
   assert.equal(versionLabel({ version: 42 }), '');
 });
 
-test('the legend rides at the top of COLOR RULES, naming what each arc means', () => {
+test('the legend rides at the top of CUSTOM ARCS, naming what each arc means', () => {
   // "What am I looking at" is the question the wall cannot answer on its own.
   // The rail already carries a swatch per COLOR RULE; the two built-in
   // classes had none, so these two were the only colors on the display with
   // nothing anywhere saying what they meant.
-  const rules = { id: 'rules', title: 'COLOR RULES', note: 'SINCE LOAD',
+  const rules = { id: 'rules', title: 'CUSTOM ARCS', note: 'SINCE LOAD',
                   rows: [{ label: 'storj', value: '9.0/min', swatch: '#22d3ee' }] };
   const p = panels(SNAPSHOT, rules, { block: '#f0b000', flow: '#9112a1' });
   const legend = p.find((x) => x.id === 'rules');

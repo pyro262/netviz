@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createConfirm } from '../../netviz/static/js/confirm.js';
 
-// Same minimal DOM fake as menu.test.mjs and rules_panel.test.mjs: createElement,
+// Same minimal DOM fake as menu.test.mjs and custom_arcs_panel.test.mjs: createElement,
 // append/remove, addEventListener/dispatch, querySelector by class. Never
 // innerHTML, because the module under test never uses it either.
 function fakeDom() {

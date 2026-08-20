@@ -23,7 +23,7 @@ import { createClassCounter, ruleKey } from './classcount.js';
 import { mountUpdateMark } from './update.js';
 import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
-import { createRulesPanel } from './rules_panel.js';
+import { createCustomArcsPanel } from './custom_arcs_panel.js';
 import { createSettingsPanel } from './settings_panel.js';
 import { createThemePanel } from './theme_panel.js';
 import { createConfirm } from './confirm.js';
@@ -536,7 +536,7 @@ async function boot() {
   // sibling of `#stage`, so the rail's numbers painted straight over the
   // menu's opaque background and it read as transparent. Raising the menu's
   // z-index cannot fix that (measured: 9999 changed nothing).
-  const rulesPanel = createRulesPanel({ settings, root: document.body });
+  const customArcsPanel = createCustomArcsPanel({ settings, root: document.body });
   // Same mount argument as the rules panel: document.body, never #stage.
   //
   // onLayout is resize(), and the panel calls it exactly once per toggle. The
@@ -626,11 +626,11 @@ async function boot() {
     });
   } : null;
   const menu = createMenu({
-    rig, settings, preview, rulesPanel, settingsPanel, themePanel, onReset,
+    rig, settings, preview, customArcsPanel, settingsPanel, themePanel, onReset,
     root: document.body,
   });
   input = startInput({
-    canvas: renderer.domElement, rig, menu, rulesPanel, settingsPanel, themePanel,
+    canvas: renderer.domElement, rig, menu, customArcsPanel, settingsPanel, themePanel,
   });
   ctx.input = input;
   // The rest of the stored patch (arcs.custom and rail.enabled were already
@@ -654,7 +654,7 @@ async function boot() {
   window.__netviz = {
     arcs, globe, ripples, aurora, clouds, lightning, renderer, camera, scene, rig, stars,
     milkyway, input,
-    settings, menu, rulesPanel, settingsPanel,
+    settings, menu, customArcsPanel, settingsPanel,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */
     project(lat, lon) {

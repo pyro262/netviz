@@ -889,7 +889,7 @@ export function createSettingsPanel({ preview, storage, root, onClose, onLayout,
    *  button is the obvious one. The other is menu.js, which enforces mutual
    *  exclusion between the two panels by closing this one before opening the
    *  color-rules panel -- and while that call was the force-close, an operator
-   *  with pending changes who picked "Color rules..." had them DISCARDED
+   *  with pending changes who picked "Custom arcs..." had them DISCARDED
    *  SILENTLY, which is exactly the case the Close question was written for,
    *  reached by a door that skipped it.
    *
