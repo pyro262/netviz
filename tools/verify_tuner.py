@@ -1136,10 +1136,28 @@ def case9_randomize(page, cx, cy) -> bool:
     look, held = after["look"], after["held"]
     inside = [p for p, b in after["bounds"].items()
               if not (b["min"] - 1e-9 <= after["vals"][p] <= b["max"] + 1e-9)]
-    # Every non-slider must be untouched: the color row's luminance cap refuses
-    # rather than clamps, so a randomizer reaching it would read as broken.
+    # NON-SLIDERS MAY MOVE NOW, and exactly which ones is the assertion.
+    #
+    # Until 0.7.0 this read "every non-slider must be untouched", on the ground
+    # that the one color row on the panel -- `appearance.background` -- has a
+    # luminance cap that REFUSES rather than clamps, so a randomizer aimed at it
+    # would spend half its rolls being rejected and read as a broken button.
+    # That is still true of the sky, and the sky is still excluded.
+    #
+    # What changed is that the panel absorbed the theme, so Randomize now rolls
+    # the twenty catalogue colors and the surface tints as well -- through
+    # `randomizePatch`, whose whole design is that every value is valid BY
+    # CONSTRUCTION rather than by rolling and hoping. So the check is no longer
+    # "nothing else moved" but "nothing moved that the roller does not declare",
+    # read from `RANDOMIZE_PATHS` itself rather than listed here.
+    declared = page.evaluate(
+        "async () => (await import('./js/randomize_color.js')).RANDOMIZE_PATHS")
     others = [p for p in before
-              if p not in after["bounds"] and after["vals"][p] != before[p]]
+              if p not in after["bounds"] and after["vals"][p] != before[p]
+              and p not in declared]
+    # The sky specifically: it is the one path that refuses rather than clamps,
+    # and it must still be out of scope however much else came in.
+    sky_moved = "appearance.background" in declared
     moved = sum(1 for p in look if after["vals"][p] != before[p])
     # The half that catches a regression back to randomizing everything.
     strayed = [p for p in held if after["vals"][p] != before[p]]
@@ -1174,12 +1192,17 @@ def case9_randomize(page, cx, cy) -> bool:
           # and AGAIN on 2026-08-18: the numbers were still 36/9 while the
           # panel had grown to 41/9 across the theme work, and the Milky Way
           # band's four rows then took it to 44/10. Moving the two built-in
-          # arc colors out to the color-rules panel took it to 42/10.
-          and len(look) == 42 and len(held) == 10
+          # arc colors out to the color-rules panel took it to 42/10, and
+          # 0.7.0's five rail text scales take it to 47/10.
+          and not sky_moved
+          and len(look) == 47 and len(held) == 10
           and moved >= len(look) - 2
-          # Only the look rows may be marked, so the mark count is bounded on
-          # BOTH sides -- a panel that dirtied all 48 fails here as well.
-          and len(look) - 2 <= after["dirty"] <= len(look)
+          # Bounded on BOTH sides -- a panel that dirtied every row fails here
+          # as well. The upper bound is the look sliders PLUS the declared
+          # color paths that have a row on this panel, because 0.7.0's
+          # Randomize rolls those too and each one marks its row.
+          and len(look) - 2 <= after["dirty"] <= len(look) + len(
+              [p for p in declared if p in before])
           and reverted_click and revert_dialog and revert_answered
           and not restored and store_after == store_base)
     return report(
@@ -1187,7 +1210,8 @@ def case9_randomize(page, cx, cy) -> bool:
         f"clicked={clicked} asked={dialog} (must be False); {moved}/{len(look)} look "
         f"sliders moved, {len(held)} excluded rows moved={strayed or 'none'}, "
         f"{after['dirty']} rows marked dirty, out of bounds={inside}, "
-        f"non-sliders touched={others}, note={after['note']!r}; after Revert "
+        f"undeclared non-sliders touched={others} (sky in scope={sky_moved}, "
+        f"must be False), note={after['note']!r}; after Revert "
         f"(asked={revert_dialog}): rows still changed={restored}, store unchanged="
         f"{store_after == store_base}")
 

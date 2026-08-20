@@ -149,8 +149,12 @@ def open_menu_and_click(page, data_id: str, cx: float, cy: float) -> bool:
     )
 
 
-def theme_panel_state(page):
+def merged_panel_state(page):
     """The merged settings panel, plus its Theme section.
+
+    Named for what it reads, not for what used to be here: a helper called
+    `theme_panel_state` in a file where no theme panel exists is the same stale
+    signpost `4280b43` fixed in a docstring.
 
     0.7.0 deleted `theme_panel.js`: the theme is two collapsible categories of
     the ONE panel now, so there is no second root to look for and no
@@ -308,7 +312,7 @@ def reset_theme_defaults(page, keys):
     page.wait_for_timeout(150)
 
 
-def open_theme_panel(page, cx, cy) -> bool:
+def open_panel_at_theme(page, cx, cy) -> bool:
     """Open the merged panel. Its Theme section is expanded on every fresh
     open (see settings_panel.js's openGroups), so there is nothing to click
     after it -- but the section is asserted open rather than assumed, because
@@ -316,7 +320,7 @@ def open_theme_panel(page, cx, cy) -> bool:
     them by position."""
     clicked = open_menu_and_click(page, "settings", cx, cy)
     page.wait_for_timeout(400)
-    if not (clicked and panel_is_really_open(theme_panel_state(page))):
+    if not (clicked and panel_is_really_open(merged_panel_state(page))):
         return False
     return bool(page.evaluate(
         """() => {
@@ -613,7 +617,7 @@ def case1_geometry(page, cx, cy) -> bool:
         n0 = calls()
         clicked = open_menu_and_click(page, "settings", cx, cy)
         page.wait_for_timeout(600)
-        state = theme_panel_state(page)
+        state = merged_panel_state(page)
         opened = measure()
         n_open = calls() - n0
 
@@ -687,7 +691,7 @@ def case2_theme_open_others_closed(page, cx, cy) -> bool:
           return out;
         }""")
 
-    if not open_theme_panel(page, cx, cy):
+    if not open_panel_at_theme(page, cx, cy):
         return report(name, False, "could not open the merged panel")
     first = read_groups()
 
@@ -700,7 +704,7 @@ def case2_theme_open_others_closed(page, cx, cy) -> bool:
     after_click = read_groups()
     close_any_open_panel(page)
     page.wait_for_timeout(300)
-    if not open_theme_panel(page, cx, cy):
+    if not open_panel_at_theme(page, cx, cy):
         return report(name, False, "could not reopen the merged panel")
     second = read_groups()
     close_any_open_panel(page)
@@ -773,7 +777,7 @@ def case3_presets_recolor(page, cx, cy) -> bool:
     are secretly the same ramp; it does not assert that any two are telling
     apart by eye, because for that pair it would be false. The 5.08 this
     file once recorded for magma/inferno was arc noise, not separation."""
-    ok_open = open_theme_panel(page, cx, cy)
+    ok_open = open_panel_at_theme(page, cx, cy)
     if not ok_open:
         return report("3: each preset really recolors the globe", False,
                       "could not open the panel")
@@ -866,7 +870,7 @@ def case4_override_survives_auto_does_not(page, cx, cy) -> bool:
     OVERRIDE_KEY, AUTO_KEY = "coastline", "admin1"
     oi, ai = keys.index(OVERRIDE_KEY), keys.index(AUTO_KEY)
     reset_theme_defaults(page, keys)
-    if not open_theme_panel(page, cx, cy):
+    if not open_panel_at_theme(page, cx, cy):
         return report("4: an override survives a theme change, an auto "
                       "element does not", False, "could not open the panel")
 
@@ -918,7 +922,7 @@ def case5_revert_el_returns_to_theme(page, cx, cy) -> bool:
     KEY = "bordersWorld"
     idx = keys.index(KEY)
     reset_theme_defaults(page, keys)
-    if not open_theme_panel(page, cx, cy):
+    if not open_panel_at_theme(page, cx, cy):
         return report("5: the per-row undo returns one element to the theme "
                       "color", False, "could not open the panel")
 
@@ -983,7 +987,7 @@ def case6_randomize_then_close_asks(page, cx, cy) -> bool:
     healthy. Restored and re-run clean before this file was finished."""
     keys = element_keys(page)
     reset_theme_defaults(page, keys)
-    if not open_theme_panel(page, cx, cy):
+    if not open_panel_at_theme(page, cx, cy):
         return report("6: Randomize dirties every row, and Close then asks", False,
                       "could not open the panel")
 
@@ -1117,7 +1121,7 @@ def case8_stop_edit_forks_then_restores(page, cx, cy) -> bool:
     finished."""
     keys = element_keys(page)
     reset_theme_defaults(page, keys)
-    if not open_theme_panel(page, cx, cy):
+    if not open_panel_at_theme(page, cx, cy):
         return report("8: editing a stop forks to custom, re-picking the "
                       "preset restores it intact", False, "could not open the panel")
 
@@ -1184,7 +1188,7 @@ def case9_saved_theme_survives_reload(page, cx, cy) -> bool:
     page.evaluate("(k) => window.localStorage.removeItem(k)", "netviz.themes.v1")
     reset_theme_defaults(page, element_keys(page))
 
-    if not open_theme_panel(page, cx, cy):
+    if not open_panel_at_theme(page, cx, cy):
         return report(name, False, "could not open the merged panel")
 
     # A color to recognise on the far side of the reload.
@@ -1211,7 +1215,7 @@ def case9_saved_theme_survives_reload(page, cx, cy) -> bool:
     page.wait_for_function("window.__netvizReady === true", timeout=20_000)
     page.wait_for_timeout(1500)
 
-    if not open_theme_panel(page, cx, cy):
+    if not open_panel_at_theme(page, cx, cy):
         return report(name, False, "could not reopen the panel after the reload")
     options = page.evaluate(
         "() => [...document.querySelector('.theme-preset').children].map((o) => o.value)")
