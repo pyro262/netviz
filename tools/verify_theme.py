@@ -85,7 +85,6 @@ a verifier that cannot fail is indistinguishable from a clean run.
 """
 import argparse
 import colorsys
-import io
 import os
 import re
 import subprocess
@@ -95,13 +94,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-try:
-    from PIL import Image, ImageStat
-except ImportError as e:  # pragma: no cover -- environment problem, not a test failure
-    print("verify_theme.py needs Pillow to decode the sampled regions "
-          "(pip install pillow) -- same tool-only dependency tools/bake_geo.py "
-          "already assumes.", file=sys.stderr)
-    raise
+# Pillow is NOT needed any more: this file used to decode PNG screenshots and
+# now reads the drawing buffer directly, so there is nothing to decode.
 
 REPO = Path(__file__).resolve().parent.parent
 # Its own port. verify_rules.py and verify_menu.py share 8499, verify_settings
@@ -408,30 +402,62 @@ def set_gradient_stop(page, idx, hex_value):
 
 
 # ----------------------------------------------------------- pixel sampling --
-# Case 3 only. Playwright's `page.screenshot(clip=...)` goes through the
-# browser's own compositor (CDP `Page.captureScreenshot`), not a JS-side
-# `canvas.getImageData()` -- so this works whether or not the renderer was
-# built with `preserveDrawingBuffer`, which it is not (main.js:
-# `new THREE.WebGLRenderer({canvas, antialias: true})`, no third option).
-
-# Playwright's default screenshot timeout is 30s, which is NOT enough here and
-# has nothing to do with what this file changed. Measured on this host,
-# 2560x1440 under SwiftShader with the live scene running: 14.1s for the first
-# capture and 6.5-7.8s for each one after, with the settings panel open or
-# closed making no difference (open was FASTER on two of three shots). A single
-# shot crossing 30s fails the whole run with a Page.screenshot timeout and no
-# case result at all, which reads as a broken verifier rather than a slow
-# compositor. 120s is four times the slowest measurement.
-SCREENSHOT_TIMEOUT_MS = 120_000
-
-
+# Case 3 only.
+#
+# NOT `page.screenshot`, AND THIS IS NOT A PREFERENCE. Measured on this host,
+# 2560x1440 under SwiftShader with the live scene running: a clipped capture
+# costs 7-20s, and the compositor STOPS ANSWERING ALTOGETHER after four to ten
+# of them in one browser session -- with a 350ms gap or a 2000ms one, clipped or
+# full-page, on an idle machine or a loaded one. Case 3 needs 25 captures, so it
+# hung this file three times running, taking the whole run down with a
+# Page.screenshot timeout and no case results at all. Raising the timeout to
+# 120s did not help, because it is a stall rather than slowness.
+#
+# So the pixels come off the GPU instead, through the one-shot
+# `window.__netvizGrab` callback main.js invokes immediately after
+# `composer.render()` -- while the default framebuffer is still valid, which is
+# the only instant a renderer built without `preserveDrawingBuffer` can be read
+# back from JavaScript at all. Same pixels, no compositor, and a capture costs
+# about a frame. `tools/verify_aurora.py` uses the same hook.
+#
+# The buffer STAYS IN THE PAGE: at 2560x1440 it is 14.7 million bytes, and
+# handing that to Python as JSON takes longer than the render it came from. The
+# mean is computed in JavaScript and only three numbers cross.
 def sample_mean_rgb(page, box):
-    """Mean RGB of every pixel in `box` (a Playwright clip rect), 0..255 per
-    channel, via a real screenshot decoded with Pillow."""
-    data = page.screenshot(clip=box, timeout=SCREENSHOT_TIMEOUT_MS)
-    img = Image.open(io.BytesIO(data)).convert("RGB")
-    r, g, b = ImageStat.Stat(img).mean
-    return (r, g, b)
+    """Mean RGB over `box` (a clip rect in CSS pixels), 0..255 per channel."""
+    page.evaluate("""() => {
+      window.__grabDone = false;
+      window.__netvizGrab = (gl) => {
+        const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+        const buf = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        window.__grabBuf = {w, h, px: buf};
+        window.__grabDone = true;
+      };
+    }""")
+    page.wait_for_function("window.__grabDone === true", timeout=20_000)
+    return tuple(page.evaluate("""(box) => {
+      const {w, h, px} = window.__grabBuf;
+      // The clip rect is in CSS pixels with y DOWN from the canvas's top; the
+      // buffer is in device pixels with y UP from its bottom. Both conversions
+      // are needed and getting either wrong samples a different part of the
+      // frame -- which would still return plausible numbers.
+      const c = document.querySelector('canvas').getBoundingClientRect();
+      const sx = w / c.width, sy = h / c.height;
+      const x0 = Math.max(0, Math.round((box.x - c.x) * sx));
+      const x1 = Math.min(w, Math.round((box.x - c.x + box.width) * sx));
+      const yTop = Math.round((box.y - c.y) * sy);
+      const y1 = Math.min(h, h - yTop);
+      const y0 = Math.max(0, h - Math.round((box.y - c.y + box.height) * sy));
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const i = (y * w + x) * 4;
+          r += px[i]; g += px[i + 1]; b += px[i + 2]; n += 1;
+        }
+      }
+      return n ? [r / n, g / n, b / n] : [0, 0, 0];
+    }""", box))
 
 
 def rgb_to_hsv255(rgb):
