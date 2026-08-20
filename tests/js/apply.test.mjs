@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createApplier, HANDLERS, ARC_REBUILD_KEYS } from '../../netviz/static/js/apply.js';
+import { createApplier, HANDLERS, ARC_REBUILD_KEYS, resolveTheme } from '../../netviz/static/js/apply.js';
 import { paths, entry } from '../../netviz/static/js/settings.js';
 import { validateZoomRange } from '../../netviz/static/js/orbit.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
@@ -510,4 +510,25 @@ test('a rail scale writes a custom property and asks for a re-fit', () => {
   assert.equal(log.filter((l) => l === 'rail.refit').length, 1);
   assert.equal(log.filter((l) => l === 'resize').length, 1,
                'exactly one relayout, however many keys asked');
+});
+
+// ---------------------------------------------------------------------------
+// 0.7.0: a stored theme naming a saved look that was later deleted.
+
+test('a stored theme that still exists resolves to itself', () => {
+  assert.deepEqual(resolveTheme('wall night', { names: ['wall night'], hasCustomPaths: true }),
+                   { id: 'wall night', substituted: false, why: null });
+});
+
+test('a deleted theme falls back to custom when its colors are still stored', () => {
+  const out = resolveTheme('gone', { names: [], hasCustomPaths: true });
+  assert.equal(out.id, 'custom');
+  assert.equal(out.substituted, true);
+  assert.match(out.why, /gone/);
+});
+
+test('a deleted theme with nothing else stored falls back to the shipped default', () => {
+  const out = resolveTheme('gone', { names: [], hasCustomPaths: false });
+  assert.equal(out.id, 'plasma');
+  assert.equal(out.substituted, true);
 });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   SCHEMA, paths, entry, defaultOf, coerce, validate, planApply, settingLabel,
+  setThemeLibrary,
   relativeLuminance, maxBackgroundLuminance,
 } from '../../netviz/static/js/settings.js';
 import { cfg } from '../../netviz/static/js/config.js';
@@ -568,4 +569,24 @@ test('the five rail scales are declared with the widest range the operator chose
       'a scale write has to reach the same re-fit path a resize does');
   }
   assert.equal(entry('rail.scale'), null, 'a path is a leaf or a parent, never both');
+});
+
+// ---------------------------------------------------------------------------
+// 0.7.0: a saved theme's NAME is a valid value for appearance.theme.
+
+test('a saved name validates once the library declares it', () => {
+  setThemeLibrary([]);
+  assert.equal(coerce('appearance.theme', 'wall night').ok, false);
+  setThemeLibrary(['wall night']);
+  assert.equal(coerce('appearance.theme', 'wall night').ok, true);
+  assert.equal(coerce('appearance.theme', 'plasma').ok, true, 'built-ins still valid');
+  assert.equal(coerce('appearance.theme', 'nope').ok, false);
+  setThemeLibrary([]);
+});
+
+test('the five built-ins and custom can never be shadowed away', () => {
+  setThemeLibrary([]);
+  for (const id of ['plasma', 'viridis', 'magma', 'inferno', 'cividis', 'custom']) {
+    assert.equal(coerce('appearance.theme', id).ok, true, id);
+  }
 });

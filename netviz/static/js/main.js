@@ -26,7 +26,8 @@ import { createMenu } from './menu.js';
 import { createCustomArcsPanel } from './custom_arcs_panel.js';
 import { createSettingsPanel } from './settings_panel.js';
 import { createConfirm } from './confirm.js';
-import { coerce, settingLabel } from './settings.js';
+import { coerce, settingLabel, setThemeLibrary } from './settings.js';
+import { loadThemes, themeNames } from './themestore.js';
 import { loadPatch, loadConverted, withPersistence, clearPatch } from './rulestore.js';
 
 const GLOBE_RADIUS = 1.0;
@@ -181,6 +182,13 @@ async function boot() {
   // here, validated through the same coerce() the executor would use.
   // Everything else in the stored patch (layers.*, camera.*, ...) is applied
   // through the executor once it exists, further down.
+  // The library has to be declared to the schema BEFORE the stored patch is
+  // validated, or a display that saved a theme has that very setting refused on
+  // the boot after saving it.
+  const library = loadThemes(storage);
+  if (library.error) console.warn(`netviz: ${library.error}`);
+  setThemeLibrary(themeNames(library.themes));
+
   const stored = loadConverted(storage);
   if (stored.error) console.warn(`netviz: ${stored.error}`);
   if (Object.prototype.hasOwnProperty.call(stored.patch, 'arcs.custom')) {
@@ -630,6 +638,7 @@ async function boot() {
         ruleCount
           ? `Touch your ${ruleCount} custom arc${ruleCount === 1 ? '' : 's'} -- they stay exactly as they are.`
           : 'Touch your custom arcs -- they are kept.',
+        'Touch any theme you have saved -- they are kept.',
         'Change anything on the collector, or on any other display.',
         'Delete any traffic, history or statistics.',
       ],

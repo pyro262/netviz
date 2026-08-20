@@ -37,6 +37,30 @@ import { AUTO, isAuto } from './elements.js';
 // bloomScale into the arcs already in the air. `arcs.highlight.*` is the
 // shape every rule shares.
 
+/** The five built-ins plus `custom`. Never shrinks, whatever the library says:
+ *  a saved theme is an ADDITION to the choices, and a display whose library is
+ *  empty or unreadable must still be able to pick plasma. */
+export const BUILTIN_THEMES = ['plasma', 'viridis', 'magma', 'inferno',
+                               'cividis', 'custom'];
+
+let _themeLibrary = [];
+
+/** Point the `appearance.theme` enum at the names this display has saved.
+ *
+ *  A function rather than a constant because the set is a fact about the
+ *  BROWSER, not about the schema -- and validation has to happen against the
+ *  library as it stands when the value is applied, not as it stood at import.
+ *  main.js calls this at boot from themestore, and the panel calls it again
+ *  after every save or delete; a name is otherwise refused a moment after
+ *  being saved, which reads as the save having failed. */
+export function setThemeLibrary(names) {
+  _themeLibrary = Array.isArray(names) ? names.slice() : [];
+}
+
+export function themeChoices() {
+  return [...BUILTIN_THEMES, ..._themeLibrary.filter((n) => !BUILTIN_THEMES.includes(n))];
+}
+
 /**
  * type      bool | int | number | enum | color | list
  * min/max   required on int and number; see the tests
@@ -631,13 +655,18 @@ export const SCHEMA = {
     help: 'The filled part of every bar and sparkline on the rail.',
   },
   'appearance.theme': {
-    type: 'enum', values: ['plasma', 'viridis', 'magma', 'inferno', 'cividis',
-                           'custom'],
+    type: 'enum',
+    // A GETTER, not a snapshot: `coerce` has to read the library as it stands
+    // when the value is applied, not as it stood at module evaluation -- a
+    // theme saved a moment ago would otherwise be refused, which reads as the
+    // save having failed.
+    get values() { return themeChoices(); },
     strategy: 'uniform',
     help: 'The palette every color follows, unless you have given that one a '
         + 'color of its own. Plasma is the default and is what this display '
-        + 'has always drawn. Changing it also changes the sky, unless you '
-        + 'have set the sky yourself.',
+        + 'has always drawn. Anything you have saved appears here too. '
+        + 'Changing it also changes the sky, unless you have set the sky '
+        + 'yourself.',
   },
   'appearance.customRamp': {
     type: 'list', of: 'string', length: 10, elementType: 'color', strategy: 'uniform',

@@ -414,10 +414,21 @@ def set_gradient_stop(page, idx, hex_value):
 # built with `preserveDrawingBuffer`, which it is not (main.js:
 # `new THREE.WebGLRenderer({canvas, antialias: true})`, no third option).
 
+# Playwright's default screenshot timeout is 30s, which is NOT enough here and
+# has nothing to do with what this file changed. Measured on this host,
+# 2560x1440 under SwiftShader with the live scene running: 14.1s for the first
+# capture and 6.5-7.8s for each one after, with the settings panel open or
+# closed making no difference (open was FASTER on two of three shots). A single
+# shot crossing 30s fails the whole run with a Page.screenshot timeout and no
+# case result at all, which reads as a broken verifier rather than a slow
+# compositor. 120s is four times the slowest measurement.
+SCREENSHOT_TIMEOUT_MS = 120_000
+
+
 def sample_mean_rgb(page, box):
     """Mean RGB of every pixel in `box` (a Playwright clip rect), 0..255 per
     channel, via a real screenshot decoded with Pillow."""
-    data = page.screenshot(clip=box)
+    data = page.screenshot(clip=box, timeout=SCREENSHOT_TIMEOUT_MS)
     img = Image.open(io.BytesIO(data)).convert("RGB")
     r, g, b = ImageStat.Stat(img).mean
     return (r, g, b)

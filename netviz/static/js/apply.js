@@ -20,7 +20,8 @@
 // to the bare specifier; it would silently break `node --test`. Same fix,
 // same reasoning, as palette.js.
 import * as THREE from '../vendor/three/three.module.js';
-import { validate, planApply, paths, defaultOf, entry } from './settings.js';
+import { validate, planApply, paths, defaultOf, entry, BUILTIN_THEMES }
+  from './settings.js';
 import { CONFIG } from './config.js';
 import { resolveColor, isAuto, ELEMENT_T, ELEMENT_LITERAL } from './elements.js';
 // THEME_SKIES lives in ramp.js, not here -- per-ramp data belongs with the
@@ -194,8 +195,38 @@ function setAurora(ctx, patch, low, high) {
  *  value from the whole patch via `finalValue`/`defaultOf`, so a second run is
  *  idempotent and the executor's key order is never observable in the
  *  result. */
+/** Which theme this display should actually be on, given what it asked for and
+ *  what its library still holds.
+ *
+ *  THE CASE THIS EXISTS FOR is a stored setting naming a theme somebody later
+ *  deleted. That patch is restored at boot, before anyone can answer a dialog,
+ *  so it has to resolve to something sane rather than being refused and leaving
+ *  the display uncolored. The substitution is reported rather than made
+ *  silently: the panel surfaces it on the next open, the way a conversion does.
+ *
+ *  `custom` before the shipped default, because a saved theme's patch writes
+ *  the ramp and the element colors too -- so the display is very likely already
+ *  wearing the look whose NAME went missing, and dropping it to plasma would
+ *  throw away colors that are still perfectly good. */
+export function resolveTheme(id, { names = [], hasCustomPaths = false } = {}) {
+  if (BUILTIN_THEMES.includes(id) || names.includes(id)) {
+    return { id, substituted: false, why: null };
+  }
+  if (hasCustomPaths) {
+    return { id: 'custom', substituted: true,
+             why: `the saved theme "${id}" is gone; keeping its colors as Custom` };
+  }
+  return { id: 'plasma', substituted: true,
+           why: `the saved theme "${id}" is gone; back to the netviz default` };
+}
+
 function applyTheme(id, ctx, patch) {
-  setActiveRamp(id === 'custom' ? finalValue(patch, 'appearance.customRamp') : id);
+  // A SAVED NAME resolves to `custom` for ramp purposes: the theme's own stored
+  // `appearance.customRamp` is what it wears, and there is no built-in ramp
+  // under that name to look up.
+  const named = !BUILTIN_THEMES.includes(id);
+  const rampId = (id === 'custom' || named) ? finalValue(patch, 'appearance.customRamp') : id;
+  setActiveRamp(rampId);
   for (const key of [...Object.keys(ELEMENT_T), ...Object.keys(ELEMENT_LITERAL)]) {
     const stored = finalValue(patch, `appearance.colors.${key}`);
     if (!isAuto(stored)) continue;          // an override holds
@@ -230,7 +261,13 @@ function applyTheme(id, ctx, patch) {
     ctx.arcs.setSpec(cls, 'colorAt', defaultOf(`arcs.${cls}.colorAt`));
   }
   const sky = finalValue(patch, 'appearance.background');
-  if (isAuto(sky)) ctx.scene.background = new THREE.Color(THEME_SKIES[id]);
+  // A saved name has no sky of its own in THEME_SKIES either; its patch carries
+  // an explicit `appearance.background` when it has one, and falls back to the
+  // custom sky when it does not.
+  if (isAuto(sky)) {
+    ctx.scene.background = new THREE.Color(
+      THEME_SKIES[id] || THEME_SKIES.custom || THEME_SKIES.plasma);
+  }
 }
 
 export const HANDLERS = {
@@ -317,7 +354,9 @@ export const HANDLERS = {
   // future theme changes (see applyTheme, which checks this same value before
   // ever touching the sky).
   'appearance.background': (v, ctx) => {
-    ctx.scene.background.set(isAuto(v) ? THEME_SKIES[defaultOf('appearance.theme')] : v);
+    const theme = defaultOf('appearance.theme');
+    ctx.scene.background.set(isAuto(v)
+      ? (THEME_SKIES[theme] || THEME_SKIES.custom || THEME_SKIES.plasma) : v);
   },
   'appearance.theme': (v, ctx, patch) => applyTheme(v, ctx, patch),
   // Only meaningful when the theme is 'custom', but recomputing the whole
