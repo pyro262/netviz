@@ -10,6 +10,7 @@
 // between the panel, the menu, an imported file and any future write API.
 import { parseRule } from './rules.js';
 import { cfg } from './config.js';
+import { rampHexAt, activeRampStops } from './ramp.js';
 import { serialiseRules, parseImport, exportFilename } from './rulestore.js';
 
 /** One row per rule: what the boxes show, and why a row is refused.
@@ -123,6 +124,46 @@ const END_HELP =
 const COLOR_HELP =
   'The color arcs matching this rule are drawn in. It reaches arcs already on '
   + 'screen, not just the next one.';
+// The two built-in classes. Their colors used to be two ramp-position sliders
+// on the TUNING panel, one group away from the arc gains -- so "what color is
+// a block" was answered in one place, "what color is this rule" in another,
+// and the rail's legend in a third. They are the same question, so they are
+// asked here.
+//
+// They sit IN the list, not in a block of their own above it, and in their
+// real precedence order: a block is never recolored by a rule, so it is the
+// first row; a flow no rule claims falls through to `arcs.flow`, so it is the
+// last. The panel's own hint says the list is checked top to bottom, and with
+// the defaults pulled out into a separate section that sentence described
+// only the middle of what was on screen. Every row a person can see is now
+// one list in the order the engine actually uses.
+//
+// `colorAt` is deliberately NOT reproduced here. A class either follows the
+// theme (`auto`, which resolves through the ramp at the class's own position)
+// or carries an explicit color, and those are the two states a person needs;
+// a ramp POSITION is a third vocabulary for the same setting and the theme
+// panel already owns "everything follows the ramp".
+const BUILTIN = {
+  block: {
+    label: 'Geo-blocked',
+    match: 'any blocked arc',
+    end: 'first',
+    help: 'The alarm layer: an arc the router refused. Blocks are never '
+        + 'recolored by a rule, whatever the rules below say, which is why '
+        + 'this row is at the top and cannot be turned off.',
+  },
+  flow: {
+    label: 'All other traffic',
+    match: 'everything else',
+    end: 'fallback',
+    help: 'Every arc no rule above has claimed. Add a rule to carve traffic '
+        + 'out of this one; it cannot be turned off, because something has to '
+        + 'color the rest.',
+  },
+};
+const AUTO_HELP =
+  'Back to the theme. On auto the class takes its color from the active ramp '
+  + 'at its own position, so switching themes recolors it with everything else.';
 const NAME_HELP =
   'Optional. What to call this rule in the stats rail -- "storj nodes" says '
   + 'more than the subnet does. Not used for matching.';
@@ -181,8 +222,13 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
     rowRefs = new Map();
     const list = node.querySelector('.rules-list');
     list.replaceChildren();
+    // Blocks first: no rule can claim one. Then the rules, in their own
+    // order. Then Add, which appends at the end of THAT group. Then the
+    // fallback, which is what colors whatever is left.
+    list.append(builtinRow('block'));
     for (const row of rows) list.append(renderRow(row));
     list.append(renderAdd());
+    list.append(builtinRow('flow'));
   }
 
   /** One line under the buttons. Import is the only action here whose result
@@ -290,6 +336,76 @@ export function createRulesPanel({ settings, root, onClose } = {}) {
 
     rowRefs.set(row.index, { wrap, match, end, swatch, name, toggle: on, reason: reasonNode });
     return wrap;
+  }
+
+  /** Resolved color of a built-in class right now: its own hex, or the ramp
+   *  at its position when it is on `auto`. Read fresh on every redraw --
+   *  cfg() is the live value, and a theme change moves it without this panel
+   *  hearing about it. */
+  function builtinColor(cls) {
+    const explicit = cfg(`arcs.${cls}.color`, 'auto');
+    if (explicit && explicit !== 'auto') return explicit;
+    return rampHexAt(cfg(`arcs.${cls}.colorAt`, 0.3), activeRampStops());
+  }
+
+  function builtinRow(cls) {
+    const spec = BUILTIN[cls];
+    // `rules-fixed`, NOT `rules-row`: that class means "an editable rule" to
+    // this panel's own code and to tools/verify_rules_editor.py, which counts
+    // rules with it. The CSS gives the two selectors the same columns, so the
+    // rows line up under one header while the count stays honest.
+    const wrap = el('div', 'rules-fixed');
+    wrap.title = spec.help;
+
+    wrap.append(el('span', 'rules-fixed-match', spec.match));
+    wrap.append(el('span', 'rules-fixed-end', spec.end));
+
+    const onAuto = cfg(`arcs.${cls}.color`, 'auto') === 'auto';
+    const swatch = el('input', 'rules-color');
+    swatch.type = 'color';
+    swatch.value = builtinColor(cls);
+    swatch.title = spec.help;
+    swatch.addEventListener('input', () => {
+      const out = settings.apply({ [`arcs.${cls}.color`]: swatch.value });
+      for (const r of out.rejected) console.warn(`netviz: ${r.path} -- ${r.why}`);
+      refreshBuiltin();
+    });
+    wrap.append(swatch);
+
+    wrap.append(el('span', 'rules-fixed-name', onAuto ? `${spec.label} (theme)` : spec.label));
+
+    // The flags column, occupied rather than empty: these two rows have no
+    // on/off and no delete -- one is never overridden and the other is the
+    // fallback -- and a gap where every other row has buttons reads as a row
+    // whose buttons failed to draw. The undo lives here instead.
+    const undo = el('button', 'rules-fixed-auto', '↺');
+    undo.title = 'Back to the theme. On auto the class takes its color from '
+               + 'the active ramp at its own position, so switching themes '
+               + 'recolors it with everything else.';
+    undo.disabled = onAuto;
+    undo.addEventListener('click', () => {
+      settings.apply({ [`arcs.${cls}.color`]: 'auto' });
+      refreshBuiltin();
+    });
+    wrap.append(undo);
+    return wrap;
+  }
+
+  /** Repaint just the two fixed rows. Their own edits change what they show --
+   *  the swatch resolves through the ramp on auto, the label says so, and the
+   *  undo button's disabled state is that same fact -- and rebuilding the
+   *  whole list would destroy the rule row somebody may be mid-keystroke in. */
+  function refreshBuiltin() {
+    if (!node) return;
+    // By POSITION -- block is the first fixed row and flow is the last --
+    // rather than by a `dataset` attribute read back off the node. The unit
+    // suite runs this file against a hand-built DOM fake with no `dataset`,
+    // and a panel that only repaints under a real browser is a panel whose
+    // repaint is untested.
+    const fixed = [...node.querySelectorAll('.rules-fixed')];
+    if (fixed.length !== 2) return;
+    fixed[0].replaceWith(builtinRow('block'));
+    fixed[1].replaceWith(builtinRow('flow'));
   }
 
   function renderAdd() {

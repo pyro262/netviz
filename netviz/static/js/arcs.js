@@ -403,6 +403,16 @@ export function createArcs(radius, capacity = 220, onLand = null) {
       const spec = CLASS[name];
       if (!spec) continue;
       spec[key] = value;
+      // `hex` is the SOURCE of the color and `color` is the resolved
+      // THREE.Color derived from it, so a write to `color` has to land on
+      // `hex` -- otherwise the line below immediately recomputes from the old
+      // hex and throws the new value away. It did: `arcs.block.color` and
+      // `arcs.flow.color` were settings that stored, persisted, read back
+      // correctly and changed nothing on the display, which is the worst
+      // shape a bug can take. Nothing wrote them until the color-rules panel
+      // did -- except the theme panel's Chaos, whose two arc colors were
+      // silently no-ops.
+      if (key === 'color') spec.hex = value;
       if (COLOR_KEYS.includes(key)) {
         spec.color = specColor({ ...spec, color: spec.hex });
       }

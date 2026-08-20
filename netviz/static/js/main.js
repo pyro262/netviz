@@ -10,6 +10,7 @@ import { createRipples } from './ripples.js';
 import { createAurora } from './aurora.js';
 import { start as startDegraded } from './degraded.js';
 import { createStars } from './stars.js';
+import { createMilkyWay } from './milkyway.js';
 import { createAtmosphere } from './atmosphere.js';
 import { createComposer } from './post.js';
 import { createCameraRig } from './camera.js';
@@ -364,6 +365,15 @@ async function boot() {
         setBrightness: starsOff, setDayGain: starsOff, setRampMinutes: starsOff,
         setResync: starsOff, setVisible: starsOff };
   scene.add(stars.group);
+
+  // Mounted unconditionally, like the clouds and the lightning and unlike the
+  // stars: there is nothing to fetch and nothing to fail, the bake is eight
+  // scissored frames whether or not it is shown, and an object that exists is
+  // an object the menu can turn back on. The stars' stub exists because a
+  // build with layers.stars off never downloaded the catalogue; this layer has
+  // no such excuse, so it gets no stub and its setters cannot throw.
+  const milkyway = createMilkyWay(renderer);
+  scene.add(milkyway.group);
   // not in globe.group: must not rotate
   if (cfg('layers.atmosphere', true)) {
     atmosphere = createAtmosphere(GLOBE_RADIUS);
@@ -477,6 +487,7 @@ async function boot() {
     if (aurora) aurora.mesh.material.uniforms.time.value += dt;
     globe.updateFlashes(dt);
     stars.update(dt);
+    milkyway.update(dt);
     input.tick(dt);
     rig.update(dt, arcs.origins());
     sinceSun += dt;
@@ -507,7 +518,7 @@ async function boot() {
   // startInput needs the menu, so the order has to be settings -> menu ->
   // input, with input's slot in ctx filled in last.
   const ctx = {
-    arcs, globe, stars, post: composer, ripples, camera, rig, renderer,
+    arcs, globe, stars, milkyway, post: composer, ripples, camera, rig, renderer,
     scene, input: null, polling, resize, rail, classCounts, clouds, lightning,
     atmosphere, aurora,
   };
@@ -636,7 +647,8 @@ async function boot() {
   // exists so tools/shoot.py can assert the scene has live arcs rather than
   // leaving "looks about right" as the only check.
   window.__netviz = {
-    arcs, globe, ripples, aurora, clouds, lightning, renderer, camera, scene, rig, stars, input,
+    arcs, globe, ripples, aurora, clouds, lightning, renderer, camera, scene, rig, stars,
+    milkyway, input,
     settings, menu, rulesPanel, settingsPanel,
     /** Screen position of a lat/lon, for verification tooling. Returns null
      *  when the point is on the far side of the globe. */

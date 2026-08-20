@@ -214,6 +214,13 @@
       body.degraded .update-mark.on { opacity: 0.16; }
       #rail .rail-swatch { display:inline-block; width:8px; height:8px; border-radius:2px;
                            margin-right:6px; vertical-align:middle; }
+      /* The legend's swatch is the legend. It carries the whole message --
+         the label says what the arc means, never what color it is -- so it
+         is a chip rather than a dot, sized to read from across a room. Keyed
+         off the ROW, not its panel: the two legend rows sit at the top of the
+         COLOR RULES panel among rule rows that keep the small dot. */
+      #rail .rail-swatch.big { width: 26px; height: 12px; border-radius: 3px;
+                               margin-right: 9px; }
       /* A muted row dims its TEXT, never its swatch. The swatch is a sample of
          a color that is on the globe right now, and a sample shown at 45%
          opacity is a different color -- the one thing a key must not be. */
@@ -379,6 +386,20 @@
         background: #0b0916; color: inherit; border: 1px solid #2a2540;
         border-radius: 3px; padding: 3px 6px; font: inherit; }
       .rules-color { width: 44px; padding: 1px; }
+      /* The two built-in classes sit IN the rule list, first and last, so the
+         columns have to be the rule row's own. Only the swatch is editable;
+         the text cells are what the engine does, not fields. */
+      .rules-fixed { display: flex; gap: 6px; align-items: center;
+                     margin-bottom: 4px; flex-wrap: wrap; }
+      .rules-fixed-match { flex: 2 1 200px; min-width: 0; opacity: .5;
+                           font-style: italic; }
+      /* nowrap: the column is 88px and "fallback" is the widest word that
+         goes in it. Wrapped, these two rows stood a line taller than every
+         rule between them and the list stopped reading as one table. */
+      .rules-fixed-end { flex: 0 0 88px; opacity: .5; font-style: italic;
+                         white-space: nowrap; }
+      .rules-fixed-name { flex: 1 1 120px; min-width: 0; opacity: .75; }
+      .rules-fixed-auto { flex: 0 0 50px; }
       .rules-reason { flex: 1 0 100%; color: #e0a020; opacity: .9; padding-left: 2px; }
       .rules-add { margin-top: 8px; }
       .rules-foot { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }

@@ -273,6 +273,7 @@ export const CONFIG = {
     bordersWorld: true,    // every international land border
     admin1: true,          // US state / Canadian province lines
     stars: true,           // real catalogue stars, turned by sidereal time
+    milkyway: true,        // the band, integrated from a real Galaxy model
     aurora: true,          // sized by the live NOAA planetary K-index
     atmosphere: true,
     ripples: true,         // expanding ring where an arc lands
@@ -386,6 +387,28 @@ export const CONFIG = {
     // while the sky on the globe is already moving. 1.0 disables it.
     starDayGain: 2.0,
     starRampMinutes: 30,
+
+    // The Milky Way band. Not a painted stripe: js/galaxy.js's model is
+    // integrated along every line of sight through a real dust layer and
+    // baked to one all-sky texture at boot, so these four move the MODEL and
+    // the first three cost a re-bake (eight frames) rather than a frame.
+    milkyway: {
+      // 0.15, set from the wall and not from a screenshot. It came down from
+      // 1.4 in three steps, each against the real display: 1.4 was chosen
+      // while the shell was wrongly painting OVER the globe, so much of what
+      // read as band was a haze across the whole frame; 1.0 and then 0.5
+      // were each still louder than a room wants behind live arcs. The arcs
+      // are the display; this is the room they happen in, and it should be
+      // something you notice on the second look.
+      brightness: 0.15,  // scales the band only, never the stars
+      dust: 1.0,         // opacity of the dust layer: 0 erases the dark rift
+      clumping: 1.0,     // how lumpy the disk is; 0 is a smooth model galaxy
+      exposure: 0.7,     // maps the integral onto the texture's 0..1
+      // Texels across the whole sky, in galactic coordinates. 4096 is 5.3
+      // arcmin per texel and 33 MB of VRAM; clamped down to the driver's
+      // maxTextureSize, which no wall-class GPU sets below 8192.
+      resolution: 4096,
+    },
 
     // The limb glow. All three were hardcoded in js/atmosphere.js until 0.6.0.
     atmosphere: {

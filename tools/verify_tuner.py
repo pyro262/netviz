@@ -1170,8 +1170,12 @@ def case9_randomize(page, cx, cy) -> bool:
           # sliders (32) and lightning added four more (36), and the clouds
           # commit updated tests/js/tuner.test.mjs without updating this. The
           # symptom is this case failing while every behavioural signal on its
-          # own report line is correct, which is what happened on 2026-08-15.
-          and len(look) == 36 and len(held) == 9
+          # own report line is correct, which is what happened on 2026-08-15
+          # and AGAIN on 2026-08-18: the numbers were still 36/9 while the
+          # panel had grown to 41/9 across the theme work, and the Milky Way
+          # band's four rows then took it to 44/10. Moving the two built-in
+          # arc colors out to the color-rules panel took it to 42/10.
+          and len(look) == 42 and len(held) == 10
           and moved >= len(look) - 2
           # Only the look rows may be marked, so the mark count is bounded on
           # BOTH sides -- a panel that dirtied all 48 fails here as well.

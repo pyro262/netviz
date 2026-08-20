@@ -118,11 +118,12 @@ const HIGHLIGHT_KEYS = ['life', 'tube', 'gain', 'speed', 'lift', 'maxRise', 'blo
 // strategies in settings.js; a test asserts the two lists agree.
 export const ARC_REBUILD_KEYS = ['tube', 'lift', 'maxRise'];
 
-/** The ten `layers` booleans, all one call. */
+/** The thirteen `layers` booleans, all one call. */
 function layerHandlers(names) {
   const out = {};
   for (const name of names) {
     if (name === 'stars') out[`layers.${name}`] = (v, ctx) => ctx.stars.setVisible(v);
+    else if (name === 'milkyway') out[`layers.${name}`] = (v, ctx) => ctx.milkyway.setVisible(v);
     // Clouds and lightning are their own objects, not one of the globe's
     // baked layers: both arrive over the network long after the globe is
     // built, clouds as a fetched field and lightning as a replayed feed.
@@ -295,8 +296,8 @@ export const HANDLERS = {
   },
 
   ...layerHandlers(['cityLights', 'coastline', 'bordersWatched', 'bordersWorld',
-                    'admin1', 'stars', 'aurora', 'atmosphere', 'ripples',
-                    'countryFlash', 'clouds', 'lightning']),
+                    'admin1', 'stars', 'milkyway', 'aurora', 'atmosphere',
+                    'ripples', 'countryFlash', 'clouds', 'lightning']),
 
   'ripples.cooldownSeconds': (v, ctx) => ctx.ripples.setCooldown(v),
 
@@ -316,8 +317,21 @@ export const HANDLERS = {
   'appearance.bloom.threshold': (v, ctx) => ctx.post.setBloom('threshold', v),
   'appearance.bloom.knee': (v, ctx) => ctx.post.setBloom('knee', v),
   'appearance.starBrightness': (v, ctx) => ctx.stars.setBrightness(v),
-  'appearance.starDayGain': (v, ctx) => ctx.stars.setDayGain(v),
-  'appearance.starRampMinutes': (v, ctx) => ctx.stars.setRampMinutes(v),
+  // The day ramp is the SKY's, not the stars': the band washes out in a lit
+  // room for the same reason the stars do, and a sky that brightened at dawn
+  // by two different curves is nobody's idea of correct.
+  'appearance.starDayGain': (v, ctx) => {
+    ctx.stars.setDayGain(v);
+    ctx.milkyway.setDayGain(v);
+  },
+  'appearance.starRampMinutes': (v, ctx) => {
+    ctx.stars.setRampMinutes(v);
+    ctx.milkyway.setRampMinutes(v);
+  },
+  'appearance.milkyway.brightness': (v, ctx) => ctx.milkyway.setBrightness(v),
+  'appearance.milkyway.dust': (v, ctx) => ctx.milkyway.setDust(v),
+  'appearance.milkyway.clumping': (v, ctx) => ctx.milkyway.setClumping(v),
+  'appearance.milkyway.exposure': (v, ctx) => ctx.milkyway.setExposure(v),
   'appearance.atmosphere.power': (v, ctx) => ctx.atmosphere.setParam('power', v),
   'appearance.atmosphere.strength': (v, ctx) => ctx.atmosphere.setParam('strength', v),
   'appearance.atmosphere.thickness': (v, ctx) => ctx.atmosphere.setThickness(v),

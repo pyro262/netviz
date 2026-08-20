@@ -447,9 +447,9 @@ export function panels(snapshot, extra, colors, lightning) {
   }
 
   // The legend for the two built-in arc classes. A COLOR RULE already carries
-  // its own swatch in rulePanel(), so amber and violet were the only colors on
-  // the wall with nothing anywhere saying what they meant -- and they are the
-  // two that matter most, being the alarm layer and everything else.
+  // its own swatch in rulePanel(), so these two were the only colors on the
+  // wall with nothing anywhere saying what they meant -- and they are the two
+  // that matter most, being the alarm layer and everything else.
   //
   // The colors are HANDED IN, never known here: they are tuned constants that
   // have moved several times, they can be changed live through settings, and
@@ -458,10 +458,31 @@ export function panels(snapshot, extra, colors, lightning) {
   // keep claiming amber after a recolor, and a key that disagrees with the
   // display is worse than no key.
   //
-  // Each sits ABOVE the rows it explains: the reader meets the color before
-  // the numbers drawn in it.
+  // ONE BLOCK, AT THE TOP OF THE COLOR RULES PANEL, and the labels say what
+  // an arc MEANS rather than what color it is. They used to be two rows, each sitting above the
+  // numbers it explained and each reading "amber arcs --" / "violet arcs --".
+  // Two problems with that, both real: a legend split across the rail is not
+  // a legend, it is two footnotes; and the color word is a second claim about
+  // the same thing as the swatch beside it, so a recolor -- through the
+  // theme, the tuning panel or Chaos -- leaves the rail insisting the arcs
+  // are amber while they are green. The swatch cannot lie; it is sampled from
+  // the live display every paint. So the swatch got bigger and the word went.
+  //
+  // It rides INSIDE the COLOR RULES panel rather than standing as a panel of
+  // its own, because the two built-in classes and the rules are one key: a
+  // rule's swatch means exactly what these two mean, and the rules panel in
+  // the menu now shows all of them in one list for the same reason. The two
+  // fixed rows go first, and a legend row is marked `legend: true` -- paint()
+  // keys the big chip off that, and the FITTER keys off it too: a legend row
+  // is chrome, not a rule row, and counting it as one would hand the rule
+  // fitter room that does not exist. Only when there are no rules at all does
+  // the key stand alone, as an ARCS panel.
   const legendRow = (color, text) =>
-    (color ? [{ label: text, value: '', swatch: color, muted: true }] : []);
+    (color ? [{ label: text, value: '', swatch: color, muted: true, legend: true }] : []);
+  const legendRows = [
+    ...legendRow(colors && colors.block, 'Geo-blocked'),
+    ...legendRow(colors && colors.flow, 'All other traffic'),
+  ];
 
   const out = [
     {
@@ -469,7 +490,6 @@ export function panels(snapshot, extra, colors, lightning) {
       note: '24H',
       big: formatCount(blocks.total),
       rows: [
-        ...legendRow(colors && colors.block, 'amber arcs — geo-blocked'),
         ...blockRows,
       ],
     },
@@ -478,7 +498,6 @@ export function panels(snapshot, extra, colors, lightning) {
       big: formatCount(netflow.flows_per_min),
       bigNote: 'FLOWS/MIN',
       rows: [
-        ...legendRow(colors && colors.flow, 'violet arcs — all other traffic'),
         { label: 'INGEST LAG', value: formatLag(netflow.lag_seconds) },
         { label: 'RECORDS', value: formatCount(ipfix.records) },
         { label: 'NO TEMPLATE', value: formatCount(ipfix.no_template) },
@@ -487,7 +506,17 @@ export function panels(snapshot, extra, colors, lightning) {
     },
     { title: 'FEED HEALTH', rows: health },
   ];
-  if (extra) out.push(extra);
+  if (extra) {
+    out.push(legendRows.length
+      ? { ...extra, rows: [...legendRows, ...extra.rows] }
+      : extra);
+  } else if (legendRows.length) {
+    // No rules configured, so there is no panel to ride in. The key still has
+    // to exist -- the two built-in colors are on the globe either way -- and
+    // it deliberately does NOT take `id: 'rules'`, which is the handle the
+    // rule fitter measures.
+    out.push({ id: 'legend', title: 'ARCS', rows: legendRows });
+  }
   return out;
 }
 
@@ -562,7 +591,8 @@ function paint(root, data, clock, version) {
 
     for (const row of panel.rows) {
       const line = el('div', `rail-row${row.bar !== undefined ? ' bars' : ''}`
-                             + (row.muted ? ' muted' : ''));
+                             + (row.muted ? ' muted' : '')
+                             + (row.legend ? ' legend' : ''));
       // The country name behind a two-letter code, on the whole row rather
       // than on the label span: the bar and the count belong to that country
       // too, and a tooltip that only appears over two characters of text is
@@ -578,7 +608,7 @@ function paint(root, data, clock, version) {
       // where every other row has it.
       const label = el('span', 'rail-label');
       if (row.swatch) {
-        const dot = el('span', 'rail-swatch');
+        const dot = el('span', `rail-swatch${row.legend ? ' big' : ''}`);
         dot.style.background = row.swatch;
         label.append(dot);
       }
@@ -662,7 +692,12 @@ export function start(counter, classColors, lightningState = () => null) {
   const measure = () => {
     const box = root.querySelector('.rail-panel-rules');
     if (!box) return null;
-    const rows = box.querySelectorAll('.rail-row');
+    // NOT the legend rows sharing this panel. They are always present and
+    // always the same height, so they belong to the box's chrome; counted as
+    // rule rows they would leave their own height unreserved and the fitter
+    // would hand itself two rows of room that do not exist -- the same class
+    // of error as the negative chrome ruleBoxMetrics documents.
+    const rows = box.querySelectorAll('.rail-row:not(.legend)');
     if (!rows.length) return null;
     const boxH = box.getBoundingClientRect().height;
     // Every row's real rect. Rule rows differ in height by nearly 2x depending

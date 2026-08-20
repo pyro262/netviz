@@ -327,20 +327,35 @@ test('versionLabel shows nothing rather than guessing', () => {
   assert.equal(versionLabel({ version: 42 }), '');
 });
 
-test('the legend names the two built-in arc classes', () => {
+test('the legend rides at the top of COLOR RULES, naming what each arc means', () => {
   // "What am I looking at" is the question the wall cannot answer on its own.
   // The rail already carries a swatch per COLOR RULE; the two built-in
-  // classes had none, so amber and violet were the only colors on the display
-  // with nothing anywhere saying what they meant.
-  const p = panels(SNAPSHOT, null, { block: '#f0b000', flow: '#9112a1' });
-  const blocks = p.find((x) => x.title === 'GEO BLOCKS');
-  const netflow = p.find((x) => x.title === 'NETFLOW');
-  assert.equal(blocks.rows[0].swatch, '#f0b000');
-  assert.match(blocks.rows[0].label, /amber/i);
-  assert.equal(netflow.rows[0].swatch, '#9112a1');
-  assert.match(netflow.rows[0].label, /violet/i);
-  // The legend sits ABOVE the data it explains, not under it.
-  assert.equal(blocks.rows[1].label, 'CN');
+  // classes had none, so these two were the only colors on the display with
+  // nothing anywhere saying what they meant.
+  const rules = { id: 'rules', title: 'COLOR RULES', note: 'SINCE LOAD',
+                  rows: [{ label: 'storj', value: '9.0/min', swatch: '#22d3ee' }] };
+  const p = panels(SNAPSHOT, rules, { block: '#f0b000', flow: '#9112a1' });
+  const legend = p.find((x) => x.id === 'rules');
+  // One key, not two: the built-in classes and the rules mean the same thing
+  // by the same swatch, so they share a panel -- built-ins first.
+  assert.equal(p.some((x) => x.id === 'legend'), false, 'a second key panel appeared');
+  assert.deepEqual(legend.rows.map((r) => [r.label, r.swatch]),
+                   [['Geo-blocked', '#f0b000'], ['All other traffic', '#9112a1'],
+                    ['storj', '#22d3ee']]);
+  // `legend` marks the two fixed rows and nothing else: paint() keys the big
+  // chip off it, and measure() keys the rule fitter's row set off it too.
+  assert.deepEqual(legend.rows.map((r) => r.legend === true), [true, true, false]);
+  // The color WORD is gone from both labels on purpose: the swatch is
+  // sampled from the live display and cannot lie, while "amber" survives a
+  // recolor through the theme, the tuning panel or Chaos and then contradicts
+  // the arcs it names.
+  for (const row of legend.rows.filter((r) => r.legend)) {
+    assert.doesNotMatch(row.label, /amber|violet|purple|orange/i,
+                        `${row.label} names a color the display can change`);
+  }
+  // And the data panels are back to nothing but data.
+  assert.equal(p.find((x) => x.title === 'GEO BLOCKS').rows[0].label, 'CN');
+  assert.equal(p.find((x) => x.title === 'NETFLOW').rows[0].label, 'INGEST LAG');
 });
 
 test('the legend swatch is the color it was handed, never a literal', () => {
@@ -350,14 +365,25 @@ test('the legend swatch is the color it was handed, never a literal', () => {
   // keep claiming amber after somebody recolored the class through settings,
   // which is worse than no legend: the wall and its key would disagree.
   const p = panels(SNAPSHOT, null, { block: '#00ff00', flow: '#0000ff' });
-  assert.equal(p.find((x) => x.title === 'GEO BLOCKS').rows[0].swatch, '#00ff00');
-  assert.equal(p.find((x) => x.title === 'NETFLOW').rows[0].swatch, '#0000ff');
+  assert.deepEqual(p[p.length - 1].rows.map((r) => r.swatch), ['#00ff00', '#0000ff']);
+});
+
+test('with no rules at all the key stands alone, and never as the rules panel', () => {
+  // `id: 'rules'` is the handle the rule fitter measures. A key wearing it
+  // with no rule rows in it would put the fitter's arithmetic on two rows
+  // that are not rules.
+  const p = panels(SNAPSHOT, null, { block: '#00ff00', flow: '#0000ff' });
+  const key = p[p.length - 1];
+  assert.equal(key.id, 'legend');
+  assert.equal(key.title, 'ARCS');
+  assert.equal(p.some((x) => x.id === 'rules'), false);
 });
 
 test('no colors means no legend, and every other row is untouched', () => {
   // start() has one caller today, but panels() is called with two arguments
   // throughout this suite and a legend must not appear from nowhere.
   const p = panels(SNAPSHOT);
+  assert.equal(p.some((x) => x.title === 'ARCS'), false);
   assert.equal(p.find((x) => x.title === 'GEO BLOCKS').rows[0].label, 'CN');
   assert.equal(p.find((x) => x.title === 'NETFLOW').rows[0].label, 'INGEST LAG');
 });
@@ -406,8 +432,9 @@ test('panels names the block rows and leaves the others alone', () => {
   const blocks = p.find((x) => x.title === 'GEO BLOCKS');
   const cn = blocks.rows.find((r) => r.label === 'CN');
   assert.equal(cn.title, 'China');
-  // The legend row above them explains a color, not a country.
-  assert.equal(blocks.rows[0].title, undefined);
+  // Nothing on the legend takes a country tooltip either: it explains a
+  // color, not a place.
+  for (const row of p[p.length - 1].rows) assert.equal(row.title, undefined);
   for (const row of p.find((x) => x.title === 'NETFLOW').rows) {
     assert.equal(row.title, undefined, `${row.label} was given a country name`);
   }

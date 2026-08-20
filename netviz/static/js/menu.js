@@ -14,7 +14,7 @@ export const DOUBLE_TAP = { maxMs: 320, maxPx: 24 };
  * schemaTitle below) rather than a second, hand-shortened copy that could
  * drift from it -- but that text is written for the tuning panel, where a
  * row sits under a slider with room to read, and commonly runs two or three
- * sentences. A hover tooltip on a twelve-row submenu wants one. This derives
+ * sentences. A hover tooltip on a thirteen-row submenu wants one. This derives
  * that one sentence at render time, from the live schema text, so there is
  * nothing to keep in sync by hand.
  *
@@ -108,7 +108,7 @@ export function isDoubleTap(prev, now, opts) {
 }
 
 /**
- * The twelve layers, grouped for the submenu. A group is a label, not a
+ * The thirteen layers, grouped for the submenu. A group is a label, not a
  * control -- SKY/WEATHER/MAP/EVENTS are how a person reading the list finds
  * a layer, not a schema concept, so a header's id is deliberately NOT a
  * `layers.*` path (it starts `layers-group-`) and nothing ever
@@ -121,6 +121,7 @@ export function isDoubleTap(prev, now, opts) {
 const LAYER_GROUPS = [
   { header: 'SKY', rows: [
     ['stars', 'Stars'],
+    ['milkyway', 'Milky Way'],
     ['aurora', 'Aurora'],
     ['atmosphere', 'Atmosphere'],
   ] },
@@ -145,7 +146,7 @@ const LAYER_GROUPS = [
  * menuModel(state) → Array<Item>
  *
  * Builds the menu structure given the display's current state.
- * state is {railOn, layers: {...twelve keys...}, layersExpanded, testMode,
+ * state is {railOn, layers: {...thirteen keys...}, layersExpanded, testMode,
  * canLookHere, settingsPanel, rulesPanel, themePanel, canReset}.
  *
  * Returns an array of top-level menu items in this order:
@@ -158,9 +159,9 @@ const LAYER_GROUPS = [
  *   it does not preview itself.
  * - layers: submenu, click-to-expand, with a group header (kind: 'group',
  *   non-interactive) before each of the four groups and a toggle for each
- *   of the twelve layers -- present only while state.layersExpanded is
+ *   of the thirteen layers -- present only while state.layersExpanded is
  *   true, so a collapsed submenu carries no child items at all rather than
- *   twelve items with nothing rendering them.
+ *   thirteen items with nothing rendering them.
  * - settings: action, enabled when settings panel exists, with note when disabled
  *
  * Each item is {id, label, kind, on?, enabled, note?, items?, expanded?}.
@@ -283,7 +284,7 @@ const TOGGLE_PATHS = { rail: 'rail.enabled', testMode: 'menu.testMode' };
 /**
  * Delay before a hovered layer row actually previews, in milliseconds.
  *
- * Sweeping the pointer down twelve rows on the way to the one you actually
+ * Sweeping the pointer down thirteen rows on the way to the one you actually
  * want must not strobe the wall -- eleven layers flashing on for a single
  * frame each as the cursor passes over them. 150ms is comfortably longer
  * than a sweep's dwell time on any one row (a deliberate mouse pass over a
@@ -453,7 +454,7 @@ export function createMenu({
   // RESET TO false ON EVERY open(), deliberately. It used to persist across
   // opens, on the theory that somebody adjusting several layers should not
   // re-open the group each visit. On the wall that read as the menu popping
-  // open at twelve rows tall every single time -- the group stays expanded
+  // open at thirteen rows tall every single time -- the group stays expanded
   // for the rest of the page's life after one visit, and the common case is
   // not adjusting layers at all. Collapsed-by-default costs one click to the
   // person who wants layers and nothing to everybody else, which is the
@@ -515,6 +516,7 @@ export function createMenu({
         bordersWorld: cfg('layers.bordersWorld', true),
         admin1: cfg('layers.admin1', true),
         stars: cfg('layers.stars', true),
+        milkyway: cfg('layers.milkyway', true),
         aurora: cfg('layers.aurora', true),
         atmosphere: cfg('layers.atmosphere', true),
         ripples: cfg('layers.ripples', true),
@@ -647,7 +649,7 @@ export function createMenu({
           dropPreview(path);
           settings.apply({ [path]: !item.on });
         }));
-        // Hover preview is scoped to exactly the twelve layer toggles --
+        // Hover preview is scoped to exactly the thirteen layer toggles --
         // their ids ARE `layers.<key>`, which is also the schema path, so
         // this is the same "id starts with layers." check that selects them
         // everywhere else in this file. Requires a `preview` applier; a menu
@@ -686,7 +688,7 @@ export function createMenu({
     }
 
     // 'submenu': click-to-expand header plus, while expanded, its children
-    // (four group labels and twelve toggles), indented.
+    // (four group labels and thirteen toggles), indented.
     //
     // This used to be always-expanded -- "the whole menu is a handful of
     // items, and a second interaction to reveal five toggles would cost more
@@ -695,10 +697,10 @@ export function createMenu({
     // reset items present (the live-deployment case), the menu has 6
     // top-level rows with Layers collapsed (lookHere, rail, layers, rules,
     // settings, reset). Always-expanded at five layers added 5 more (11
-    // total); always-expanded at twelve layers plus their four group headers
-    // would add 16 (22 total) -- more than triple the collapsed count, most
+    // total); always-expanded at thirteen layers plus their four group headers
+    // would add 17 (23 total) -- more than triple the collapsed count, most
     // of it below the fold on a touch wall, to show toggles for layers
-    // nobody came to change today. Collapsed, the twelve-layer menu is still
+    // nobody came to change today. Collapsed, the thirteen-layer menu is still
     // the same 6 rows it always was; expanding it is one tap, same cost as
     // the double-tap that opened the menu in the first place.
     const mark = item.expanded ? '▾' : '▸';

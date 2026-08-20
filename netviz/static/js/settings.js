@@ -137,7 +137,7 @@ const ARC_KEYS = ['life', 'tube', 'color', 'colorAt', 'gain', 'speed', 'lift',
 // and a ramp position would never be read.
 const HIGHLIGHT_KEYS = ['life', 'tube', 'gain', 'speed', 'lift', 'maxRise', 'bloomScale'];
 
-/** The ten `layers` booleans. Each is `mesh.visible` on one object -- or the
+/** The thirteen `layers` booleans. Each is `mesh.visible` on one object -- or the
  *  object's own setVisible where it has one -- and each is independent of the
  *  others. `uniform`, not `rebuild`: nothing is torn down and rebuilt, and a
  *  strategy that overstates what it does costs a needless pass on every toggle.
@@ -445,6 +445,12 @@ export const SCHEMA = {
     ['stars', 'Real HYG catalog stars to magnitude 6.5, placed by RA/Dec and '
       + 'turned by Greenwich sidereal time, so the constellations are real and '
       + 'correctly oriented for the moment.'],
+    ['milkyway', 'The Milky Way band, integrated along every line of sight '
+      + 'through a real model of the disk, the bulge and the dust layer, in '
+      + 'real galactic coordinates -- so it crosses the sky where it actually '
+      + 'does, is bright toward Sagittarius and faint toward Auriga, and has '
+      + 'the Great Rift and the Coalsack in it. Baked once at boot; free '
+      + 'thereafter.'],
     ['aurora', 'The auroral oval, sized by the live NOAA planetary K-index and '
       + 'centered on the geomagnetic pole -- which is why Canada sees aurora '
       + 'where Siberia does not.'],
@@ -465,6 +471,35 @@ export const SCHEMA = {
       + 'it. Off by default: it is the one layer a viewer is likely to read as '
       + 'happening right now, so the rail says how far behind it is.'],
   ]),
+
+  'appearance.milkyway.brightness': {
+    type: 'number', min: 0, max: 3, strategy: 'uniform',
+    help: 'How bright the Milky Way band is. Scales the band alone -- the '
+        + 'stars have their own control, and the two are separate because the '
+        + 'band is unresolved light and the stars are points.',
+  },
+  'appearance.milkyway.dust': {
+    type: 'number', min: 0, max: 2.5, strategy: 'uniform',
+    help: 'Opacity of the interstellar dust layer, 1 being the measured one '
+        + '(about 0.8 magnitudes per kiloparsec near the Sun). It is the dust '
+        + 'that splits the band down the middle: at 0 the Great Rift, the '
+        + 'Coalsack and the reddening of the Galactic centre all disappear '
+        + 'and what is left is a smooth stripe.',
+  },
+  'appearance.milkyway.clumping': {
+    type: 'number', min: 0, max: 2, strategy: 'uniform',
+    help: 'How lumpy the disk is. 0 integrates a perfectly smooth galaxy, '
+        + 'which reads as airbrushed; the named star clouds and dark nebulae '
+        + 'are a separate table and stay either way.',
+  },
+  'appearance.milkyway.exposure': {
+    type: 'number', min: 0.05, max: 2, strategy: 'uniform',
+    help: 'Where the integral is cut off against the texture\u2019s top end. '
+        + 'Raise it and the bright half of the band clips flat; lower it and '
+        + 'the outskirts fall under one 8-bit step. Brightness is the control '
+        + 'to reach for first -- this one changes what is stored, not how it '
+        + 'is shown.',
+  },
 
   'ripples.cooldownSeconds': {
     type: 'number', min: 0, max: 3600, strategy: 'uniform',

@@ -111,6 +111,15 @@ export const GROUPS = [
       { path: 'appearance.starBrightness', label: 'Star brightness', randomize: true },
       { path: 'appearance.starDayGain', label: 'Star gain by day', randomize: true },
       { path: 'appearance.starRampMinutes', label: 'Star ramp minutes', randomize: false },
+      { path: 'appearance.milkyway.brightness', label: 'Milky Way brightness', randomize: true },
+      { path: 'appearance.milkyway.dust', label: 'Milky Way dust', randomize: true },
+      { path: 'appearance.milkyway.clumping', label: 'Milky Way clumping', randomize: true },
+      // Exposure is where the model is CUT OFF against the texture, not how
+      // bright the band is drawn -- roll it and half the rolls clip the bright
+      // half flat or drop the outskirts under one 8-bit step, both of which
+      // read as "the randomizer broke the Milky Way" rather than as a look.
+      // Brightness is the row that changes the picture, and it is in.
+      { path: 'appearance.milkyway.exposure', label: 'Milky Way exposure', randomize: false },
     ],
   },
   {
@@ -149,13 +158,15 @@ export const GROUPS = [
     rows: [
       { path: 'traffic.flowsPerSecond', label: 'Flows drawn per second', randomize: true },
       { path: 'arcs.bodyOpacity', label: 'Arc body opacity', randomize: true },
-      // No `arcs.highlight.colorAt`: a color rule carries its own color,
-      // set per rule in the color-rules panel. The two fields a rule can
-      // leave to the shared highlight spec are the two below.
-      { path: 'arcs.flow.colorAt', label: 'Flow color', randomize: true },
+      // NO COLORS IN THIS GROUP AT ALL. `arcs.flow.colorAt` and
+      // `arcs.block.colorAt` were here until 0.6.1; the two built-in classes
+      // are now colored in the COLOR RULES panel, beside the rules that
+      // override them and with the same swatch control, because "what color
+      // is a block" and "what color is this rule" are one question and were
+      // being answered in two panels. `arcs.highlight.colorAt` was never
+      // here for the matching reason: a rule carries its own color.
       { path: 'arcs.flow.gain', label: 'Flow gain', randomize: true },
       { path: 'arcs.flow.bloomScale', label: 'Flow glow', randomize: true },
-      { path: 'arcs.block.colorAt', label: 'Block color', randomize: true },
       { path: 'arcs.block.gain', label: 'Block gain', randomize: true },
       { path: 'arcs.block.bloomScale', label: 'Block glow', randomize: true },
       { path: 'arcs.highlight.gain', label: 'Color rule gain', randomize: true },

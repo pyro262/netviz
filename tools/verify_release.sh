@@ -56,7 +56,7 @@ fi
 echo "serving $got at $URL"
 
 say "live verifiers against the rebuilt container"
-for v in verify_rules_editor verify_menu verify_settings verify_tuner verify_theme; do
+for v in verify_rules_editor verify_menu verify_settings verify_tuner verify_theme verify_milkyway; do
   echo "--- $v"
   python3 "tools/$v.py" --url "$URL"
 done

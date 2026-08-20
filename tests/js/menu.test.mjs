@@ -9,7 +9,7 @@ import { entry } from '../../netviz/static/js/settings.js';
 
 const ALL_LAYERS_ON = {
   cityLights: true, coastline: true, bordersWatched: true, bordersWorld: true,
-  admin1: true, stars: true, aurora: true, atmosphere: true, ripples: true,
+  admin1: true, stars: true, milkyway: true, aurora: true, atmosphere: true, ripples: true,
   countryFlash: true, clouds: true, lightning: true,
 };
 
@@ -61,10 +61,11 @@ test('every layer toggle mirrors its layer', () => {
   assert.equal(byId(menuModel(state), 'layers.aurora').on, true);
 });
 
-test('all twelve layers are present, each toggle id the schema path unchanged', () => {
+test('all thirteen layers are present, each toggle id the schema path unchanged', () => {
   const ids = [
     'layers.cityLights', 'layers.coastline', 'layers.bordersWatched', 'layers.bordersWorld',
-    'layers.admin1', 'layers.stars', 'layers.aurora', 'layers.atmosphere', 'layers.ripples',
+    'layers.admin1', 'layers.stars', 'layers.milkyway', 'layers.aurora',
+    'layers.atmosphere', 'layers.ripples',
     'layers.countryFlash', 'layers.clouds', 'layers.lightning',
   ];
   const model = menuModel({ ...STATE, layersExpanded: true });
@@ -112,11 +113,11 @@ test('the Layers submenu starts collapsed and carries no child items', () => {
   assert.deepEqual(layers.items, []);
 });
 
-test('expanded, the Layers submenu carries exactly sixteen items: four group headers and twelve toggles', () => {
+test('expanded, the Layers submenu carries exactly seventeen items: four group headers and thirteen toggles', () => {
   const layers = menuModel({ ...STATE, layersExpanded: true }).find((i) => i.id === 'layers');
-  assert.equal(layers.items.length, 16);
+  assert.equal(layers.items.length, 17);
   assert.equal(layers.items.filter((i) => i.kind === 'group').length, 4);
-  assert.equal(layers.items.filter((i) => i.kind === 'toggle').length, 12);
+  assert.equal(layers.items.filter((i) => i.kind === 'toggle').length, 13);
 });
 
 test('Look here is disabled when the pointer was not on the globe', () => {

@@ -485,11 +485,18 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
             return h && h.firstChild && h.firstChild.textContent.trim() === 'COLOR RULES';
           });
           if (!sec) return {found: false};
-          const rows = [...sec.querySelectorAll('.rail-row')].map((r) => ({
+          // `:not(.legend)`. Since 0.6.1 this panel opens with the two
+          // built-in arc classes as a key -- they are not rules, they never
+          // carry a rate, and the rule fitter excludes them from its own row
+          // set for the same reason (see rail.js measure()). Counting them
+          // here would mean asserting a rule count two too high and waiting
+          // for a rate on a row that will never have one.
+          const rows = [...sec.querySelectorAll('.rail-row:not(.legend)')].map((r) => ({
             label: r.querySelector('.rail-label').textContent,
             value: r.querySelector('.rail-value').textContent,
             muted: r.classList.contains('muted'),
           }));
+          const legendRows = sec.querySelectorAll('.rail-row.legend').length;
           // The same numbers rail.js's own measure() reads, handed to the same
           // pure function it hands them to. Imported from the served page, so a
           // change to the arithmetic moves the expectation with it.
@@ -498,7 +505,7 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
           const root = document.getElementById('rail');
           const box = root.querySelector('.rail-panel-rules');
           const st = getComputedStyle(root);
-          const rowRects = [...box.querySelectorAll('.rail-row')]
+          const rowRects = [...box.querySelectorAll('.rail-row:not(.legend)')]
             .map((r) => r.getBoundingClientRect().height);
           const boxH = box.getBoundingClientRect().height;
           const content = railContentHeight({
@@ -511,7 +518,7 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
             available: root.clientHeight, other: content - boxH,
             ...ruleBoxMetrics(boxH, rowRects), total, maxRules: 2,
           });
-          return {found: true, rows, expected, total,
+          return {found: true, rows, expected, total, legendRows,
                   free: Math.round(root.clientHeight - content),
                   overflows: root.scrollHeight > root.clientHeight};
         }""")
@@ -540,6 +547,8 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
     shown = snap.get("expected", 0)
     overflow = rows[-1] if rows else None
     ok = (settled(snap)
+          # The key is there and is exactly the two built-in classes.
+          and snap.get("legendRows") == 2
           and all(not r["muted"] for r in rows[:shown])
           and overflow is not None and overflow["muted"]
           and overflow["label"] == f"+{snap['total'] - shown} more"
@@ -548,7 +557,8 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
     ok2 = report(
         "7: the rail lists the rule", ok,
         f"waited {time.time() - t0:.1f}s, fitted {shown} of {snap.get('total')} "
-        f"with {snap.get('free')}px free, overflowing={snap.get('overflows')}, "
+        f"with {snap.get('free')}px free, {snap.get('legendRows')} legend rows, "
+        f"overflowing={snap.get('overflows')}, "
         f"rows={rows}")
     # restore, for hygiene against anything run afterward in the same page
     page.evaluate("() => window.__netviz.settings.apply({'rail.enabled': false})")
@@ -701,6 +711,101 @@ def rule_deletion_reclass_case(page) -> bool:
         f"{b_ok} (got #{result['bHex']:06x})")
 
 
+def builtin_colors_case(page, cx, cy) -> bool:
+    """10: the two built-in arc classes are colored from THIS panel.
+
+    They were two ramp-position sliders on the tuning panel until 0.6.1 --
+    one panel for "what color is a block", another for "what color is this
+    rule", and the rail's legend a third place claiming both were amber.
+    They now sit IN the rule list rather than in a section above it, first
+    and last, which is the engine's real precedence: a block is never
+    recolored by a rule, and a flow no rule claims falls through to the last
+    row. The panel's hint says the list is checked top to bottom, and that
+    was only true of the middle of it while the defaults sat outside.
+    What is checked here is that the swatch writes the real setting, that it
+    reaches the arcs already in the air (a color that only applied to the
+    next spawn reads as a dead control on a wall where a block lives 18s),
+    and that the undo returns the class to the theme rather than to a
+    remembered hex."""
+    page.evaluate("() => { const p = document.querySelector('.rules-panel'); if (p) p.remove(); }")
+    open_menu_and_click(page, "rules", cx, cy)
+    page.wait_for_timeout(300)
+
+    state = page.evaluate("""async () => {
+      const c = await import('./js/config.js');
+      const rows = [...document.querySelectorAll('.rules-fixed')];
+      const before = { block: c.cfg('arcs.block.color', null), flow: c.cfg('arcs.flow.color', null) };
+      const swatches = rows.map((r) => r.querySelector('input[type=color]').value);
+      // The two fixed rows are IN the list, first and last, with the
+      // editable rules between them -- one list in the engine's own
+      // precedence order. Asserted here so a future edit cannot quietly pull
+      // them back out into a section of their own.
+      const list = [...document.querySelector('.rules-list').children];
+      return { count: rows.length, before, swatches,
+               firstIsFixed: list[0].className === 'rules-fixed',
+               lastIsFixed: list[list.length - 1].className === 'rules-fixed',
+               inList: rows.every((r) => r.parentElement.className === 'rules-list'),
+               autoDisabled: rows.map((r) => r.querySelector('button').disabled) };
+    }""")
+
+    # Set the block class green through the swatch, the way a person would.
+    page.eval_on_selector(
+        ".rules-fixed input[type=color]",
+        """(el) => { el.value = '#00ff88';
+                     el.dispatchEvent(new Event('input', { bubbles: true })); }""")
+    page.wait_for_timeout(400)
+    after = page.evaluate("""async () => {
+      const c = await import('./js/config.js');
+      const live = window.__netviz.arcs.classColor('block');
+      const row = document.querySelector('.rules-fixed');
+      return { stored: c.cfg('arcs.block.color', null),
+               live: { r: live.r, g: live.g, b: live.b },
+               undoEnabled: !row.querySelector('button').disabled };
+    }""")
+
+    page.eval_on_selector(".rules-fixed button", "(el) => el.click()")
+    page.wait_for_timeout(400)
+    back = page.evaluate("""async () => {
+      const c = await import('./js/config.js');
+      const row = document.querySelector('.rules-fixed');
+      const live = window.__netviz.arcs.classColor('block');
+      return { stored: c.cfg('arcs.block.color', null),
+               swatch: row.querySelector('input[type=color]').value,
+               live: { r: live.r, g: live.g, b: live.b },
+               undoDisabled: row.querySelector('button').disabled };
+    }""")
+
+    # The LIVE class color, not just the stored setting. This is the half
+    # that caught the real bug: `setSpec(cls, 'color', hex)` wrote the value
+    # and then recomputed the resolved color from the class's original hex,
+    # so the setting stored, persisted, read back correctly and changed
+    # nothing on the wall. Green must dominate red after the write, and the
+    # class must be back to its amber-ish theme color after the undo.
+    live_after = after.get("live") or {}
+    live_back = back.get("live") or {}
+    greened = live_after.get("g", 0) > live_after.get("r", 1) * 5
+    restored = live_back.get("r", 0) > live_back.get("g", 1)
+
+    ok = (state.get("count") == 2
+          and state.get("inList") and state.get("firstIsFixed")
+          and state.get("lastIsFixed")
+          and after.get("stored") == "#00ff88"
+          and greened and restored
+          and after.get("undoEnabled") is True
+          and back.get("stored") == "auto"
+          # Back on auto the swatch shows the THEME's color for the class,
+          # not the hex just discarded -- the panel resolves through the ramp
+          # rather than remembering.
+          and back.get("swatch") != "#00ff88"
+          and back.get("undoDisabled") is True)
+    return report("10: the built-in arc colors are set from the rules panel", ok,
+                  f"rows={state.get('count')} in one list="
+                  f"{state.get('inList')} first/last={state.get('firstIsFixed')}"
+                  f"/{state.get('lastIsFixed')} before={state.get('before')} "
+                  f"live went green={greened} and back={restored}; "
+                  f"after={after} back={back}")
+
+
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= panel_open_case(page, cx, cy)
@@ -717,6 +822,7 @@ def run(page, cx, cy) -> bool:
     # case 7 installs its own rules independently, so it does not need it open.
     ok &= rail_lists_rule_case(page, cx, cy)
     ok &= rule_deletion_reclass_case(page)
+    ok &= builtin_colors_case(page, cx, cy)
     return ok
 
 

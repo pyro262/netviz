@@ -141,3 +141,46 @@ export function bandFraction(dirs, degrees) {
   }
   return n / dirs.length;
 }
+
+// ---------------------------------------------------------------- galactic --
+//
+// The Milky Way band is not drawn at a chosen angle: it is where the galactic
+// plane actually is. These three vectors are the galactic frame's own axes,
+// each given by its REAL J2000 equatorial coordinate and mapped through
+// equatorialToVec, so all three land in the scene frame with the same
+// theta = -ra convention every other sky object uses.
+//
+// Y is a literal, not `Z cross X`. equatorialToVec is a mirror (theta = -ra),
+// which reverses the handedness of a cross product taken after it, so the
+// obvious construction yields a frame in which galactic longitude runs
+// backwards -- an error that looks like a perfectly good Milky Way until you
+// notice Sagittarius rising in the wrong place. A dot product, by contrast, is
+// preserved exactly by any orthogonal map including a mirror, so components
+// taken against these three axes are the true galactic ones.
+
+/** Galactic centre, l=0 b=0: RA 17h45m37.2s, Dec -28d56m10s (J2000). */
+export const GALACTIC_X = equatorialToVec(266.40500, -28.93617);
+/** l=90 b=0: RA 21h12m01.0s, Dec +48d19m47s (J2000). */
+export const GALACTIC_Y = equatorialToVec(318.00426, 48.32964);
+/** North galactic pole, b=+90: RA 12h51m26.3s, Dec +27d07m42s (J2000).
+ *  Same vector as GALACTIC_POLE, named for the frame it belongs to. */
+export const GALACTIC_Z = equatorialToVec(192.85948, 27.12825);
+
+/** Galactic (l, b) in degrees for a direction already in the scene frame.
+ *  l is wrapped to [0, 360). */
+export function vecToGalactic(v) {
+  const dot = (a) => a[0] * v[0] + a[1] * v[1] + a[2] * v[2];
+  const x = dot(GALACTIC_X);
+  const y = dot(GALACTIC_Y);
+  const z = dot(GALACTIC_Z);
+  const b = Math.asin(Math.max(-1, Math.min(1, z / Math.hypot(x, y, z)))) / DEG;
+  const l = ((Math.atan2(y, x) / DEG) % 360 + 360) % 360;
+  return [l, b];
+}
+
+/** Galactic (l, b) in degrees for an equatorial J2000 coordinate. The check
+ *  that matters: Sgr A* must come back at l~0, b~0 and the north galactic pole
+ *  at b=+90, and tests assert exactly that against published values. */
+export function equatorialToGalactic(raDeg, decDeg) {
+  return vecToGalactic(equatorialToVec(raDeg, decDeg));
+}
