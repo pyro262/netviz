@@ -60,6 +60,8 @@ REQUIRED_SELECTORS = (
     ".test-all",
     ".test-opt-help",
     ".test-report-row",
+    ".test-param",
+    ".test-preview-cat",
     ".theme-preset",
     ".theme-save",
     ".theme-sep",

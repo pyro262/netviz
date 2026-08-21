@@ -25,7 +25,7 @@ import { createApplier } from './apply.js';
 import { createMenu } from './menu.js';
 import { createCustomArcsPanel } from './custom_arcs_panel.js';
 import { createTestPanel } from './test_panel.js';
-import { createSelfTest } from './selftest.js';
+import { createShowcase } from './showcase.js';
 import {
   ovalEdge, ovalThickness, dipoleAxis, magneticFrame, R_INNER, R_OUTER,
 } from './auroral_oval.js';
@@ -539,6 +539,11 @@ async function boot() {
     window.location.reload();
   });
 
+  // Declared HERE and assigned further down, because the render loop below
+  // starts before the panels are built -- a `const` referenced from the loop
+  // would be in its temporal dead zone on the first few frames and throw.
+  let showcase = null;
+
   // Manual dt rather than THREE.Clock: Clock is deprecated in 0.185 and warns
   // on every load, which would bury real console errors in tools/shoot.py.
   // After resize() has run once, so the bloom targets start at canvas size.
@@ -555,6 +560,9 @@ async function boot() {
     arcs.update(dt);
     ripples.update(dt);
     if (lightning) lightning.update(dt);
+    // A showing ends on its own clock, which is what lets somebody close the
+    // panel and watch the globe -- the entire point of it.
+    if (showcase) showcase.tick();
     if (aurora) {
       // The camera every frame, not with the sun every few seconds: the sun
       // moves a degree an hour and the camera walks continuously, so a ray
@@ -661,54 +669,26 @@ async function boot() {
   // the length of a run. `settings` and not `preview`, because a ticked check
   // is an ordinary persisted setting -- somebody who ticked four and reloaded
   // should find them still ticked.
-  //
-  // SAMPLE ARCS GO STRAIGHT THROUGH THE POOL, never through the socket
-  // callback: injecting fabricated events would run them past classify.js and
-  // the rail's counters, and a test that pollutes the numbers it is testing is
-  // worse than no test. `arcs.spawn(ev, cls)` with an explicit class is that
-  // path -- the class is given, so classNameFor never runs.
-  const SAMPLE_ENDS = [
-    { sll: [35.68, 139.69], dll: null },        // Tokyo
-    { sll: [-33.87, 151.21], dll: null },       // Sydney
-    { sll: [51.51, -0.13], dll: null },         // London
-    { sll: [-23.55, -46.63], dll: null },       // Sao Paulo
-  ];
-  const selfTest = createSelfTest({
-    arcs: {
-      drawSample(cls, count) {
-        // CONFIG.home is a whole object or null (the collector fills it
-        // from NETVIZ_HOME_LAT/LON), never a dotted pair.
-        const h = CONFIG.home;
-        const homeLL = h ? [h.lat, h.lon] : [0, 0];
-        const wanted = cls === 'custom' ? cfg('arcs.custom', []).length : count;
-        for (let i = 0; i < wanted; i += 1) {
-          const end = SAMPLE_ENDS[i % SAMPLE_ENDS.length];
-          const drawn = cls === 'custom' ? `rule${(i % Math.max(1, wanted)) + 1}` : cls;
-          arcs.spawn({ k: cls === 'block' ? 'block' : 'flow',
-                       sll: end.sll, dll: homeLL, b: 1 }, drawn, []);
-        }
-        return wanted;
-      },
-      count: () => arcs.liveCount(),
-    },
-    project: (lat, lon) => window.__netviz.project(lat, lon),
-    // The renderer's OWN position function, which is where `theta = -lon`
-    // actually lives -- see the landmark check in selftest.js for why a screen
-    // projection cannot answer this on its own.
-    vec3: (lat, lon) => latLonToVec3(lat, lon, GLOBE_RADIUS),
-    stats: async () => {
-      const r = await fetch('/stats.json', { cache: 'no-store' });
-      if (!r.ok) throw new Error(`/stats.json returned ${r.status}`);
-      return r.json();
-    },
-    socket: () => link.raw(),
+  // Test Mode's engine. Everything it drives is injected, so showcase.js runs
+  // under `node --test` against stubs -- including the restore path, which is
+  // the half that matters: a showing that could not put the wall back would be
+  // worse than not having one.
+  showcase = createShowcase({
+    arcs,
+    aurora,
+    lightning: lightning ? {
+      // spawn() is lightning.js's own, and the layer has to be on for the
+      // points to be drawn at all -- showcase does that part.
+      showSamples: (pts) => { for (const p of pts) lightning.spawn(p.lat, p.lon); },
+    } : null,
+    globe,
+    settings,
+    read: (path, fallback) => cfg(path, fallback),
     home: () => CONFIG.home,
-    pause: pauseFeed,
-    resume: resumeFeed,
+    watched: () => globe.watchedCountries(),
   });
   const testPanel = createTestPanel({
-    settings, confirmer, root: document.body,
-    runner: (paths) => selfTest.run(paths),
+    settings, showcase, root: document.body,
   });
   // "Reset to netviz defaults": drop every remembered setting EXCEPT the color
   // rules, then reload so config.js and /config.json decide again from the
@@ -797,7 +777,7 @@ async function boot() {
   window.__netviz = {
     arcs, globe, ripples, aurora, clouds, lightning, renderer, camera, scene, rig, stars,
     milkyway, input,
-    settings, menu, customArcsPanel, settingsPanel, testPanel,
+    settings, menu, customArcsPanel, settingsPanel, testPanel, showcase,
     // The rail's per-class counter, for verification tooling: the self-test
     // draws sample arcs straight through the pool and must move nothing here,
     // which is only checkable from outside if the counter is reachable.

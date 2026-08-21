@@ -454,6 +454,13 @@ export async function createGlobe(radius) {
   return {
     group, material, coastlines, admin1, allBorders,
     borders: borders && borders.lines, cityPoints, surface,
+    /** The country codes this build actually has an outline for.
+     *
+     *  flashCountry() is a silent no-op for a code with no baked border, which
+     *  is right on the wall -- a block from an unwatched country should not
+     *  draw anything -- but it makes "flash a country" untestable from outside
+     *  without knowing what is available. Empty when no bake was loaded. */
+    watchedCountries: () => (borders ? Object.keys(borders.index) : []),
     flashCountry, updateFlashes, setLayer, registerLayer,
     setColor, setCityColor, setSurface,
   };

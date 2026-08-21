@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TEST_CATEGORIES, testPaths, createTestPanel }
+import { SHOW_ITEMS, PREVIEW_ITEMS, showPaths, createTestPanel }
   from '../../netviz/static/js/test_panel.js';
 import { entry } from '../../netviz/static/js/settings.js';
 import { CONFIG } from '../../netviz/static/js/config.js';
@@ -94,132 +94,123 @@ async function withCleanTest(fn) {
 
 const click = (dom, sel) => dom.root.querySelector(sel).dispatch('click', {});
 
-test('five categories, every option a declared schema path', () => {
-  assert.equal(TEST_CATEGORIES.length, 5);
-  for (const cat of TEST_CATEGORIES) {
-    assert.ok(cat.options.length >= 1, cat.id);
-    for (const opt of cat.options) assert.ok(entry(opt.path), opt.path);
+test('every row is a declared schema path with a real explanation', () => {
+  for (const item of [...SHOW_ITEMS, ...PREVIEW_ITEMS]) {
+    const e = entry(item.path);
+    assert.ok(e, item.path);
+    assert.ok(item.label && item.label.length > 3, item.path);
+    // ON the panel, not in a tooltip: a wall display is never hovered.
+    assert.ok(e.help.length > 40,
+      `${item.path} needs an explanation on the panel, not in a title`);
   }
-  assert.equal(testPaths().length, 15);
+  assert.equal(showPaths().length, SHOW_ITEMS.length);
 });
 
-test('a single-option category offers no "enable all"', async () => {
-  const dom = fakeDom();
-  await withCleanTest(() => withDom(dom, () => {
-    const panel = createTestPanel({ settings: configApplier(), root: dom.root });
-    panel.open();
-    for (const cat of TEST_CATEGORIES) {
-      const btn = dom.root.querySelector(`.test-all[data-cat="${cat.id}"]`);
-      if (cat.options.length === 1) {
-        assert.equal(btn, null, `${cat.id}: enabling one thing is an empty question`);
-      } else {
-        assert.ok(btn, cat.id);
-      }
-    }
-    panel.close();
-  }));
+test('the aurora row carries a strength slider, and it is a schema path too', () => {
+  const aurora = SHOW_ITEMS.find((i) => i.path === 'test.show.aurora');
+  assert.ok(aurora.param, 'no strength control on the one row that needs one');
+  const e = entry(aurora.param);
+  assert.equal(e.type, 'number');
+  assert.equal(e.min, 0);
+  assert.equal(e.max, 9, 'Kp is a 0-9 scale and the control must say so');
 });
 
-test('every option says in words what it does -- no bare checkbox', () => {
-  for (const cat of TEST_CATEGORIES) {
-    assert.ok(cat.lead && cat.lead.length > 20, `${cat.id} has no lead sentence`);
-    for (const opt of cat.options) {
-      assert.ok(opt.label && opt.label.length > 3, opt.path);
-      assert.ok(entry(opt.path).help.length > 40,
-        `${opt.path} needs an explanation on the panel, not in a tooltip`);
-    }
-  }
-});
-
-test('"enable all" ticks only its own category', async () => {
-  const dom = fakeDom();
-  await withCleanTest(() => withDom(dom, () => {
-    const applied = [];
-    const panel = createTestPanel({ settings: configApplier(applied), root: dom.root });
-    panel.open();
-    applied.length = 0;
-    click(dom, '.test-all[data-cat="feeds"]');
-    const touched = applied.flatMap((p) => Object.keys(p));
-    assert.equal(touched.length, 4);
-    assert.ok(touched.every((p) => p.startsWith('test.feeds.')), touched.join(', '));
-    panel.close();
-  }));
-});
-
-test('Run calls the runner with exactly the ticked paths', async () => {
-  const dom = fakeDom();
-  await withCleanTest(() => withDom(dom, () => {
-    const runs = [];
-    CONFIG.test.geo.home = true;
-    const panel = createTestPanel({
-      settings: configApplier(), runner: (paths) => { runs.push(paths); return []; },
-      root: dom.root,
-    });
-    panel.open();
-    click(dom, '.test-run');
-    assert.deepEqual(runs, [['test.geo.home']]);
-    panel.close();
-  }));
-});
-
-test('Run with nothing ticked does not call the runner', async () => {
-  const dom = fakeDom();
-  await withCleanTest(() => withDom(dom, () => {
-    const runs = [];
-    const panel = createTestPanel({
-      settings: configApplier(), runner: (p) => { runs.push(p); return []; },
-      root: dom.root,
-    });
-    panel.open();
-    click(dom, '.test-run');
-    assert.deepEqual(runs, [], 'a run of nothing is a run that always passes');
-    assert.match(dom.root.querySelector('.test-note').textContent, /nothing/i);
-    panel.close();
-  }));
-});
-
-test('the report draws one row per check, marked pass, fail or skipped', async () => {
+test('Show is dead until something is ticked', async () => {
   const dom = fakeDom();
   await withCleanTest(() => withDom(dom, async () => {
-    CONFIG.test.geo.home = true;
-    const panel = createTestPanel({
-      settings: configApplier(), root: dom.root,
-      // THE REAL SHAPE selftest.js returns -- `{id, status, reason}`, async.
-      // A stub with an `ok` flag and a synchronous return is what let two bugs
-      // through: run() did not await, so showReport got a Promise and drew
-      // nothing, and the failure count read `!l.ok` and called every pass a
-      // failure. verify_test_mode.py's case 5 found both.
-      runner: async () => [
-        { id: 'test.geo.home', status: 'pass', reason: 'home projects' },
-        { id: 'test.geo.landmarks', status: 'fail', reason: 'Sydney is 180 deg out' },
-        { id: 'test.feeds.netflow', status: 'skipped', reason: 'collector unreachable' },
-      ],
-    });
+    const panel = createTestPanel({ settings: configApplier(), root: dom.root });
     panel.open();
-    click(dom, '.test-run');
-    await new Promise((r) => { setTimeout(r, 0); });   // let the runner resolve
-    const rows = dom.root.querySelectorAll('.test-report-row');
-    assert.equal(rows.length, 3);
-    assert.ok(rows[0].className.includes('pass'));
-    assert.ok(rows[1].className.includes('fail'));
-    assert.ok(rows[2].className.includes('skip'),
-      'a check that could not run is neither a pass nor a failure');
-    const note = dom.root.querySelector('.test-note').textContent;
-    assert.match(note, /1 of 3/);
-    assert.match(note, /1 could not run/);
+    assert.equal(dom.root.querySelector('.test-show').disabled, true,
+      'a Show with nothing ticked is a button that does nothing');
+    const box = dom.root.querySelectorAll('.test-check')[0];
+    box.checked = true;
+    box.dispatch('change', {});
+    assert.equal(dom.root.querySelector('.test-show').disabled, false);
     panel.close();
   }));
 });
 
-test('Enable everything ticks all fifteen', async () => {
+test('Stop is dead until a showing is running', async () => {
   const dom = fakeDom();
-  await withCleanTest(() => withDom(dom, () => {
-    const applied = [];
-    const panel = createTestPanel({ settings: configApplier(applied), root: dom.root });
+  await withCleanTest(() => withDom(dom, async () => {
+    let running = false;
+    const panel = createTestPanel({
+      settings: configApplier(), root: dom.root,
+      showcase: { isRunning: () => running, start: () => { running = true; return { started: true, items: ['aurora'], skipped: [] }; }, stop: () => { running = false; return true; } },
+    });
     panel.open();
-    applied.length = 0;
-    click(dom, '.test-enable-all');
-    assert.equal(applied.flatMap((p) => Object.keys(p)).length, 15);
+    assert.equal(dom.root.querySelector('.test-stop').disabled, true);
+    CONFIG.test.show.aurora = true;
+    panel.sync();
+    dom.root.querySelector('.test-show').dispatch('click', {});
+    assert.equal(dom.root.querySelector('.test-stop').disabled, false);
+    dom.root.querySelector('.test-stop').dispatch('click', {});
+    assert.equal(dom.root.querySelector('.test-stop').disabled, true);
     panel.close();
   }));
+});
+
+test('the report lists what went on screen AND what could not', async () => {
+  const dom = fakeDom();
+  await withCleanTest(() => withDom(dom, async () => {
+    CONFIG.test.show.aurora = true;
+    CONFIG.test.show.customArcs = true;
+    const panel = createTestPanel({
+      settings: configApplier(), root: dom.root,
+      showcase: {
+        isRunning: () => true,
+        start: () => ({ started: true, items: ['aurora'],
+                        skipped: [{ id: 'customArcs', why: 'no custom arcs are defined on this display' }] }),
+        stop: () => true,
+      },
+    });
+    panel.open();
+    dom.root.querySelector('.test-show').dispatch('click', {});
+    const rows = dom.root.querySelectorAll('.test-report-row');
+    assert.equal(rows.length, 2);
+    assert.ok(rows[0].className.includes('on'));
+    assert.ok(rows[1].className.includes('skip'),
+      'an item that could not run must not read as one that did');
+    // The reason is on screen, not swallowed.
+    const why = rows[1].querySelector('.test-report-why').textContent;
+    assert.match(why, /no custom arcs/);
+    panel.close();
+  }));
+});
+
+test('the note says a showing survives closing the panel', async () => {
+  const dom = fakeDom();
+  await withCleanTest(() => withDom(dom, async () => {
+    CONFIG.test.show.aurora = true;
+    const panel = createTestPanel({
+      settings: configApplier(), root: dom.root,
+      showcase: { isRunning: () => true,
+                  start: () => ({ started: true, items: ['aurora'], skipped: [] }),
+                  stop: () => true },
+    });
+    panel.open();
+    dom.root.querySelector('.test-show').dispatch('click', {});
+    const note = dom.root.querySelector('.test-note').textContent;
+    assert.match(note, /keeps going|watch/i,
+      'the one thing a person has to be told: closing this does not stop it');
+    panel.close();
+  }));
+});
+
+test('the hover previews are a separate block, not more of the same list', async () => {
+  const dom = fakeDom();
+  await withCleanTest(() => withDom(dom, async () => {
+    const panel = createTestPanel({ settings: configApplier(), root: dom.root });
+    panel.open();
+    const sec = dom.root.querySelector('.test-preview-cat');
+    assert.ok(sec, 'the previews were folded back into the main list');
+    assert.equal(sec.querySelectorAll('.test-check').length, PREVIEW_ITEMS.length);
+    // And they are NOT part of what Show acts on.
+    assert.ok(!showPaths().some((p) => p.startsWith('test.preview.')));
+    panel.close();
+  }));
+});
+
+test('there is no self-test left to import', async () => {
+  await assert.rejects(() => import('../../netviz/static/js/selftest.js'));
 });

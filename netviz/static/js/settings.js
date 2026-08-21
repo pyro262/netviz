@@ -443,91 +443,83 @@ export const SCHEMA = {
 
   // ------------------------------------------------------------------ menu --
   // ---------------------------------------------------------- test mode --
-  // Fifteen choices where there used to be one boolean. All `uniform`: none
-  // of them has a live object to poke -- they are read at the moment a preview
-  // or a run happens, the same shape traffic.*'s configOnly settings have.
+  //
+  // "SHOW ME HOW THIS LOOKS", and nothing else. The panel behind these used to
+  // mix three unrelated jobs -- hover previews, sample geometry, and a
+  // diagnostic self-test of the feeds and the map -- which made it read as a
+  // grab bag rather than as a tool. A wall display is judged by eye, and what
+  // an operator needs is to SEE a thing that is not currently happening: an
+  // aurora on a quiet night, a blocked arc when nothing is being blocked, a
+  // custom arc whose rule has never fired.
+  //
+  // All `uniform`: nothing here has a live object to poke at write time -- the
+  // panel reads them when a person presses Show, the same shape traffic.*'s
+  // configOnly settings have.
+  'test.show.aurora': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Force an aurora at the strength you choose below, whatever the real '
+        + 'Kp is. It is replaced by the next reading from NOAA, which arrives '
+        + 'within three hours.',
+  },
+  'test.show.auroraKp': {
+    type: 'number', min: 0, max: 9, strategy: 'uniform',
+    help: 'Which storm to draw. 0 is a quiet night and 9 is the strongest storm '
+        + 'the scale has; the oval reaches further from the pole as this rises.',
+  },
+  'test.show.blocked': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Draw sample blocked arcs. These arrive rarely and live 18 seconds, '
+        + 'so judging the alarm layer otherwise means waiting for a real one.',
+  },
+  'test.show.flow': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Draw sample ordinary arcs, for judging the flow color and its glow '
+        + 'without waiting for traffic.',
+  },
+  'test.show.customArcs': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Draw one arc for each custom arc you have defined, so a rule that '
+        + 'has never fired can still be seen.',
+  },
+  'test.show.lightning': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Scatter sample strikes across the globe. The real feed runs about '
+        + 'forty minutes behind the world and can be genuinely empty.',
+  },
+  'test.show.clouds': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Turn the cloud layer on and fetch it now. Off by default, so a '
+        + 'display that has never used it has nothing to look at.',
+  },
+  'test.show.countryFlash': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Flash the outline of a watched country, the way a real block does. '
+        + 'Needs a watched-country bake; without one there is nothing to draw.',
+  },
+  'test.show.ripples': {
+    type: 'bool', strategy: 'uniform',
+    help: 'Land the sample arcs so their impact ripples fire, which is the only '
+        + 'way to judge ripple color and size on demand.',
+  },
+  'test.show.seconds': {
+    type: 'number', min: 5, max: 300, strategy: 'uniform',
+    help: 'How long a showing lasts before everything goes back to normal. '
+        + '"Stop" ends it early; closing the panel does not, so you can watch '
+        + 'the whole globe.',
+  },
+  // The hover previews. Kept because they answer the same question -- what
+  // does this look like -- by a different route: point at a control rather
+  // than force the thing on.
   'test.preview.layers': {
     type: 'bool', strategy: 'uniform',
     help: 'Hover a layer toggle in the menu and it applies live, so you can '
         + 'see it before you click. Move away and it reverts.',
   },
-  'test.preview.settings': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Hover a row in the settings panel and preview it the same way. Off '
-        + 'by default: the panel is 82 rows, and a sweep of the cursor down it '
-        + 'would repaint the wall over and over.',
-  },
-  'test.preview.theme': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Hover a palette in the Theme picker and see it on the wall before '
-        + 'choosing it. A theme change recolors every element that follows it, '
-        + 'so this is the most expensive of the four previews.',
-  },
   'test.preview.rail': {
     type: 'bool', strategy: 'uniform',
     help: 'Preview the stats rail by hovering its menu row. OFF by default and '
         + 'deliberately so: the rail is a relayout, so every pass of the cursor '
-        + "resizes the renderer and rebuilds the bloom pass's render targets. "
-        + 'Useful while deciding whether to run the rail at all; not something '
-        + 'to leave on.',
-  },
-  'test.arcs.flow': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Draw one sample flow arc on demand, so the flow color and glow can '
-        + 'be judged without waiting for real traffic.',
-  },
-  'test.arcs.blocked': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Draw one sample blocked arc on demand. Blocks arrive rarely and live '
-        + '18 seconds, so judging the alarm layer otherwise means waiting.',
-  },
-  'test.arcs.custom': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Draw one sample arc per custom arc you have defined, so a rule that '
-        + 'never fires can still be seen.',
-  },
-  'test.arcs.flood': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Draw 200 sample arcs at once, to see what a busy corridor looks like '
-        + 'at the current opacity and glow. Drawn straight through the arc pool '
-        + 'and never injected as events, so no counter on the rail moves.',
-  },
-  'test.layers.cycle': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Step through every layer in turn, on then off, so one pass shows what '
-        + 'each contributes. Reverts to the layers you had when it finishes.',
-  },
-  'test.feeds.netflow': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Include the netflow feed in the self-test: is it arriving, and how '
-        + 'stale is the newest event.',
-  },
-  'test.feeds.blocks': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Include the block feed in the self-test. A live router with nothing '
-        + 'blocked is indistinguishable from a dead syslog feed on the globe '
-        + 'alone; the collector counters tell them apart.',
-  },
-  'test.feeds.socket': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Include the WebSocket in the self-test: is this display connected, '
-        + 'and how long since the last frame arrived.',
-  },
-  'test.feeds.collector': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Include the collector in the self-test: /health.json, /stats.json '
-        + 'and the GeoIP miss rate.',
-  },
-  'test.geo.landmarks': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Check the projection numerically against known landmarks rather than '
-        + 'by eye. A mirrored globe looks perfectly fine until you know one.',
-  },
-  'test.geo.home': {
-    type: 'bool', strategy: 'uniform',
-    help: 'Check that home is where the collector says it is. This was the '
-        + "Austin placeholder for a week, which put every arc's near end in the "
-        + 'wrong state.',
+        + "resizes the renderer and rebuilds the bloom pass's render targets.",
   },
 
   // -------------------------------------------------------------- layers --

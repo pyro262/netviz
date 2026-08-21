@@ -1,82 +1,52 @@
-// Test Mode: what to try on the wall, and what to check about it.
+// Test Mode: show me how this looks.
 //
-// One boolean until 0.7.0 -- `menu.testMode`, a bare toggle whose only
-// explanation was a tooltip. A WALL DISPLAY IS NEVER HOVERED, so that
-// explanation reached nobody; the same argument that printed Randomize's scope
-// on the panel instead of leaving it in a `title`. It is a dialog now, and
-// every option says in words what it does.
+// It used to be one boolean, then fifteen checkboxes across five categories
+// that mixed three unrelated jobs -- hover previews, sample geometry, and a
+// diagnostic self-test of the feeds and the map. Reported from the wall as
+// covering everything and not making sense, which was fair: "is netflow
+// arriving" and "what does an aurora look like" are not the same question and
+// do not belong under one button.
 //
-// A MODAL, unlike the settings panel. That panel is a rail meant to be used
-// while watching the globe beside it; this one takes the display over for the
-// length of a run, which is a modal act.
+// It asks ONE question now. A wall display is judged by eye, and the hard case
+// is judging something that is NOT CURRENTLY HAPPENING: an aurora on a quiet
+// night, a blocked arc when nothing is being blocked, a custom arc whose rule
+// has never fired. Tick those, press Show, and they are on screen for a while.
 //
-// Every tick writes through `settings.apply` -- these are ordinary persisted
-// settings, and a person who ticked four checks and reloaded should find them
+// A MODAL, unlike the settings panel -- but one you are meant to CLOSE and then
+// watch the globe. A showing runs on its own clock and closing the panel does
+// not end it; that is the whole point.
+//
+// Every tick writes through `settings.apply`: these are ordinary persisted
+// settings, and somebody who ticked four things and reloaded should find them
 // still ticked.
 import { cfg } from './config.js';
 import { entry } from './settings.js';
 
-/** The five categories, their options, and the plain-language sentence printed
- *  under each heading. The lead is NOT a tooltip, for the reason above. */
-export const TEST_CATEGORIES = [
-  {
-    id: 'preview',
-    label: 'Hover preview',
-    lead: 'Hover a control and see it on the wall before you commit to it. '
-        + 'Moving away puts it back.',
-    options: [
-      { path: 'test.preview.layers', label: 'Layer toggles in the menu' },
-      { path: 'test.preview.settings', label: 'Sliders in the settings panel' },
-      { path: 'test.preview.theme', label: 'Palettes in the Theme picker' },
-      { path: 'test.preview.rail', label: 'The stats rail (resizes the display)' },
-    ],
-  },
-  {
-    id: 'arcs',
-    label: 'Sample arcs',
-    lead: 'Draw arcs on demand rather than waiting for traffic. Nothing here '
-        + 'is injected as an event, so no counter on the rail moves.',
-    options: [
-      { path: 'test.arcs.flow', label: 'One flow arc' },
-      { path: 'test.arcs.blocked', label: 'One blocked arc' },
-      { path: 'test.arcs.custom', label: 'One arc per custom arc you have defined' },
-      { path: 'test.arcs.flood', label: '200 arcs at once' },
-    ],
-  },
-  {
-    id: 'layers',
-    label: 'Layers',
-    lead: 'One pass through the layers, so you can see what each contributes.',
-    options: [
-      { path: 'test.layers.cycle', label: 'Cycle each layer on in turn' },
-    ],
-  },
-  {
-    id: 'feeds',
-    label: 'Feeds',
-    lead: 'Is data actually arriving, and how old is the newest of it.',
-    options: [
-      { path: 'test.feeds.netflow', label: 'Netflow is alive' },
-      { path: 'test.feeds.blocks', label: 'The block feed is alive' },
-      { path: 'test.feeds.socket', label: 'This display is connected' },
-      { path: 'test.feeds.collector', label: 'The collector is reachable and healthy' },
-    ],
-  },
-  {
-    id: 'geo',
-    label: 'Geography',
-    lead: 'Is the map right. A mirrored globe looks perfectly fine until you '
-        + 'know one of the landmarks on it.',
-    options: [
-      { path: 'test.geo.landmarks', label: 'Landmarks land where they should' },
-      { path: 'test.geo.home', label: 'Home is where the collector says it is' },
-    ],
-  },
+/** The things a showing can put on screen, in the order the panel lists them.
+ *  `param` is a slider that belongs to the row above it. */
+export const SHOW_ITEMS = [
+  { path: 'test.show.aurora', label: 'Aurora', param: 'test.show.auroraKp',
+    paramLabel: 'Kp' },
+  { path: 'test.show.blocked', label: 'Blocked arcs' },
+  { path: 'test.show.flow', label: 'Ordinary arcs' },
+  { path: 'test.show.customArcs', label: 'One arc per custom arc' },
+  { path: 'test.show.ripples', label: 'Impact ripples' },
+  { path: 'test.show.lightning', label: 'Lightning' },
+  { path: 'test.show.clouds', label: 'Clouds' },
+  { path: 'test.show.countryFlash', label: 'Country flash' },
 ];
 
-/** Every option path, in panel order. */
-export function testPaths() {
-  return TEST_CATEGORIES.flatMap((c) => c.options.map((o) => o.path));
+/** The hover previews. Kept because they answer the same question -- what does
+ *  this look like -- by a different route: point at a control rather than force
+ *  the thing on. Their own block, so the panel does not read as a list of
+ *  unrelated switches again. */
+export const PREVIEW_ITEMS = [
+  { path: 'test.preview.layers', label: 'Layer toggles in the menu' },
+  { path: 'test.preview.rail', label: 'The stats rail (resizes the display)' },
+];
+
+export function showPaths() {
+  return SHOW_ITEMS.map((i) => i.path);
 }
 
 function el(tag, cls, text) {
@@ -86,7 +56,7 @@ function el(tag, cls, text) {
   return node;
 }
 
-export function createTestPanel({ settings, confirmer, runner, root, onClose } = {}) {
+export function createTestPanel({ settings, showcase, root, onClose } = {}) {
   const mount = root || document.body;
   let node = null;
   const boxRefs = new Map();
@@ -108,90 +78,65 @@ export function createTestPanel({ settings, confirmer, runner, root, onClose } =
 
   function sync() {
     for (const [path, box] of boxRefs) box.checked = !!cfg(path, false);
+    refreshActions();
   }
 
-  /** Tick every option in one category. A category with a SINGLE option gets no
-   *  button at all -- a control offering to enable one thing is the same empty
-   *  question confirm.js already refuses to ask. */
-  function enableCategory(id) {
-    const cat = TEST_CATEGORIES.find((c) => c.id === id);
-    if (!cat) return;
-    for (const opt of cat.options) write(opt.path, true);
-    sync();
-    setNote(`Turned on all ${cat.options.length} ${cat.label.toLowerCase()} checks.`);
+  function anyTicked() { return showPaths().some((p) => cfg(p, false)); }
+
+  function refreshActions() {
+    if (!node) return;
+    const show = node.querySelector('.test-show');
+    const stop = node.querySelector('.test-stop');
+    // A Show with nothing ticked would be a button that does nothing, which is
+    // the same empty control confirm.js refuses to draw a dialog for.
+    if (show) show.disabled = !anyTicked();
+    if (stop) stop.disabled = !(showcase && showcase.isRunning());
   }
 
-  function enableEverything() {
-    for (const path of testPaths()) write(path, true);
-    sync();
-    setNote(`Turned on all ${testPaths().length} checks.`);
-  }
-
-  function ticked() { return testPaths().filter((p) => cfg(p, false)); }
-
-  function showReport(lines) {
+  function report(lines) {
     const box = node && node.querySelector('.test-report');
     if (!box) return;
     box.replaceChildren();
     for (const line of lines || []) {
-      // THREE STATES, not two. A check that could not run has not passed and
-      // has not failed, and drawing it as either is the lie selftest.js's
-      // `skipped` exists to prevent.
-      const state = line.status === 'skipped' ? 'skip'
-        : (line.status === 'fail' ? 'fail' : 'pass');
-      const row = el('div', `test-report-row ${state}`);
+      const row = el('div', `test-report-row ${line.state}`);
       row.append(el('span', 'test-report-mark',
-                    state === 'skip' ? '–' : (state === 'pass' ? '✓' : '✕')));
-      row.append(el('span', 'test-report-label', line.label || line.id || ''));
-      row.append(el('span', 'test-report-why', line.why || line.reason || ''));
+                    line.state === 'skip' ? '–' : '•'));
+      row.append(el('span', 'test-report-label', line.label));
+      row.append(el('span', 'test-report-why', line.why || ''));
       box.append(row);
     }
   }
 
-  /** ASYNC, and the `await` is load-bearing: selftest.js's `run` is async --
-   *  the feed checks fetch /stats.json -- so a synchronous call here hands
-   *  showReport a Promise, which is not iterable and draws nothing at all.
-   *  The unit suite's runner stub returns an array, so it could not see this;
-   *  verify_test_mode.py's case 5 waited 20s for a report row and found none. */
-  async function run() {
-    const paths = ticked();
-    if (!paths.length) {
-      // A run of nothing is a run that always passes, which teaches that the
-      // button means nothing. Say so instead.
-      setNote('Nothing is ticked, so there is nothing to run.');
-      showReport([]);
-      return;
+  const labelFor = (path) => {
+    const item = SHOW_ITEMS.find((i) => i.path === path);
+    return item ? item.label : path;
+  };
+
+  function show() {
+    if (!showcase) { setNote('This display cannot run a showing.'); return; }
+    const out = showcase.start();
+    const lines = [
+      ...(out.items || []).map((id) => ({
+        state: 'on', label: labelFor(`test.show.${id}`), why: 'on screen now',
+      })),
+      ...(out.skipped || []).map((s) => ({
+        state: 'skip', label: labelFor(`test.show.${s.id}`), why: s.why,
+      })),
+    ];
+    report(lines);
+    const secs = cfg('test.show.seconds', 30);
+    setNote(out.started
+      ? `Showing ${out.items.length} thing${out.items.length === 1 ? '' : 's'} `
+        + `for ${secs}s. Close this panel and watch -- it keeps going.`
+      : 'Nothing could be shown; see the reasons above.');
+    refreshActions();
+  }
+
+  function stop() {
+    if (showcase && showcase.stop()) {
+      setNote('Stopped. Everything is back to how it was.');
     }
-    if (!runner) { setNote('No self-test runner is wired up.'); return; }
-    setNote(`Running ${paths.length} check${paths.length === 1 ? '' : 's'}...`);
-    let lines;
-    try {
-      lines = (await runner(paths)) || [];
-    } catch (err) {
-      // A runner that throws must not leave "Running N checks..." on screen for
-      // ever, which reads as a run still in progress.
-      setNote(`The self-test could not run: ${err && err.message ? err.message : err}`);
-      showReport([]);
-      return;
-    }
-    showReport(lines);
-    // BY STATUS, not by an `ok` flag: selftest.js reports
-    // 'pass' | 'fail' | 'skipped', and counting `!l.ok` made every line a
-    // failure -- including the passes.
-    const failed = lines.filter((l) => l.status === 'fail').length;
-    const skipped = lines.filter((l) => l.status === 'skipped').length;
-    // "All 4 checks passed. 2 could not run." was the first cut, and it
-    // contradicts itself in one breath. A skip is neither a pass nor a failure,
-    // so the passes are counted rather than assumed from the absence of
-    // failures.
-    const passed = lines.length - failed - skipped;
-    let done;
-    if (failed) done = `${failed} of ${lines.length} checks failed.`;
-    else if (skipped) done = `${passed} of ${lines.length} checks passed.`;
-    else done = `All ${lines.length} checks passed.`;
-    setNote(skipped
-      ? `${done} ${skipped} could not run.`
-      : done);
+    refreshActions();
   }
 
   function close() {
@@ -205,63 +150,95 @@ export function createTestPanel({ settings, confirmer, runner, root, onClose } =
 
   function onKeyDown(e) { if (e && e.key === 'Escape') close(); }
 
+  /** One checkbox row, with its explanation ON the panel. A wall display is
+   *  never hovered, so an explanation in a `title` reaches nobody -- the same
+   *  call that printed Randomize's scope under its button. */
+  function renderRow(item, cls) {
+    const row = el('label', 'test-opt');
+    const box = el('input', 'test-check');
+    box.type = 'checkbox';
+    box.checked = !!cfg(item.path, false);
+    box.setAttribute('data-path', item.path);
+    box.addEventListener('change', () => { write(item.path, box.checked); refreshActions(); });
+    boxRefs.set(item.path, box);
+    row.append(box, el('span', 'test-opt-label', item.label));
+
+    if (item.param) {
+      const e = entry(item.param);
+      const wrap = el('span', 'test-param');
+      wrap.append(el('span', 'test-param-label', `${item.paramLabel} `));
+      const range = el('input', 'test-param-range');
+      range.type = 'range';
+      range.min = String(e.min);
+      range.max = String(e.max);
+      range.step = '1';
+      range.value = String(cfg(item.param, e.min));
+      const out = el('span', 'test-param-value', String(cfg(item.param, e.min)));
+      range.addEventListener('input', () => {
+        write(item.param, Number(range.value));
+        out.textContent = String(cfg(item.param, e.min));
+      });
+      wrap.append(range, out);
+      row.append(wrap);
+    }
+
+    const e = entry(item.path);
+    if (e && e.help) row.append(el('span', 'test-opt-help', e.help));
+    row.className = cls ? `test-opt ${cls}` : 'test-opt';
+    return row;
+  }
+
   function open() {
     if (node) return true;
     boxRefs.clear();
     node = el('div', 'test-panel');
     node.append(el('div', 'test-title', 'Test Mode'));
     node.append(el('div', 'test-hint',
-      'Nothing here changes what the collector sees or what any other display '
-      + 'shows. What you tick is remembered on this screen.'));
+      'Put things on screen that are not happening right now, so you can see '
+      + 'how they look. Nothing here changes what the collector records or what '
+      + 'any other display shows.'));
 
-    for (const cat of TEST_CATEGORIES) {
-      const section = el('div', 'test-cat');
-      const head = el('div', 'test-cat-head');
-      head.append(el('h3', 'test-cat-title', cat.label));
-      if (cat.options.length > 1) {
-        const all = el('button', 'test-all', 'enable all');
-        all.setAttribute('data-cat', cat.id);
-        all.title = `Tick all ${cat.options.length} of these.`;
-        all.addEventListener('click', () => enableCategory(cat.id));
-        head.append(all);
-      }
-      section.append(head);
-      section.append(el('p', 'test-cat-lead', cat.lead));
-      for (const opt of cat.options) {
-        const row = el('label', 'test-opt');
-        const box = el('input', 'test-check');
-        box.type = 'checkbox';
-        box.checked = !!cfg(opt.path, false);
-        box.addEventListener('change', () => write(opt.path, box.checked));
-        boxRefs.set(opt.path, box);
-        row.append(box, el('span', 'test-opt-label', opt.label));
-        // The explanation goes ON the panel, not in a tooltip -- a wall
-        // display is never hovered.
-        const e = entry(opt.path);
-        if (e && e.help) row.append(el('span', 'test-opt-help', e.help));
-        section.append(row);
-      }
-      node.append(section);
-    }
+    const showSec = el('div', 'test-cat');
+    const head = el('div', 'test-cat-head');
+    head.append(el('h3', 'test-cat-title', 'Show me'));
+    showSec.append(head);
+    for (const item of SHOW_ITEMS) showSec.append(renderRow(item));
+    node.append(showSec);
 
     node.append(el('div', 'test-report'));
     node.append(el('div', 'test-note'));
 
     const foot = el('div', 'test-foot');
-    const allBtn = el('button', 'test-enable-all', 'Enable everything');
-    allBtn.addEventListener('click', enableEverything);
-    const runBtn = el('button', 'test-run', 'Run');
-    runBtn.title = 'Run the checks that are ticked and report what each one found.';
-    runBtn.addEventListener('click', run);
+    const showBtn = el('button', 'test-show', 'Show these');
+    showBtn.title = 'Put the ticked things on screen for a while.';
+    showBtn.addEventListener('click', show);
+    const stopBtn = el('button', 'test-stop', 'Stop');
+    stopBtn.title = 'End the showing now and put everything back.';
+    stopBtn.addEventListener('click', stop);
     const closeBtn = el('button', 'test-close', 'Close');
+    closeBtn.title = 'Close this panel. A showing keeps going -- that is the point.';
     closeBtn.addEventListener('click', close);
-    foot.append(allBtn, runBtn, closeBtn);
+    foot.append(showBtn, stopBtn, closeBtn);
     node.append(foot);
 
+    // The previews last, and visibly separate: they are the same question by a
+    // different route, and mixing them into the list above is what made the old
+    // panel read as a grab bag.
+    const prevSec = el('div', 'test-cat test-preview-cat');
+    const phead = el('div', 'test-cat-head');
+    phead.append(el('h3', 'test-cat-title', 'Or preview by pointing at it'));
+    prevSec.append(phead);
+    prevSec.append(el('p', 'test-cat-lead',
+      'Hover a control and it applies live until you move away. Nothing is '
+      + 'saved and nothing needs to be stopped.'));
+    for (const item of PREVIEW_ITEMS) prevSec.append(renderRow(item));
+    node.append(prevSec);
+
     mount.appendChild(node);
+    refreshActions();
     document.addEventListener('keydown', onKeyDown, true);
     return true;
   }
 
-  return { open, close, isOpen, report: showReport };
+  return { open, close, isOpen, sync };
 }

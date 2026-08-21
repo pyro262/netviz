@@ -251,20 +251,31 @@ export const CONFIG = {
 
   // ----------------------------------------------------------- test mode --
   //
-  // One boolean until 0.7.0, and it meant four different things at once. Now
-  // each is its own choice, all off by default: nothing here repaints the wall
-  // for anyone who has not deliberately asked for it.
+  // "SHOW ME HOW THIS LOOKS", and nothing else. A wall display is judged by
+  // eye, and the hard case is judging something that is NOT currently
+  // happening -- an aurora on a quiet night, a blocked arc when nothing is
+  // being blocked, a custom arc whose rule has never fired. So `show.*` forces
+  // those things on for a while and then puts everything back.
   //
   // `preview.*` is the hover behavior -- applied through the raw, non-persisting
   // applier, never localStorage, and reverted the moment the cursor leaves.
-  // `arcs.*` and `layers.cycle` draw sample geometry on demand. `feeds.*` and
-  // `geo.*` are what the self-test checks.
   test: {
-    preview: { layers: false, settings: false, theme: false, rail: false },
-    arcs: { flow: false, blocked: false, custom: false, flood: false },
-    layers: { cycle: false },
-    feeds: { netflow: false, blocks: false, socket: false, collector: false },
-    geo: { landmarks: false, home: false },
+    // What to force on screen, and for how long. Every one of these is off: a
+    // display nobody has asked shows what is actually happening.
+    show: {
+      aurora: false,
+      auroraKp: 7,        // a strong storm -- the point is to SEE one
+      blocked: false,
+      flow: false,
+      customArcs: false,
+      lightning: false,
+      clouds: false,
+      countryFlash: false,
+      ripples: false,
+      seconds: 30,
+    },
+    // Hover previews, which answer the same question by a different route.
+    preview: { layers: false, rail: false },
   },
 
   // --------------------------------------------------------------- layers --

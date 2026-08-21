@@ -264,6 +264,15 @@ export function createLightning(radius) {
   return {
     points,
 
+    /** Put one stroke on the globe, at a real position.
+     *
+     *  The live feed's own path, exposed so Test Mode can show what lightning
+     *  LOOKS like on a night the archive is empty -- which it genuinely can be,
+     *  and which is exactly when somebody wants to judge the layer. It does not
+     *  touch `strokes` or the poll clock, so a showing cannot make the feed
+     *  claim data it never received. */
+    spawn,
+
     /** One frame. `dt` is seconds, the same value arcs.js is driven with. */
     update(dt) {
       clock += dt;

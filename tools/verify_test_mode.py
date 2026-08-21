@@ -98,17 +98,21 @@ def close_panel(page) -> None:
 
 
 def reset_test_paths(page) -> None:
-    """Every `test.*` back to false, through the persisting applier.
+    """Every `test.*` back to its shipped default, through the persisting
+    applier, and any running showing stopped.
 
-    Inter-case isolation, not something under test: a case that left four checks
-    ticked would change what the next one measures."""
+    Inter-case isolation, not something under test: a case that left four things
+    ticked -- or a showing running -- would change what the next one measures."""
     page.evaluate("""async () => {
       const t = await import('./js/test_panel.js');
+      const s = await import('./js/settings.js');
       const patch = {};
-      for (const p of t.testPaths()) patch[p] = false;
+      for (const i of [...t.SHOW_ITEMS, ...t.PREVIEW_ITEMS]) patch[i.path] = false;
       window.__netviz.settings.apply(patch);
+      window.__netviz.settings.apply({'test.show.auroraKp': s.defaultOf('test.show.auroraKp')});
     }""")
-    page.wait_for_timeout(150)
+    page.evaluate("() => window.__netviz.showcase && window.__netviz.showcase.stop()")
+    page.wait_for_timeout(200)
 
 
 def case1_menu_row_opens_a_dialog(page, cx, cy) -> bool:
@@ -123,7 +127,7 @@ def case1_menu_row_opens_a_dialog(page, cx, cy) -> bool:
     # The ellipsis is the signal that a click opens something. Either character
     # is accepted: the source uses the single glyph, but a future edit typing
     # three dots means the same thing to a reader.
-    has_ellipsis = "…" in row["text"] or "..." in row["text"]
+    has_ellipsis = "\u2026" in row["text"] or "..." in row["text"]
     clicked = click_menu_row(page, "testMode")
     page.wait_for_timeout(400)
     opened = panel_open(page)
@@ -135,9 +139,12 @@ def case1_menu_row_opens_a_dialog(page, cx, cy) -> bool:
                   f"dialog opened={opened}")
 
 
-def case2_options_explain_themselves(page, cx, cy) -> bool:
-    """2: every option's explanation is on the panel, not in a tooltip."""
-    name = "2: every option explains itself in visible copy, not a title"
+def case2_every_row_explains_itself(page, cx, cy) -> bool:
+    """2: every row's explanation is on the panel, not in a tooltip.
+
+    A wall display is never hovered, so an explanation in a `title` reaches
+    nobody -- the same call that printed Randomize's scope under its button."""
+    name = "2: every row explains itself in visible copy, not a title"
     close_panel(page)
     page.evaluate("() => window.__netviz.testPanel.open()")
     page.wait_for_timeout(400)
@@ -145,63 +152,55 @@ def case2_options_explain_themselves(page, cx, cy) -> bool:
       const t = await import('./js/test_panel.js');
       const el = document.querySelector('.test-panel');
       const helps = [...el.querySelectorAll('.test-opt-help')].map((n) => n.textContent);
-      const leads = [...el.querySelectorAll('.test-cat-lead')].map((n) => n.textContent);
       return {
-        options: t.testPaths().length,
-        categories: t.TEST_CATEGORIES.length,
+        rows: t.SHOW_ITEMS.length + t.PREVIEW_ITEMS.length,
+        checks: el.querySelectorAll('.test-check').length,
         helps: helps.length,
         shortest: helps.length ? Math.min(...helps.map((h) => h.length)) : 0,
-        leads: leads.length,
-        shortestLead: leads.length ? Math.min(...leads.map((l) => l.length)) : 0,
-        checks: el.querySelectorAll('.test-check').length,
+        // The aurora row's strength control, which is the only parameter on the
+        // panel and the one thing that decides WHICH storm gets drawn.
+        kpRange: !!el.querySelector('.test-param-range'),
+        previewBlock: !!el.querySelector('.test-preview-cat'),
       };
     }""")
     close_panel(page)
-    ok = (out["helps"] == out["options"] and out["checks"] == out["options"]
-          and out["leads"] == out["categories"]
-          and out["shortest"] > 40 and out["shortestLead"] > 20)
+    ok = (out["checks"] == out["rows"] and out["helps"] == out["rows"]
+          and out["shortest"] > 40 and out["kpRange"] and out["previewBlock"])
     return report(name, ok,
                   f"{out['checks']} checkboxes and {out['helps']} visible "
-                  f"explanations for {out['options']} options; {out['leads']} "
-                  f"category leads for {out['categories']} categories; shortest "
-                  f"explanation {out['shortest']} chars (want >40), shortest lead "
-                  f"{out['shortestLead']} (want >20)")
+                  f"explanations for {out['rows']} rows; shortest explanation "
+                  f"{out['shortest']} chars (want >40); Kp slider "
+                  f"present={out['kpRange']}; previews in their own block="
+                  f"{out['previewBlock']}")
 
 
-def case3_enable_all_is_per_category(page, cx, cy) -> bool:
-    """3: `enable all` ticks one category, and a lone option gets no button."""
-    name = "3: enable all ticks one category and leaves the others"
+def case3_show_is_dead_until_something_is_ticked(page, cx, cy) -> bool:
+    """3: Show does nothing until there is something to show, and says so."""
+    name = "3: Show is dead until something is ticked"
     reset_test_paths(page)
     close_panel(page)
     page.evaluate("() => window.__netviz.testPanel.open()")
     page.wait_for_timeout(400)
-    out = page.evaluate("""async () => {
-      const t = await import('./js/test_panel.js');
-      const c = await import('./js/config.js');
-      const el = document.querySelector('.test-panel');
-      // Which categories offer the button, against which have more than one
-      // option -- the rule, not a list of ids.
-      const buttons = [...el.querySelectorAll('.test-all')]
-        .map((b) => b.getAttribute('data-cat'));
-      const multi = t.TEST_CATEGORIES.filter((x) => x.options.length > 1).map((x) => x.id);
-      const single = t.TEST_CATEGORIES.filter((x) => x.options.length === 1).map((x) => x.id);
-      const btn = el.querySelector('.test-all[data-cat="feeds"]');
-      if (btn) btn.click();
-      const on = t.testPaths().filter((p) => c.cfg(p, false));
-      return {buttons, multi, single, on};
+    before = page.evaluate(
+        "() => document.querySelector('.test-show').disabled")
+    page.evaluate("""() => {
+      const b = document.querySelector('.test-check[data-path="test.show.blocked"]');
+      b.checked = true;
+      b.dispatchEvent(new Event('change', {bubbles: true}));
     }""")
+    page.wait_for_timeout(250)
+    after = page.evaluate("""() => ({
+      show: document.querySelector('.test-show').disabled,
+      stop: document.querySelector('.test-stop').disabled,
+    })""")
     close_panel(page)
     reset_test_paths(page)
-    feeds_only = all(p.startswith("test.feeds.") for p in out["on"])
-    ok = (sorted(out["buttons"]) == sorted(out["multi"])
-          and not [s for s in out["single"] if s in out["buttons"]]
-          and len(out["on"]) == 4 and feeds_only)
+    ok = (before is True and after["show"] is False and after["stop"] is True)
     return report(name, ok,
-                  f"buttons on {out['buttons']} against multi-option categories "
-                  f"{out['multi']}; single-option {out['single']} correctly have "
-                  f"none={not [s for s in out['single'] if s in out['buttons']]}; "
-                  f"after clicking feeds, ticked={out['on']} (4 and all "
-                  f"test.feeds.*={feeds_only})")
+                  f"Show disabled with nothing ticked={before} (must be True), "
+                  f"after ticking one: Show disabled={after['show']} (must be "
+                  f"False), Stop disabled={after['stop']} (must be True -- "
+                  f"nothing is running yet)")
 
 
 def case4_hover_preview_is_per_category(page, cx, cy) -> bool:
@@ -265,7 +264,7 @@ def case4_hover_preview_is_per_category(page, cx, cy) -> bool:
 
     page.evaluate("() => document.body.click()")
     page.wait_for_timeout(200)
-    page.evaluate("""() => window.__netviz.settings.apply({'test.preview.layers': false})""")
+    reset_test_paths(page)
 
     layer_ok = hovered and stars_during != stars_before and stars_after == stars_before
     rail_ok = rail_during == rail_before
@@ -276,86 +275,104 @@ def case4_hover_preview_is_per_category(page, cx, cy) -> bool:
                   f"test.preview.rail off (held={rail_ok})")
 
 
-def case5_self_test_pauses_and_pollutes_nothing(page, cx, cy) -> bool:
-    """5: a run pauses the feed, reports per check, and moves no counter.
+def case5_a_showing_shows_and_restores(page, cx, cy) -> bool:
+    """5: a showing puts things on screen, moves no counter, and puts it back.
 
     THE COUNTER HALF IS THE ONE THAT MATTERS. Sample arcs go straight through
-    the pool and are never injected as events, so nothing the run draws may
-    reach classify.js or the rail's per-class counts. A run that injected fake
-    traffic would look identical on screen and would quietly corrupt the numbers
-    the wall exists to show."""
-    name = "5: a self-test run pauses the feed and moves no counter"
-    close_panel(page)
+    the arc pool with an explicit class, so nothing a showing draws may reach
+    classify.js or the rail's per-class counts -- a showing that injected
+    fabricated traffic would look identical on screen and would quietly corrupt
+    the numbers the wall exists to show.
+
+    The RESTORE half is the other one: a layer this turned on has to go back
+    off, a layer that was already on has to STAY on, and the aurora has to
+    return to the real reading rather than to a default."""
+    name = "5: a showing shows, moves no counter, and puts everything back"
     reset_test_paths(page)
-    # Four checks that need no network and cannot be skipped for lack of a
-    # collector: two sample arcs and both geo checks.
+    close_panel(page)
+    before = page.evaluate("""async () => {
+      const c = await import('./js/config.js');
+      const counts = window.__netviz.classCounts;
+      const now = Date.now();
+      return {
+        lightning: c.cfg('layers.lightning', false),
+        aurora: window.__netviz.aurora.debug(),
+        arcs: window.__netviz.arcs.liveCount(),
+        flow: counts.ratePerMin('flow', now),
+        block: counts.ratePerMin('block', now),
+      };
+    }""")
     page.evaluate("""() => window.__netviz.settings.apply({
-      'test.arcs.flow': true, 'test.arcs.blocked': true,
-      'test.geo.landmarks': true, 'test.geo.home': true,
+      'test.show.blocked': true, 'test.show.lightning': true,
+      'test.show.aurora': true, 'test.show.auroraKp': 8,
+      'test.show.seconds': 5,
     })""")
     page.wait_for_timeout(200)
     page.evaluate("() => window.__netviz.testPanel.open()")
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(300)
+    page.evaluate("() => document.querySelector('.test-show').click()")
+    page.wait_for_timeout(800)
 
-    def counts():
-        return page.evaluate("""() => {
-          const c = window.__netviz.classCounts;
-          const now = Date.now();
-          const out = {};
-          for (const k of ['flow', 'block']) out[k] = c.ratePerMin(k, now);
-          return out;
-        }""")
-
-    before = counts()
-    page.evaluate("""() => {
-      const b = document.querySelector('.test-run');
-      if (b) b.click();
-    }""")
-    # The runner is async; the report lands when it resolves.
-    page.wait_for_function(
-        "() => document.querySelectorAll('.test-report-row').length > 0",
-        timeout=20_000)
-    page.wait_for_timeout(600)
-    out = page.evaluate("""() => {
+    during = page.evaluate("""async () => {
+      const c = await import('./js/config.js');
       const el = document.querySelector('.test-panel');
-      const rows = [...el.querySelectorAll('.test-report-row')];
-      const cls = (c) => rows.filter((r) => r.className.includes(c)).length;
       return {
-        lines: rows.length,
-        passes: cls('pass'), fails: cls('fail'), skips: cls('skip'),
+        lightning: c.cfg('layers.lightning', false),
+        kp: window.__netviz.aurora.debug().kp,
+        arcs: window.__netviz.arcs.liveCount(),
+        running: window.__netviz.showcase.isRunning(),
+        onRows: el.querySelectorAll('.test-report-row.on').length,
         note: (el.querySelector('.test-note') || {}).textContent || '',
-        labels: rows.map((r) => (r.querySelector('.test-report-label') || {}).textContent),
       };
     }""")
-    after = counts()
     close_panel(page)
+    # It ends on its OWN clock -- closing the panel must not have stopped it.
+    page.wait_for_timeout(6000)
+    after = page.evaluate("""async () => {
+      const c = await import('./js/config.js');
+      const counts = window.__netviz.classCounts;
+      const now = Date.now();
+      return {
+        lightning: c.cfg('layers.lightning', false),
+        kp: window.__netviz.aurora.debug().kp,
+        running: window.__netviz.showcase.isRunning(),
+        flow: counts.ratePerMin('flow', now),
+        block: counts.ratePerMin('block', now),
+      };
+    }""")
     reset_test_paths(page)
 
-    moved = [k for k in before if abs((after[k] or 0) - (before[k] or 0)) > 1e-9]
-    # A SKIP IS NOT A FAILURE, and demanding four passes would make this case
-    # depend on where the camera happens to be looking: `test.geo.landmarks`
-    # skips honestly when a landmark is behind the limb, and `test.geo.home`
-    # when the collector has served no home position. What is asserted is one
-    # line per ticked check, NO failures, and -- the point of the case -- that
-    # the rail's counters did not move.
-    ok = (out["lines"] == 4 and out["fails"] == 0
-          and out["passes"] + out["skips"] == 4 and not moved)
-    return report(name, ok,
-                  f"{out['lines']} report lines for 4 ticked checks "
-                  f"({out['passes']} passed, {out['skips']} skipped, "
-                  f"{out['fails']} failed -- failures must be 0), "
-                  f"note={out['note']!r}; rail rate/min before={before} "
-                  f"after={after}, counters moved={moved or 'none'} -- sample arcs "
-                  f"must never reach the counters")
+    drew = during["arcs"] > before["arcs"]
+    forced = during["kp"] == 8
+    lit = during["lightning"] is True
+    restored = (after["lightning"] == before["lightning"]
+                and after["kp"] == before["aurora"]["kp"]
+                and after["running"] is False)
+    counters_held = (abs(after["flow"] - before["flow"]) < 1e-9
+                     and abs(after["block"] - before["block"]) < 1e-9)
+    survived = during["running"] is True
+    ok = bool(drew and forced and lit and restored and counters_held and survived
+              and during["onRows"] >= 3)
+    return report(
+        name, ok,
+        f"arcs {before['arcs']} -> {during['arcs']} (drew={drew}); Kp "
+        f"{before['aurora']['kp']} -> {during['kp']} -> {after['kp']} "
+        f"(forced={forced}, restored={after['kp'] == before['aurora']['kp']}); "
+        f"lightning layer {before['lightning']} -> {during['lightning']} -> "
+        f"{after['lightning']} (restored={after['lightning'] == before['lightning']}); "
+        f"{during['onRows']} rows reported on screen; still running after the "
+        f"panel closed={survived}; rail rate/min flow "
+        f"{before['flow']}->{after['flow']} block {before['block']}->{after['block']} "
+        f"(counters held={counters_held}) -- sample arcs must never reach them")
 
 
 def run(page, cx, cy) -> bool:
     ok = True
     ok &= case1_menu_row_opens_a_dialog(page, cx, cy)
-    ok &= case2_options_explain_themselves(page, cx, cy)
-    ok &= case3_enable_all_is_per_category(page, cx, cy)
+    ok &= case2_every_row_explains_itself(page, cx, cy)
+    ok &= case3_show_is_dead_until_something_is_ticked(page, cx, cy)
     ok &= case4_hover_preview_is_per_category(page, cx, cy)
-    ok &= case5_self_test_pauses_and_pollutes_nothing(page, cx, cy)
+    ok &= case5_a_showing_shows_and_restores(page, cx, cy)
     return ok
 
 
