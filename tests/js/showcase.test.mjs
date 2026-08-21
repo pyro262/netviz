@@ -40,7 +40,9 @@ function stubs(over = {}) {
       },
     },
     read: (path, fallback) => (path in store ? store[path] : fallback),
-    home: () => ({ lat: 29.76, lon: -95.37 }),
+    // Greenwich: a canonical reference point, and unmistakably not anybody's
+    // home. The real one is site data and lives in .env, never in a test.
+    home: () => ({ lat: 51.48, lon: 0.0 }),
     watched: () => ['DE', 'CN'],
     now: () => clock,
   };
