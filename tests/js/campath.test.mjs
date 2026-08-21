@@ -123,7 +123,11 @@ test('a walk never gets further than spanDegrees from the traffic', () => {
   // component by cos(lat), bounces off the latitude clamp, and the traffic
   // itself drifts -- so path length walked and distance from home are two
   // different numbers.
-  const traffic = { lat: 29.76, lon: -95.37 };
+  // Round numbers at a mid latitude, NOT this deployment's home position.
+  // The latitude is what the case needs -- a cardinal walk divides its east
+  // component by cos(lat), so ~30 degrees exercises that -- and the real home
+  // is site data, which belongs in .env and never in a tracked file.
+  const traffic = { lat: 30, lon: 120 };
   for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
     const s = initialState();
     s.curLat = traffic.lat; s.curLon = traffic.lon;
