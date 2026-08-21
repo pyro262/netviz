@@ -860,6 +860,21 @@ def case11_small_viewport(page) -> bool:
     where the panel is at its most cramped and the content at its longest."""
     close_panel(page)
     page.wait_for_timeout(300)
+    # THE RAIL IS TURNED OFF FOR THIS CASE, and restored after.
+    #
+    # This case is about the PANEL's clamp -- whether `min(380px, 45vw)` keeps
+    # the globe the majority of a small viewport. The rail takes a further 26%,
+    # and 26% is self-limiting, which is exactly why the panel needed a clamp
+    # and the rail never did (see this case's own docstring). With both open at
+    # 420px the globe gets 122px and the majority test fails on the SUM of two
+    # independent decisions, which tells you nothing about either.
+    #
+    # It became relevant in 0.7.0, when the rail started defaulting ON. The
+    # rail's own share of the viewport is verify_menu.py's case 7; this case
+    # measures one thing.
+    rail_was = read_live(page, "rail.enabled")
+    page.evaluate("() => window.__netviz.settings.apply({'rail.enabled': false})")
+    page.wait_for_timeout(400)
     original = page.viewport_size
     page.set_viewport_size({"width": SMALL_VIEWPORT[0], "height": SMALL_VIEWPORT[1]})
     page.wait_for_timeout(600)
@@ -922,6 +937,11 @@ def case11_small_viewport(page) -> bool:
         close_panel(page)
         if original:
             page.set_viewport_size(original)
+        # The rail goes back to whatever this display had, which since 0.7.0 is
+        # ON by default -- restoring to "off" would be a change, not a restore.
+        if isinstance(rail_was, bool):
+            page.evaluate("(v) => window.__netviz.settings.apply({'rail.enabled': v})",
+                          rail_was)
         page.wait_for_timeout(600)
 
     panel_w = after["panel"]
@@ -1192,10 +1212,12 @@ def case9_randomize(page, cx, cy) -> bool:
           # and AGAIN on 2026-08-18: the numbers were still 36/9 while the
           # panel had grown to 41/9 across the theme work, and the Milky Way
           # band's four rows then took it to 44/10. Moving the two built-in
-          # arc colors out to the color-rules panel took it to 42/10, and
-          # 0.7.0's five rail text scales take it to 47/10.
+          # arc colors out to the color-rules panel took it to 42/10; 0.7.0's
+          # five rail text scales took it to 47/10 and then straight back to
+          # 42/15 when they were deliberately excluded from the roll, which is
+          # this tripwire firing twice in one release exactly as intended.
           and not sky_moved
-          and len(look) == 47 and len(held) == 10
+          and len(look) == 42 and len(held) == 15
           and moved >= len(look) - 2
           # Bounded on BOTH sides -- a panel that dirtied every row fails here
           # as well. The upper bound is the look sliders PLUS the declared
