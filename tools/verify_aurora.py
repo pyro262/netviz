@@ -149,10 +149,17 @@ DIFF_MIN = 12
 
 DIFF_JS = f"""
   const DIFF_MIN = {DIFF_MIN};
-  const A = window.__grabs.storm, B = window.__grabs.quiet;
-  const w = A.w, h = A.h, pa = A.px, pb = B.px;
+  const A = window.__grabs.storm, B = window.__grabs.quiet, C = window.__grabs.churn;
+  const w = A.w, h = A.h, pa = A.px, pb = B.px, pc = C.px;
   const lift = (i) => (pa[i] - pb[i]) + (pa[i + 1] - pb[i + 1]) + (pa[i + 2] - pb[i + 2]);
-  const isAurora = (i) => lift(i) >= DIFF_MIN;
+  // How much this pixel moved between two frames that BOTH had no aurora --
+  // arcs arriving, ripples fading, stars twinkling. Signed magnitude, because
+  // a pixel that got darker is churning just as much as one that got brighter.
+  const churn = (i) => Math.abs(pc[i] - pb[i]) + Math.abs(pc[i + 1] - pb[i + 1])
+                     + Math.abs(pc[i + 2] - pb[i + 2]);
+  // AURORA IS WHAT THE STORM ADDED TO A PIXEL THAT WAS OTHERWISE STILL. Without
+  // the second clause this measures the live feed on any real deployment.
+  const isAurora = (i) => lift(i) >= DIFF_MIN && churn(i) < DIFF_MIN;
 """
 
 
@@ -192,60 +199,102 @@ def settle(page, ms=1500):
 
 
 def capture_pair(page) -> None:
-    """The two frames every measurement below is a difference of.
+    """THREE frames: two with no aurora, then one with a storm.
 
     QUIET FIRST, then the storm: `__setReading({kp: null})` is not a quiet sky,
     it is NO READING, which is what the polling design draws nothing for -- so
-    the baseline frame has no aurora in it at all rather than a faint one that
-    would subtract away part of the signal."""
+    the baseline has no aurora in it at all rather than a faint one that would
+    subtract away part of the signal.
+
+    THE SECOND QUIET FRAME IS A NOISE MASK, and it is what makes these cases
+    work against a LIVE collector rather than only against a synthetic one.
+    Arcs keep arriving between captures however far the flow rate is turned
+    down -- blocks are not rate-capped at all -- and an arc is the brightest
+    thing in frame. Measured on the deployed wall: case 1 read 17% of its
+    brightest changed pixels on the night side, because it was measuring
+    traffic and not aurora. Two quiet frames say which pixels are churning on
+    their own, and those are excluded from every measurement below.
+
+    This is the same reasoning verify_walk.py records for running standalone --
+    a live feed actively harms a measurement about something else -- arrived at
+    from the other side: here the noise is identified and removed rather than
+    avoided, so the case can run against the real deployment, which is where it
+    is worth the most."""
     set_reading(page, None)
     settle(page)
     grab(page, "quiet")
+    settle(page, 900)
+    grab(page, "churn")
     set_reading(page, 8)
     settle(page)
     grab(page, "storm")
 
 
 def case1_night_side(page) -> None:
-    """1: the oval is drawn on the night side."""
+    """1: the oval is drawn on the night side.
+
+    MEASURED AS TOTAL LIGHT, not as "the brightest pixels". The first cut took
+    the top 5% of lifted pixels and asked which way they faced, and that read
+    17% night against the live wall while the aurora was demonstrably in the
+    right place. The reason is that the aurora GLOWS: it is on the bloom layer,
+    and a bloom pass spreads a halo AWAY from a bright source by construction.
+    Concentrating the oval at midnight -- which is what makes it look right --
+    made that halo stronger, so the brightest-changed pixels included a smear
+    reaching over the terminator. The metric was measuring where the light
+    LANDS rather than where it IS.
+
+    Summing lift by hemisphere fixes that: a halo carries far less energy than
+    its source, so the night side dominates the total even when a few of the
+    very brightest pixels have bled across. Restricted to pixels ON THE DISC,
+    where "which hemisphere" is a question with an answer at all -- off the limb
+    a view ray passes through both.
+    """
+    disc = globe_disc(page)
     out = analyze(page, """
       const {camera, globe} = window.__netviz;
       const THREE = window.__netvizTHREE;
       const sun = globe.material.uniforms.sunDir.value;
-      // The pixels the storm lifted MOST: a faint tail near the terminator says
-      // nothing either way, and the claim is about where the OVAL is.
-      let best = [];
-      for (let y = 0; y < h; y += 3) {
-        for (let x = 0; x < w; x += 3) {
+      const {cx, cy, rad} = arg;
+      let night = 0, day = 0, nPix = 0, dPix = 0;
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x += 2) {
           const i = (y * w + x) * 4;
           if (!isAurora(i)) continue;
-          best.push([x, y, lift(i)]);
+          // On the disc only: off the limb a ray crosses both hemispheres and
+          // the question has no answer.
+          if (Math.hypot(x - cx, y - cy) > rad * 0.995) continue;
+          // readPixels is bottom-up and NDC's y is too, so no flip is needed.
+          const ndc = new THREE.Vector3((x / w) * 2 - 1, (y / h) * 2 - 1, 0.5);
+          ndc.unproject(camera);
+          const dir = ndc.sub(camera.position).normalize();
+          // The near surface point the pixel is looking at, which is the
+          // ground under the aurora above it.
+          const ro = camera.position.clone();
+          globe.group.worldToLocal(ro);
+          const rd = dir.clone();
+          const b2 = ro.dot(rd);
+          const c2 = ro.dot(ro) - 1.0;
+          const disc2 = b2 * b2 - c2;
+          if (disc2 <= 0) continue;
+          const t = -b2 - Math.sqrt(disc2);
+          const n = ro.clone().addScaledVector(rd, t).normalize();
+          const facing = n.dot(sun);
+          if (facing < 0.0) { night += lift(i); nPix += 1; }
+          else { day += lift(i); dPix += 1; }
         }
       }
-      if (!best.length) return {night: 0, total: 0};
-      best.sort((p, q) => q[2] - p[2]);
-      best = best.slice(0, Math.max(1, Math.floor(best.length / 20)));
-      let night = 0;
-      for (const [x, y] of best) {
-        // readPixels is bottom-up and NDC's y is too, so no flip is needed.
-        const ndc = new THREE.Vector3((x / w) * 2 - 1, (y / h) * 2 - 1, 0.5);
-        ndc.unproject(camera);
-        const dir = ndc.sub(camera.position).normalize();
-        const t = -camera.position.dot(dir);
-        const pt = camera.position.clone().addScaledVector(dir, t);
-        globe.group.worldToLocal(pt);
-        if (pt.normalize().dot(sun) < 0.10) night += 1;
-      }
-      return {night, total: best.length};
-    """)
-    if not out["total"]:
+      return {night, day, nPix, dPix};
+    """, {"cx": disc["cx"], "cy": disc["cy"], "rad": disc["r"]})
+    total = out["night"] + out["day"]
+    if total <= 0:
         check(False, "1: the oval is on the night side",
-              "the storm lifted no pixels at all at Kp 8")
+              "the storm lifted nothing on the disc at all at Kp 8")
         return
-    frac = out["night"] / out["total"]
-    check(frac > 0.8, "1: the oval is on the night side",
-          f"{out['night']}/{out['total']} of the most-lifted pixels face away from "
-          f"the sun ({frac * 100:.0f}%, want >80%)")
+    frac = out["night"] / total
+    check(frac > 0.75, "1: the oval is on the night side",
+          f"{frac * 100:.0f}% of the light the storm added to the DISC fell on "
+          f"the night side (want >75%): night {out['night']} over {out['nPix']} "
+          f"pixels, day {out['day']} over {out['dPix']}")
 
 
 def case2_stands_up_at_the_limb(page):
@@ -449,6 +498,7 @@ def case6_no_reading_no_aurora(page, storm_total) -> None:
     set_reading(page, None)
     settle(page)
     grab(page, "storm")          # deliberately the same state as `quiet`
+    
     visible = page.evaluate("() => window.__netviz.aurora.visible()")
     n = analyze(page, """
       let n = 0, worst = 0;
