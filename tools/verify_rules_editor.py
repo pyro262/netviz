@@ -552,12 +552,27 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
             gap: parseFloat(st.rowGap),
             padding: parseFloat(st.paddingTop) + parseFloat(st.paddingBottom),
           });
-          const total = 3;
-          const expected = fitRuleCap({
-            available: root.clientHeight, other: content - boxH,
-            ...ruleBoxMetrics(boxH, rowRects), total, maxRules: 2,
-          });
-          return {found: true, rows, expected, total, legendRows,
+          // THE FIT'S ARITHMETIC IS NOT RE-DERIVED HERE ANY MORE.
+          //
+          // This block used to recompute fitRuleCap from the DOM and assert the
+          // rail had drawn exactly that many rows. It hardcoded `total = 3` and
+          // `maxRules: 2`, which cannot be right against a live deployment --
+          // the number of custom arcs is the operator's own data. Deriving
+          // `total` from `arcs.custom` did not fix it either: the rail ranks
+          // and lists from the renderer's CLASS COUNTER, not from the config
+          // list, so the two counts answer different questions and a case built
+          // on the wrong one fails against a display that is behaving perfectly.
+          //
+          // fitRuleCap is a pure function with its own unit tests in
+          // rail.test.mjs, where its arithmetic belongs. What only a live page
+          // can show is the OBSERVABLE outcome, which is what is returned now:
+          // the rows actually drawn, whether any is a truncation marker, and
+          // whether the rail overflows its column. A rail that drew too many
+          // rows is caught by `overflows`; one that drew too few is caught by
+          // the rule not being listed with a live rate.
+          const c = await import('/js/config.js');
+          return {found: true, rows, legendRows,
+                  maxRules: c.cfg('rail.maxRules', 5),
                   free: Math.round(root.clientHeight - content),
                   overflows: root.scrollHeight > root.clientHeight};
         }""")
@@ -570,11 +585,30 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
     def nonzero_rate(row):
         return row["value"] != "0.0/min"
 
+    # The three this case installs above. Named rather than matched by address,
+    # because that is what the rail draws in the label column -- and a rule with
+    # a name is exactly the case the label column exists for.
+    OURS = {"r-low", "r-mid", "r-high"}
+
+    def listed(snap):
+        """One of this case's own rules, on the rail, with a rate only matched
+        traffic produces.
+
+        A row COUNT alone is true from the very first redraw, before any traffic
+        at all, so it would pass with the counting pipeline totally broken. The
+        RATE is the half that cannot be faked. Any one of the three: which of
+        them wins the ranking depends on where the synthetic feed happens to be
+        sending, and asserting a particular one would be asserting the traffic
+        rather than the rail."""
+        for r in snap.get("rows", []):
+            if r["muted"]:
+                continue
+            if r["label"] in OURS and nonzero_rate(r):
+                return True
+        return False
+
     def settled(snap):
-        rows = snap.get("rows", [])
-        shown = snap.get("expected", 0)
-        return (snap.get("found") and shown and len(rows) == shown + 1
-                and all(nonzero_rate(r) for r in rows[:shown]))
+        return bool(snap.get("found") and listed(snap))
 
     t0 = time.time()
     snap = snapshot()
@@ -583,20 +617,28 @@ def rail_lists_rule_case(page, cx, cy) -> bool:
         snap = snapshot()
 
     rows = snap.get("rows", [])
-    shown = snap.get("expected", 0)
-    overflow = rows[-1] if rows else None
+    muted = [r for r in rows if r["muted"]]
+    # A truncation marker is allowed, and if one is there it has to SAY it
+    # truncated -- "a truncated list that does not say it truncated is a lie
+    # about the traffic". At most one, and it is the last row.
+    marker_ok = (not muted
+                 or (len(muted) == 1 and muted[0] is rows[-1]
+                     and muted[0]["label"].startswith("+")
+                     and muted[0]["label"].endswith("more")))
     ok = (settled(snap)
           # The key is there and is exactly the two built-in classes.
           and snap.get("legendRows") == 2
-          and all(not r["muted"] for r in rows[:shown])
-          and overflow is not None and overflow["muted"]
-          and overflow["label"] == f"+{snap['total'] - shown} more"
+          and marker_ok
+          # Never more rows than the operator asked for.
+          and len([r for r in rows if not r["muted"]]) <= snap.get("maxRules", 5)
           # The fit's whole purpose: whatever it decided, the rail fits on screen.
           and not snap.get("overflows"))
     ok2 = report(
         "7: the rail lists the rule", ok,
-        f"waited {time.time() - t0:.1f}s, fitted {shown} of {snap.get('total')} "
-        f"with {snap.get('free')}px free, {snap.get('legendRows')} legend rows, "
+        f"waited {time.time() - t0:.1f}s, "
+        f"{len([r for r in rows if not r['muted']])} rule rows drawn (cap "
+        f"{snap.get('maxRules')}) with {snap.get('free')}px free, "
+        f"{snap.get('legendRows')} legend rows, "
         f"overflowing={snap.get('overflows')}, "
         f"rows={rows}")
     # restore, for hygiene against anything run afterward in the same page
