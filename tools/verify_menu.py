@@ -84,6 +84,11 @@ PORT = int(os.environ.get("NETVIZ_VERIFY_PORT", "8499"))
 # the measurement with room, rather than the failure being tuned around.
 NAV_TIMEOUT_MS = 90_000
 
+# The rail's shipped default, read from the page's own config rather than
+# written down here. It changed in 0.7.0 and a literal would have to change with
+# it -- which is exactly the staleness case 7 just failed on.
+RAIL_DEFAULT = None
+
 RESULTS: list[tuple[str, bool, str]] = []
 
 
@@ -412,6 +417,9 @@ def run(page, canvas_center, ctx, url) -> bool:
     close_menu()
 
     # ---------------------------------------------------------- case 7 --
+    global RAIL_DEFAULT
+    RAIL_DEFAULT = page.evaluate(
+        "async () => (await import('./js/settings.js')).defaultOf('rail.enabled')")
     before = page.evaluate("""() => {
       const c = window.__netviz.renderer.domElement;
       return {w: c.width, rail: document.body.classList.contains('rail')};
@@ -432,13 +440,28 @@ def run(page, canvas_center, ctx, url) -> bool:
       const c = window.__netviz.renderer.domElement;
       return {w: c.width, rail: document.body.classList.contains('rail')};
     }""")
+    # THE FLIP, IN WHICHEVER DIRECTION IT STARTS. This asserted "off, then on,
+    # buffer 2560 -> 1894" until 0.7.0 made the rail default ON, at which point
+    # the click turns it OFF and the case failed on the direction while the
+    # toggle itself worked perfectly. What it is actually for is end to end: the
+    # class follows the setting AND the drawing buffer follows the class, which
+    # is the pair that shipped broken once.
+    #
+    # The widths are the two states of a 2560 viewport: the rail takes 26%, so
+    # 2560 * 0.74 = 1894 with it on and the full 2560 with it off.
+    want_rail = not before["rail"]
+    want_w = 1894 if want_rail else 2560
     ok &= report(
-        "7: rail toggle end to end (body.rail + drawing buffer to 1894)",
+        "7: rail toggle end to end (body.rail and the drawing buffer follow)",
         prevented and st["present"] and st.get("visible") and row_ok
-        and not before["rail"] and after["rail"] and after["w"] == 1894,
-        f"before={before} after={after} row_ok={row_ok}")
-    # restore: rail off again, close the menu the click already closed
-    page.evaluate("() => window.__netviz.settings.apply({'rail.enabled': false})")
+        and after["rail"] == want_rail and after["w"] == want_w,
+        f"before={before} after={after} (wanted rail={want_rail} w={want_w}) "
+        f"row_ok={row_ok}")
+    # Restore to the SHIPPED DEFAULT rather than to off: since 0.7.0 that is on,
+    # and forcing it off would leave every later case running against a display
+    # configured differently from the one this file opened.
+    page.evaluate("(v) => window.__netviz.settings.apply({'rail.enabled': v})",
+                  RAIL_DEFAULT)
     time.sleep(0.4)
     close_menu()
 
