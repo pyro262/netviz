@@ -886,3 +886,72 @@ def test_unparsed_lines_are_not_logged_by_default():
         logger.removeHandler(handler)
 
     assert not [r for r in records if "unparsed:" in r.getMessage()]
+
+
+# --- supervise -------------------------------------------------------------
+#
+# A background task that RETURNS is not a crash. cloud_poller and
+# lightning_poller both return immediately when their layer is switched off,
+# and under the old plain asyncio.wait(FIRST_COMPLETED) that shut the whole
+# server down about a millisecond after it started: NETVIZ_CLOUDS=0 or
+# NETVIZ_LIGHTNING=0 killed the collector with exit code 0 and no reason
+# logged.
+
+
+@pytest.mark.asyncio
+async def test_a_task_that_returns_does_not_stop_the_server():
+    stop = asyncio.Event()
+    ended = asyncio.create_task(asyncio.sleep(0), name="disabled-layer")
+    forever = asyncio.create_task(asyncio.Event().wait(), name="forever")
+    sup = asyncio.create_task(
+        netviz_main.supervise([ended, forever],
+                              asyncio.create_task(stop.wait(), name="stopper")))
+    await asyncio.sleep(0.05)
+    assert not sup.done()               # the disabled layer must not stop it
+    stop.set()
+    await asyncio.wait_for(sup, timeout=1)
+    forever.cancel()
+
+
+@pytest.mark.asyncio
+async def test_every_task_returning_still_waits_for_the_stopper():
+    """Both optional layers off at once leaves only tasks that end, which must
+    still not be read as a shutdown."""
+    stop = asyncio.Event()
+    ended = [asyncio.create_task(asyncio.sleep(0), name=f"t{i}") for i in range(3)]
+    sup = asyncio.create_task(
+        netviz_main.supervise(ended,
+                              asyncio.create_task(stop.wait(), name="stopper")))
+    await asyncio.sleep(0.05)
+    assert not sup.done()
+    stop.set()
+    await asyncio.wait_for(sup, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_a_task_that_raises_is_fatal():
+    """The behaviour the original was reaching for is kept: a task that dies
+    unexpectedly takes the process down rather than leaving the wall served by
+    a collector with no ingest."""
+    async def boom():
+        raise RuntimeError("boom")
+    stop = asyncio.Event()
+    bad = asyncio.create_task(boom(), name="bad")
+    forever = asyncio.create_task(asyncio.Event().wait(), name="forever")
+    await asyncio.wait_for(
+        netviz_main.supervise([bad, forever],
+                              asyncio.create_task(stop.wait(), name="stopper")),
+        timeout=1)
+    forever.cancel()
+
+
+@pytest.mark.asyncio
+async def test_the_stopper_wins_immediately():
+    stop = asyncio.Event()
+    stop.set()
+    forever = asyncio.create_task(asyncio.Event().wait(), name="forever")
+    await asyncio.wait_for(
+        netviz_main.supervise([forever],
+                              asyncio.create_task(stop.wait(), name="stopper")),
+        timeout=1)
+    forever.cancel()

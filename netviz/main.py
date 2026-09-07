@@ -381,6 +381,42 @@ def _thresholds_for(cfg: Config, synthetic: bool) -> dict:
     return dict(THRESHOLDS)
 
 
+async def supervise(tasks: list, stopper) -> None:
+    """Wait for a stop signal, running until one arrives.
+
+    NOT a plain `asyncio.wait(FIRST_COMPLETED)` over the task list, which is
+    what this was: a background task that RETURNS -- as cloud_poller and
+    lightning_poller both do the moment their layer is switched off -- looks
+    identical to one that crashed, so the whole server shut down about a
+    millisecond after it finished starting. `NETVIZ_CLOUDS=0` or
+    `NETVIZ_LIGHTNING=0` killed the collector, exit code 0, one "server
+    closing" line and nothing saying why. Measured, not theorised.
+
+    A task that ends cleanly is dropped and the wait continues; a task that
+    raises is fatal and named in the log, which is the behaviour the original
+    was reaching for.
+    """
+    pending = {*tasks, stopper}
+    while True:
+        done, pending = await asyncio.wait(
+            pending, return_when=asyncio.FIRST_COMPLETED)
+        if stopper in done:
+            return
+        fatal = False
+        for t in done:
+            if t.cancelled():
+                continue
+            exc = t.exception()
+            if exc is None:
+                log.info("task %s finished, continuing", t.get_name())
+            else:
+                log.error("task %s failed, shutting down: %r",
+                          t.get_name(), exc)
+                fatal = True
+        if fatal:
+            return
+
+
 async def run(cfg: Config, synthetic: bool) -> None:
     fanout = Fanout()
     replay = Replay()
@@ -477,10 +513,12 @@ async def run(cfg: Config, synthetic: bool) -> None:
     # cfg.lightning_enabled would make a disabled layer poll forever for
     # nothing, the same distinction the endpoint's own docstring makes.
     lightning_cache = lightning_mod.LightningCache() if cfg.lightning_enabled else None
-    tasks = [asyncio.create_task(alerter(health, geoip_alert, enricher)),
-             asyncio.create_task(aurora_poller(kp_cache)),
-             asyncio.create_task(cloud_poller(cloud_cache, cfg)),
-             asyncio.create_task(lightning_poller(lightning_cache, cfg))]
+    tasks = [asyncio.create_task(alerter(health, geoip_alert, enricher),
+                                 name="alerter"),
+             asyncio.create_task(aurora_poller(kp_cache), name="aurora"),
+             asyncio.create_task(cloud_poller(cloud_cache, cfg), name="clouds"),
+             asyncio.create_task(lightning_poller(lightning_cache, cfg),
+                                 name="lightning")]
 
     if synthetic:
         # No store, no flusher in synthetic mode, so "influx" is not a feed
@@ -488,7 +526,7 @@ async def run(cfg: Config, synthetic: bool) -> None:
         # above, which excludes it, so there is nothing to arm here.
         tasks.append(asyncio.create_task(synth(
             on_event, random.Random(),
-            [n["prefix"] for n in highlight_networks])))
+            [n["prefix"] for n in highlight_networks]), name="synth"))
     else:
         decoder = IpfixDecoder(template_path=cfg.template_path)
         stats.decoder = decoder
@@ -499,9 +537,11 @@ async def run(cfg: Config, synthetic: bool) -> None:
         stats.syslog = syslog
         await loop.create_datagram_endpoint(
             lambda: syslog, local_addr=("0.0.0.0", cfg.syslog_port))
-        tasks.append(asyncio.create_task(flusher(store, health, cfg.flush_seconds)))
         tasks.append(asyncio.create_task(
-            status_logger(decoder, enricher, fanout, store, syslog)))
+            flusher(store, health, cfg.flush_seconds), name="flusher"))
+        tasks.append(asyncio.create_task(
+            status_logger(decoder, enricher, fanout, store, syslog),
+            name="status"))
 
     stop_event = asyncio.Event()
 
@@ -534,13 +574,14 @@ async def run(cfg: Config, synthetic: bool) -> None:
                                                 "networks": highlight_networks}})):
             log.info("netviz listening: ws=%d http=%s synthetic=%s",
                      cfg.ws_port, static_root, synthetic)
-            stopper = asyncio.create_task(stop_event.wait())
-            done, pending = await asyncio.wait(
-                [*tasks, stopper], return_when=asyncio.FIRST_COMPLETED)
-            if stopper not in done:
-                stopper.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await stopper
+            stopper = asyncio.create_task(stop_event.wait(), name="stopper")
+            try:
+                await supervise(tasks, stopper)
+            finally:
+                if not stopper.done():
+                    stopper.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await stopper
     finally:
         for t in tasks:
             t.cancel()
