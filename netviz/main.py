@@ -386,7 +386,8 @@ async def run(cfg: Config, synthetic: bool) -> None:
     replay = Replay()
     static_root = Path(__file__).resolve().parent / "static"
     enricher = None if synthetic else Enricher(cfg.mmdb_path,
-                                               (cfg.home_lat, cfg.home_lon))
+                                               (cfg.home_lat, cfg.home_lon),
+                                               cfg.home_ips)
     if enricher is not None:
         # The router's own geo tables, if this install fetched them. Both
         # halves must be present to be useful: the tables say which country,

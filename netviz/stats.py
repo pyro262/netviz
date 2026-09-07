@@ -216,5 +216,9 @@ class Stats:
                 "router": (dict(self.enricher.stats_xt)
                            if getattr(self.enricher, "xt", None) is not None
                            else None),
+                # How many addresses were recognized as this site's own WAN.
+                # Zero with NETVIZ_HOME_IPS set means the value is stale --
+                # the failure mode the setting exists to prevent, come back.
+                "home_ip": getattr(self.enricher, "stats", {}).get("home_ip"),
             },
         }

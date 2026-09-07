@@ -228,6 +228,7 @@ Read in `netviz/config.py`. `INFLUX_TOKEN` is the only secret.
 |---|---|---|
 | `NETVIZ_HOME_LAT` | `30.3` | Where arcs converge |
 | `NETVIZ_HOME_LON` | `-97.7` | |
+| `NETVIZ_HOME_IPS` | empty | This site's own WAN address(es)/CIDRs, comma separated, so inbound blocks are not attributed to your own ISP's country |
 | `NETVIZ_IPFIX_PORT` | `2055` | UDP port for netflow records |
 | `NETVIZ_SYSLOG_PORT` | `5514` | UDP port for syslog lines |
 | `NETVIZ_WS_PORT` | `8099` | Serves the page and the WebSocket |

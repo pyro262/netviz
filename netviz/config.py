@@ -96,6 +96,27 @@ class Config:
     influx_token: str = os.environ.get("INFLUX_TOKEN", "")
     home_lat: float = float(os.environ.get("NETVIZ_HOME_LAT", "30.3"))
     home_lon: float = float(os.environ.get("NETVIZ_HOME_LON", "-97.7"))
+    # This site's own public address(es) -- the WAN side of the network this
+    # collector watches. Not a geolocation input: an inbound-blocking router
+    # logs the far end as SOURCE and its own WAN as DESTINATION, and the
+    # renderer's foreignEnd() prefers the destination. A WAN address that is
+    # really routable (no carrier NAT in front of it) geolocates like any other
+    # host, so every inbound block gets stamped with wherever this site's own
+    # ISP allocated the address -- measured at 98% of blocks on one install,
+    # burying the countries the alarm layer exists to show. Behind double NAT
+    # the WAN address is RFC 1918 and the existing private test already covers
+    # it, which is why this only surfaces on some installs.
+    #
+    # Comma separated; each entry is an address or a CIDR, v4 or v6, so a
+    # static /29 is one entry rather than eight. Empty by default: an install
+    # that sets nothing behaves exactly as it did before. Read fresh from the
+    # environment on every start, so a DHCP lease change needs a restart with a
+    # new value and no rebuild -- refreshing it is an external script's job,
+    # the collector does not watch the router.
+    home_ips: tuple[str, ...] = tuple(
+        s.strip() for s in os.environ.get("NETVIZ_HOME_IPS", "").split(",")
+        if s.strip()
+    )
     highlight_networks: list[dict] = field(default_factory=_highlight_networks)
     # Public resolvers to hide from the display on top of the built-in list in
     # config.js. Comma separated; an entry ending in "." or ":" is a prefix.

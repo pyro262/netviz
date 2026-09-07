@@ -1,5 +1,5 @@
 import pytest
-from netviz.enrich import Enricher
+from netviz.enrich import Enricher, parse_home_nets
 from netviz.events import Event
 
 
@@ -25,11 +25,17 @@ class FakeReader:
         })()
 
 
-def make_enricher():
+def make_enricher(home_ips=()):
     e = Enricher.__new__(Enricher)
     e._reader = FakeReader()
     e._home = (30.3, -97.7)
-    e.stats = {"hits": 0, "misses": 0, "private": 0, "errors": 0, "local": 0}
+    e._home_nets = parse_home_nets(home_ips)
+    e.stats = {"hits": 0, "misses": 0, "private": 0, "errors": 0, "local": 0,
+               "home_ip": 0}
+    # No router tables by default; make_router_enricher attaches real ones.
+    e.xt = None
+    e.centroids = {}
+    e.stats_xt = {"agreed": 0, "corrected": 0, "placed": 0}
     return e
 
 
@@ -176,7 +182,8 @@ def test_cgnat_source_is_home_and_not_a_miss(ip):
     assert (out.src_lat, out.src_lon) == (30.3, -97.7)
     assert out.src_country == "--"
     # Only the source end is counted, so a located destination adds no hit.
-    assert e.stats == {"hits": 0, "misses": 0, "private": 1, "errors": 0, "local": 0}
+    assert e.stats == {"hits": 0, "misses": 0, "private": 1, "errors": 0,
+                       "local": 0, "home_ip": 0}
 
 
 @pytest.mark.parametrize("ip", ["100.63.255.255", "100.128.0.0"])
@@ -335,3 +342,78 @@ def test_private_ends_are_not_asked_of_the_router_tables():
     out = e.enrich(_block("192.168.0.50", "198.51.100.7"))
     assert out.src_country == "--"
     assert out.dst_country == "HK"
+
+
+# --- This site's own WAN address ------------------------------------------
+#
+# The addresses here are RFC 5737 documentation space, never a real WAN
+# address: the point of the setting is that a site's own public IP looks like
+# any other public IP, and a test asserting that is exactly as convincing on a
+# documentation prefix.
+
+
+def _inbound_block(src, dst):
+    return Event(ts=0.0, kind="block", src_ip=src, dst_ip=dst, bytes=1, proto=6)
+
+
+def test_own_wan_address_maps_to_home_instead_of_geolocating():
+    """The bug this exists for: an inbound block whose destination is this
+    site's own routable WAN address must not read back as the far end."""
+    e = make_enricher(["198.51.100.4"])
+    out = e.enrich(_inbound_block("203.0.113.9", "198.51.100.4"))
+    assert (out.dst_lat, out.dst_lon) == (30.3, -97.7)
+    assert out.dst_country == "--"
+    # ...and the real foreign end is still the source, which is what the
+    # renderer falls through to once the destination is no longer a country.
+    assert out.src_country == "RU"
+
+
+def test_own_wan_address_is_counted_and_is_not_a_miss():
+    e = make_enricher(["198.51.100.4"])
+    e.enrich(_inbound_block("203.0.113.9", "198.51.100.4"))
+    assert e.stats["home_ip"] == 1
+    # `private` counts the SOURCE end only, and the address this setting
+    # catches is the destination -- so home_ip is counted on both ends
+    # deliberately: it answers "did the setting fire", not "how many sources
+    # were private". What matters either way is that it never reaches the
+    # database and so never moves the rate the 20% GeoIP alarm watches.
+    assert e.stats["misses"] == 0
+    assert e.miss_rate() == 0.0
+
+
+def test_unconfigured_wan_address_still_geolocates():
+    """Empty default is a no-op: without the setting the address is asked of
+    the database like any other, which is what every install did before."""
+    e = make_enricher()
+    out = e.enrich(_inbound_block("192.168.0.50", "203.0.113.9"))
+    assert out.dst_country == "RU"
+    assert e.stats["home_ip"] == 0
+
+
+def test_a_cidr_entry_covers_the_whole_block():
+    """An ISP static allocation is a prefix, not a list of addresses."""
+    e = make_enricher(["198.51.100.0/29"])
+    out = e.enrich(_inbound_block("203.0.113.9", "198.51.100.6"))
+    assert out.dst_country == "--"
+
+
+def test_an_address_just_outside_the_block_is_untouched():
+    e = make_enricher(["198.51.100.0/29"])
+    out = e.enrich(_inbound_block("192.168.0.50", "203.0.113.9"))
+    assert out.dst_country == "RU"
+
+
+def test_ipv6_matches_on_value_not_on_spelling():
+    """2001:db8::4 and 2001:0db8:0:0:0:0:0:4 are one host; a string compare
+    against whatever the exporter wrote would miss the other spelling."""
+    e = make_enricher(["2001:0db8:0:0:0:0:0:4"])
+    out = e.enrich(_inbound_block("203.0.113.9", "2001:db8::4"))
+    assert out.dst_country == "--"
+    assert e.stats["home_ip"] == 1
+
+
+def test_an_unparseable_entry_is_dropped_not_fatal():
+    """The value comes from an external refresher; a bad one must not stop
+    the collector, and the good entries beside it must still work."""
+    nets = parse_home_nets(["not-an-ip", "198.51.100.4", ""])
+    assert [str(n) for n in nets] == ["198.51.100.4/32"]

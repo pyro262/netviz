@@ -3,6 +3,7 @@ network I/O, so this is the easiest unit in the collector to test."""
 import ipaddress
 import logging
 import os
+from collections.abc import Sequence
 from typing import Any, Literal, Optional
 
 from .events import Event
@@ -101,8 +102,22 @@ def load_centroids(path: str) -> dict[str, tuple[float, float]]:
     return out
 
 
+def parse_home_nets(entries: Sequence[str]) -> list[Any]:
+    """Config entries to networks. A malformed entry is dropped with a warning
+    rather than refusing to start: this value is written by an external
+    refresher, and a bad one must not take the wall down."""
+    out = []
+    for entry in entries:
+        try:
+            out.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            log.warning("home_ips: ignoring unparseable entry %r", entry)
+    return out
+
+
 class Enricher:
-    def __init__(self, mmdb_path: str, home: tuple[float, float]) -> None:
+    def __init__(self, mmdb_path: str, home: tuple[float, float],
+                 home_ips: Sequence[str] = ()) -> None:
         import geoip2.database
         self.mmdb_path = resolve_mmdb(mmdb_path)
         self._reader = geoip2.database.Reader(self.mmdb_path)
@@ -112,6 +127,20 @@ class Enricher:
         self.database_type = self._reader.metadata().database_type
         log.info("geoip: opened %s (%s)", self.mmdb_path, self.database_type)
         self._home = home
+        # This site's own WAN address(es); see Config.home_ips for why a real
+        # routable address still needs naming. Parsed to networks rather than
+        # compared as text: an exporter's spelling of an IPv6 address need not
+        # match the one somebody typed (2001:db8::1 and 2001:db8:0:0:0:0:0:1
+        # are one host), and an ISP's static block is a prefix, not a list.
+        # A malformed entry is dropped with a warning rather than refusing to
+        # start -- this value is written by an external refresher, and a bad
+        # one must not take the wall down.
+        self._home_nets = parse_home_nets(home_ips)
+        if self._home_nets:
+            log.info("home_ips: %d entr%s configured (%s)",
+                     len(self._home_nets),
+                     "y" if len(self._home_nets) == 1 else "ies",
+                     ", ".join(str(n) for n in self._home_nets))
         # Both attached after construction, and both optional: the router's
         # tables are a site's own file and the centroids come from a bake that
         # a clone may not have run. Absent, block events keep the MaxMind
@@ -122,8 +151,14 @@ class Enricher:
         # `local` is deliberately outside the miss_rate denominator: multicast
         # and friends are not a database shortcoming, and counting them as
         # misses inflated the rate that the 20% GeoIP alarm watches.
+        # `home_ip` is a subset of `private`, not a sixth status: it counts how
+        # often the configured WAN address(es) actually matched. Configured and
+        # firing has to be distinguishable from configured and never firing --
+        # the value is kept current by an external script, and when that script
+        # dies after a lease change the misattribution comes back silently and
+        # looks exactly like it did before anyone named the address.
         self.stats = {"hits": 0, "misses": 0, "private": 0, "errors": 0,
-                      "local": 0}
+                      "local": 0, "home_ip": 0}
 
     def close(self) -> None:
         self._reader.close()
@@ -155,6 +190,14 @@ class Enricher:
             return (None, "local")
         # Check for loopback and link-local (always private)
         if addr.is_loopback or addr.is_link_local:
+            return (self._home[0], self._home[1], PRIVATE_COUNTRY), "private"
+        # This site's own WAN address(es), named explicitly because nothing
+        # about them is structurally different from any other public address.
+        # Ahead of the RFC 1918 test for the same reason loopback is: it is a
+        # membership test on a short list, and the address it catches is one
+        # that would otherwise reach the database and answer.
+        if any(addr in net for net in self._home_nets):
+            self.stats["home_ip"] += 1
             return (self._home[0], self._home[1], PRIVATE_COUNTRY), "private"
         # Check for RFC 1918 ranges explicitly instead of using ipaddress.is_private.
         # Python 3.10+ expanded is_private to include TEST-NET documentation ranges
