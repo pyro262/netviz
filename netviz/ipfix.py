@@ -229,9 +229,37 @@ class IpfixDecoder:
     def _int(raw: bytes) -> int:
         return int.from_bytes(raw, "big") if raw else 0
 
+    @staticmethod
+    def _pick_addr(values: dict[int, bytes], v4_ie: int,
+                   v6_ie: int) -> Optional[bytes]:
+        """The address a record actually carries, v4 preferred.
+
+        A template may declare BOTH families and zero-fill the one the flow is
+        not using -- and a zero-filled field is not falsy: `b"\x00\x00\x00\x00"`
+        is four truthy bytes, so a plain `v4 or v6` handed every IPv6 flow back
+        as `0.0.0.0`. That parses, so nothing raised; it lands in `0.0.0.0/8`,
+        which the enricher classes as not-a-host-anywhere, so the event was
+        dropped one step later and counted as `local`. Every v6 flow gone, with
+        the counter that would have said so pointing at multicast.
+
+        Only the dual-declared case looks past a zero: a template that declares
+        one family takes the same path it always did, so a real `0.0.0.0` from
+        a single-family exporter is still handed on to be dropped downstream
+        rather than quietly changing meaning here.
+        """
+        v4 = values.get(v4_ie)
+        v6 = values.get(v6_ie)
+        if v4 and v6:
+            if any(v4):
+                return v4
+            if any(v6):
+                return v6
+            return None
+        return v4 or v6
+
     def _to_event(self, values: dict[int, bytes], export_time: int) -> Optional[Event]:
-        src = values.get(IE_SRC_IPV4) or values.get(IE_SRC_IPV6)
-        dst = values.get(IE_DST_IPV4) or values.get(IE_DST_IPV6)
+        src = self._pick_addr(values, IE_SRC_IPV4, IE_SRC_IPV6)
+        dst = self._pick_addr(values, IE_DST_IPV4, IE_DST_IPV6)
         if not src or not dst:
             return None
         octets = values.get(IE_OCTETS) or values.get(IE_OCTETS_64) or b""

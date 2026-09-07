@@ -17,8 +17,8 @@ def _template_set(tid: int = 256) -> bytes:
     return struct.pack("!HH", 2, 4 + len(record)) + record
 
 
-def _data_set(tid: int = 256) -> bytes:
-    rec = (bytes([203, 0, 113, 9]) + bytes([192, 168, 0, 50])
+def _data_set(tid: int = 256, src: bytes = bytes([203, 0, 113, 9])) -> bytes:
+    rec = (src + bytes([192, 168, 0, 50])
            + struct.pack("!Q", 4096) + bytes([6]) + struct.pack("!HH", 44321, 443))
     return struct.pack("!HH", tid, 4 + len(rec)) + rec
 
@@ -280,3 +280,74 @@ def test_a_changed_template_is_rewritten(tmp_path):
     from json import loads
     saved = loads(path.read_text())["templates"]["0:256"]
     assert [tuple(f) for f in saved] == [(8, 4), (12, 4)]
+
+
+# --- dual-stack templates --------------------------------------------------
+#
+# A template may declare BOTH families and zero-fill the one a given flow is
+# not using. A zero-filled field is not falsy -- b"\x00\x00\x00\x00" is four
+# truthy bytes -- so `values.get(IPV4) or values.get(IPV6)` handed every IPv6
+# flow back as 0.0.0.0. That parses, so nothing raised; it falls in 0.0.0.0/8,
+# which the enricher classes as not-a-host-anywhere, so the event was dropped
+# a step later and counted as `local`. Every v6 flow gone, and the counter
+# that would have said so pointing at multicast instead.
+
+_DUAL_FIELDS = [(8, 4), (12, 4), (27, 16), (28, 16), (1, 8), (4, 1)]
+
+
+def _dual_template(tid: int = 400) -> bytes:
+    body = b"".join(struct.pack("!HH", ie, ln) for ie, ln in _DUAL_FIELDS)
+    record = struct.pack("!HH", tid, len(_DUAL_FIELDS)) + body
+    return struct.pack("!HH", 2, 4 + len(record)) + record
+
+
+def _dual_record(v4src: bytes, v4dst: bytes, v6src: bytes, v6dst: bytes,
+                 tid: int = 400) -> bytes:
+    rec = (v4src + v4dst + v6src + v6dst
+           + struct.pack("!Q", 2048) + bytes([6]))
+    return struct.pack("!HH", tid, 4 + len(rec)) + rec
+
+
+def test_a_v6_flow_in_a_dual_template_is_not_read_as_0_0_0_0():
+    import ipaddress
+    d = IpfixDecoder()
+    d.decode(_msg(_dual_template()))
+    v6s = ipaddress.ip_address("2001:db8::7").packed
+    v6d = ipaddress.ip_address("2001:db8::9").packed
+    events = d.decode(_msg(_dual_record(b"\x00" * 4, b"\x00" * 4, v6s, v6d)))
+
+    assert len(events) == 1
+    assert events[0].src_ip == "2001:db8::7"
+    assert events[0].dst_ip == "2001:db8::9"
+
+
+def test_a_v4_flow_in_a_dual_template_still_reads_v4():
+    import ipaddress
+    d = IpfixDecoder()
+    d.decode(_msg(_dual_template()))
+    events = d.decode(_msg(_dual_record(
+        ipaddress.ip_address("203.0.113.7").packed,
+        ipaddress.ip_address("198.51.100.9").packed,
+        b"\x00" * 16, b"\x00" * 16)))
+
+    assert len(events) == 1
+    assert events[0].src_ip == "203.0.113.7"
+    assert events[0].dst_ip == "198.51.100.9"
+
+
+def test_a_dual_record_with_neither_family_set_yields_no_event():
+    d = IpfixDecoder()
+    d.decode(_msg(_dual_template()))
+    assert d.decode(_msg(_dual_record(
+        b"\x00" * 4, b"\x00" * 4, b"\x00" * 16, b"\x00" * 16))) == []
+
+
+def test_a_single_family_template_still_passes_a_literal_zero_address():
+    """Unchanged on purpose: only the dual-declared case looks past a zero, so
+    a real 0.0.0.0 from a single-family exporter reaches the enricher and is
+    dropped there as not-a-host, exactly as before."""
+    d = IpfixDecoder()
+    d.decode(_msg(_template_set()))
+    events = d.decode(_msg(_data_set(src=b"\x00" * 4)))
+    assert len(events) == 1
+    assert events[0].src_ip == "0.0.0.0"

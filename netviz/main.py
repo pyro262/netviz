@@ -142,7 +142,7 @@ async def ws_handler(ws, fanout: Fanout, replay: "Optional[Replay]" = None) -> N
     log.info("kiosk connected (%d total)", fanout.client_count)
     try:
         if replay is not None:
-            backfill = replay.snapshot(time.time())
+            backfill = replay.snapshot()
             log.info("kiosk %s backfill: %d events", key, len(backfill))
             for payload in backfill:
                 await ws.send(payload)      # already JSON text, do not re-encode
