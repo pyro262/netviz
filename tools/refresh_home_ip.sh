@@ -17,10 +17,20 @@
 #   tools/refresh_home_ip.sh [--dry-run] [--quiet] [--no-restart]
 #
 # CONFIGURATION (environment, all optional)
-#   NETVIZ_ROUTER_SSH   user@host of the router. Set it and the address is read
-#                       from the router itself, which is authoritative and does
-#                       not depend on a third party. Unset, the script asks a
-#                       public echo service instead.
+#   Three ways to learn the address, tried in this order, each skipped when it
+#   is not configured. The last one always works and needs nothing.
+#
+#   NETVIZ_ROUTER_API   base URL of a UniFi console, e.g. https://192.0.2.1.
+#   NETVIZ_ROUTER_API_KEY
+#                       a local API key for it. Preferred: authoritative, and a
+#                       read-only integration key rather than a shell login on
+#                       the router. The key is handed to curl on STDIN, never on
+#                       the command line, so it stays out of the process list.
+#   NETVIZ_ROUTER_SSH   user@host of the router, for a console with no API. Runs
+#                       one read-only `ip addr` command.
+#   (neither set)       a public echo service -- correct, but it tells you what
+#                       the internet sees rather than what the router holds, and
+#                       it means asking a third party every run.
 #   NETVIZ_WAN_IFACE    interface to read on the router (default: guess from
 #                       the default route).
 #   NETVIZ_SSH_KEY      identity file for that ssh.
@@ -43,6 +53,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ENV_FILE=".env"
 KEY="NETVIZ_HOME_IPS"
 
+: "${NETVIZ_ROUTER_API:=}"
+: "${NETVIZ_ROUTER_API_KEY:=}"
 : "${NETVIZ_ROUTER_SSH:=}"
 : "${NETVIZ_WAN_IFACE:=}"
 : "${NETVIZ_SSH_KEY:=}"
@@ -57,7 +69,7 @@ for arg in "$@"; do
         --quiet)      QUIET=1 ;;
         --no-restart) RESTART=0 ;;
         --help|-h)
-            sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) echo "unknown argument: $arg" >&2; exit 2 ;;
     esac
@@ -90,6 +102,30 @@ sys.exit(0 if a.is_global else 1)
 PY
 }
 
+# The UniFi console's own answer, which is the number the router is actually
+# using -- no SSH, no shell on the router, and a key that can be revoked on its
+# own. Passed to curl through a --config file on stdin: a header given as
+# `-H "X-API-KEY: ..."` is visible in `ps` to every user on the host for as long
+# as the request runs.
+detect_from_api() {
+    curl --config - --max-time 15 <<EOF 2>/dev/null | \
+        python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)["data"]
+except Exception:
+    raise SystemExit(1)
+for row in d:
+    if row.get("subsystem") == "wan" and row.get("wan_ip"):
+        print(row["wan_ip"]); break'
+insecure
+silent
+show-error
+fail
+header = "X-API-KEY: ${NETVIZ_ROUTER_API_KEY}"
+url = "${NETVIZ_ROUTER_API%/}/proxy/network/api/s/default/stat/health"
+EOF
+}
+
 detect_from_router() {
     local ssh_args=(-o BatchMode=yes -o ConnectTimeout=10
                     -o StrictHostKeyChecking=accept-new)
@@ -113,15 +149,23 @@ detect_from_echo() {
     curl -sS -f --max-time 15 "$NETVIZ_ECHO_URL" 2>/dev/null | tr -d '[:space:]'
 }
 
-if [ -n "$NETVIZ_ROUTER_SSH" ]; then
+current=""
+source_name=""
+if [ -n "$NETVIZ_ROUTER_API" ] && [ -n "$NETVIZ_ROUTER_API_KEY" ]; then
+    current="$(detect_from_api || true)"
+    source_name="console API ${NETVIZ_ROUTER_API}"
+    if [ -z "$current" ]; then
+        say "console API gave nothing, trying the next source"
+    fi
+fi
+if [ -z "$current" ] && [ -n "$NETVIZ_ROUTER_SSH" ]; then
     current="$(detect_from_router || true)"
     source_name="router ${NETVIZ_ROUTER_SSH}"
     if [ -z "$current" ]; then
-        say "router lookup failed, falling back to ${NETVIZ_ECHO_URL}"
-        current="$(detect_from_echo || true)"
-        source_name="$NETVIZ_ECHO_URL"
+        say "router lookup failed, trying the next source"
     fi
-else
+fi
+if [ -z "$current" ]; then
     current="$(detect_from_echo || true)"
     source_name="$NETVIZ_ECHO_URL"
 fi
