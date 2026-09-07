@@ -29,15 +29,6 @@
 #   router credentials to give.
 #
 #   NETVIZ_ECHO_URLS    space-separated echo services, overriding the defaults.
-#   NETVIZ_ROUTER_API   OPTIONAL, and the only thing here that takes a secret:
-#   NETVIZ_ROUTER_API_KEY
-#                       base URL and local API key of a UniFi console. Set both
-#                       and the console's own answer is preferred, which is
-#                       authoritative and asks nobody outside the house. It is a
-#                       revocable read-only integration key, not a login. The key
-#                       is handed to curl on STDIN, never on the command line, so
-#                       it stays out of the process list. Unset -- the normal
-#                       case -- this whole branch is skipped.
 #   NETVIZ_DISCORD_LIB  path to a discord.sh providing notify_discord. Absent,
 #                       the script simply does not notify.
 #   NETVIZ_EXTRA_HOME_IPS
@@ -56,8 +47,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ENV_FILE=".env"
 KEY="NETVIZ_HOME_IPS"
 
-: "${NETVIZ_ROUTER_API:=}"
-: "${NETVIZ_ROUTER_API_KEY:=}"
 # Four, so one service being down, rate-limiting or returning a courtesy page
 # is not an outage. They are asked in order and the first routable answer wins.
 : "${NETVIZ_ECHO_URLS:=https://api.ipify.org https://icanhazip.com https://checkip.amazonaws.com https://ifconfig.me/ip}"
@@ -104,30 +93,6 @@ sys.exit(0 if a.is_global else 1)
 PY
 }
 
-# The UniFi console's own answer, which is the number the router is actually
-# using -- no SSH, no shell on the router, and a key that can be revoked on its
-# own. Passed to curl through a --config file on stdin: a header given as
-# `-H "X-API-KEY: ..."` is visible in `ps` to every user on the host for as long
-# as the request runs.
-detect_from_api() {
-    curl --config - --max-time 15 <<EOF 2>/dev/null | \
-        python3 -c 'import json,sys
-try:
-    d = json.load(sys.stdin)["data"]
-except Exception:
-    raise SystemExit(1)
-for row in d:
-    if row.get("subsystem") == "wan" and row.get("wan_ip"):
-        print(row["wan_ip"]); break'
-insecure
-silent
-show-error
-fail
-header = "X-API-KEY: ${NETVIZ_ROUTER_API_KEY}"
-url = "${NETVIZ_ROUTER_API%/}/proxy/network/api/s/default/stat/health"
-EOF
-}
-
 # Sets DETECTED and ECHO_SOURCE rather than printing, because the caller needs
 # to know WHICH service answered and a `$(...)` capture would run this in a
 # subshell where that second value could not get back out.
@@ -147,24 +112,12 @@ detect_from_echo() {
     return 1
 }
 
-current=""
-source_name=""
-DETECTED=""
-ECHO_SOURCE=""
-if [ -n "$NETVIZ_ROUTER_API" ] && [ -n "$NETVIZ_ROUTER_API_KEY" ]; then
-    current="$(detect_from_api || true)"
-    source_name="console API ${NETVIZ_ROUTER_API}"
-    if [ -z "$current" ]; then
-        say "console API gave nothing, falling back to the public echo services"
-    fi
-fi
-if [ -z "$current" ]; then
-    if detect_from_echo; then
-        current="$DETECTED"
-        source_name="$ECHO_SOURCE"
-    else
-        source_name="the echo services"
-    fi
+if detect_from_echo; then
+    current="$DETECTED"
+    source_name="$ECHO_SOURCE"
+else
+    current=""
+    source_name="the echo services"
 fi
 
 if [ -z "$current" ] || ! is_public_ip "$current"; then
