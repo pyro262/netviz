@@ -17,24 +17,27 @@
 #   tools/refresh_home_ip.sh [--dry-run] [--quiet] [--no-restart]
 #
 # CONFIGURATION (environment, all optional)
-#   Three ways to learn the address, tried in this order, each skipped when it
-#   is not configured. The last one always works and needs nothing.
+#   By default this needs NO credentials of any kind. The address is read from
+#   public echo services -- the same answer the internet gives anyone who asks
+#   what your address is, which is exactly the number that ends up in an
+#   inbound block's destination field. Several are tried in order so no single
+#   third party is a dependency; the first one that answers with a routable
+#   address wins.
 #
-#   NETVIZ_ROUTER_API   base URL of a UniFi console, e.g. https://192.0.2.1.
+#   There is deliberately no SSH path. Reading one number does not justify
+#   asking for a shell login on the router, and plenty of installs have no
+#   router credentials to give.
+#
+#   NETVIZ_ECHO_URLS    space-separated echo services, overriding the defaults.
+#   NETVIZ_ROUTER_API   OPTIONAL, and the only thing here that takes a secret:
 #   NETVIZ_ROUTER_API_KEY
-#                       a local API key for it. Preferred: authoritative, and a
-#                       read-only integration key rather than a shell login on
-#                       the router. The key is handed to curl on STDIN, never on
-#                       the command line, so it stays out of the process list.
-#   NETVIZ_ROUTER_SSH   user@host of the router, for a console with no API. Runs
-#                       one read-only `ip addr` command.
-#   (neither set)       a public echo service -- correct, but it tells you what
-#                       the internet sees rather than what the router holds, and
-#                       it means asking a third party every run.
-#   NETVIZ_WAN_IFACE    interface to read on the router (default: guess from
-#                       the default route).
-#   NETVIZ_SSH_KEY      identity file for that ssh.
-#   NETVIZ_ECHO_URL     the echo service used when there is no router login.
+#                       base URL and local API key of a UniFi console. Set both
+#                       and the console's own answer is preferred, which is
+#                       authoritative and asks nobody outside the house. It is a
+#                       revocable read-only integration key, not a login. The key
+#                       is handed to curl on STDIN, never on the command line, so
+#                       it stays out of the process list. Unset -- the normal
+#                       case -- this whole branch is skipped.
 #   NETVIZ_DISCORD_LIB  path to a discord.sh providing notify_discord. Absent,
 #                       the script simply does not notify.
 #   NETVIZ_EXTRA_HOME_IPS
@@ -55,10 +58,9 @@ KEY="NETVIZ_HOME_IPS"
 
 : "${NETVIZ_ROUTER_API:=}"
 : "${NETVIZ_ROUTER_API_KEY:=}"
-: "${NETVIZ_ROUTER_SSH:=}"
-: "${NETVIZ_WAN_IFACE:=}"
-: "${NETVIZ_SSH_KEY:=}"
-: "${NETVIZ_ECHO_URL:=https://api.ipify.org}"
+# Four, so one service being down, rate-limiting or returning a courtesy page
+# is not an outage. They are asked in order and the first routable answer wins.
+: "${NETVIZ_ECHO_URLS:=https://api.ipify.org https://icanhazip.com https://checkip.amazonaws.com https://ifconfig.me/ip}"
 : "${NETVIZ_DISCORD_LIB:=}"
 : "${NETVIZ_EXTRA_HOME_IPS:=}"
 
@@ -126,48 +128,43 @@ url = "${NETVIZ_ROUTER_API%/}/proxy/network/api/s/default/stat/health"
 EOF
 }
 
-detect_from_router() {
-    local ssh_args=(-o BatchMode=yes -o ConnectTimeout=10
-                    -o StrictHostKeyChecking=accept-new)
-    if [ -n "$NETVIZ_SSH_KEY" ]; then
-        ssh_args+=(-i "$NETVIZ_SSH_KEY")
-    fi
-    local iface="$NETVIZ_WAN_IFACE"
-    if [ -z "$iface" ]; then
-        iface="$(ssh "${ssh_args[@]}" "$NETVIZ_ROUTER_SSH" \
-                 "ip -4 route get 1.1.1.1 2>/dev/null" 2>/dev/null \
-                 | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)"
-    fi
-    [ -n "$iface" ] || return 1
-    # shellcheck disable=SC2029  # $iface is deliberately expanded here, not there
-    ssh "${ssh_args[@]}" "$NETVIZ_ROUTER_SSH" \
-        "ip -4 -o addr show dev ${iface} scope global 2>/dev/null" 2>/dev/null \
-        | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p' | head -1
-}
-
+# Sets DETECTED and ECHO_SOURCE rather than printing, because the caller needs
+# to know WHICH service answered and a `$(...)` capture would run this in a
+# subshell where that second value could not get back out.
 detect_from_echo() {
-    curl -sS -f --max-time 15 "$NETVIZ_ECHO_URL" 2>/dev/null | tr -d '[:space:]'
+    local url answer
+    DETECTED=""
+    ECHO_SOURCE=""
+    for url in $NETVIZ_ECHO_URLS; do
+        answer="$(curl -sS -f --max-time 10 "$url" 2>/dev/null | tr -d '[:space:]')"
+        if [ -n "$answer" ] && is_public_ip "$answer"; then
+            DETECTED="$answer"
+            ECHO_SOURCE="$url"
+            return 0
+        fi
+        say "no usable answer from ${url}, trying the next one"
+    done
+    return 1
 }
 
 current=""
 source_name=""
+DETECTED=""
+ECHO_SOURCE=""
 if [ -n "$NETVIZ_ROUTER_API" ] && [ -n "$NETVIZ_ROUTER_API_KEY" ]; then
     current="$(detect_from_api || true)"
     source_name="console API ${NETVIZ_ROUTER_API}"
     if [ -z "$current" ]; then
-        say "console API gave nothing, trying the next source"
-    fi
-fi
-if [ -z "$current" ] && [ -n "$NETVIZ_ROUTER_SSH" ]; then
-    current="$(detect_from_router || true)"
-    source_name="router ${NETVIZ_ROUTER_SSH}"
-    if [ -z "$current" ]; then
-        say "router lookup failed, trying the next source"
+        say "console API gave nothing, falling back to the public echo services"
     fi
 fi
 if [ -z "$current" ]; then
-    current="$(detect_from_echo || true)"
-    source_name="$NETVIZ_ECHO_URL"
+    if detect_from_echo; then
+        current="$DETECTED"
+        source_name="$ECHO_SOURCE"
+    else
+        source_name="the echo services"
+    fi
 fi
 
 if [ -z "$current" ] || ! is_public_ip "$current"; then
