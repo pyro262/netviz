@@ -11,8 +11,14 @@ country did the thing that made this decision believe this address was in*.
 Everything else on the display stays on MaxMind, which is the better database
 for the question it is being asked (where in the world is this host, roughly).
 
-Pure and offline: it reads files, and `tools/fetch_xt_geoip.sh` is what puts
-them there.
+Pure and offline: it reads whatever is in the configured directory and never
+reaches for a network, a router or a credential. **Nothing in this project puts
+those files there**, deliberately -- the collector's whole relationship with the
+router is that the router pushes IPFIX and syslog to it, and a tool that had to
+log in to copy 42 files would have been the only reason this project ever asked
+anyone for router credentials. Copy them by whatever means the site already
+uses; the format below is the whole contract, and the directory being empty or
+absent is a supported, ordinary state.
 
 File format, verified against a live UDM SE: one file per country per family,
 in `/usr/share/xt_geoip/LE`. `.iv4` is pairs of little-endian uint32

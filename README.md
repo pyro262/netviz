@@ -237,7 +237,7 @@ Read in `netviz/config.py`. `INFLUX_TOKEN` is the only secret.
 | `NETVIZ_TEMPLATES` | `/state/templates.json` | IPFIX templates, so a restart loses nothing |
 | `NETVIZ_FLUSH_SECONDS` | `10` | How often points are batched out |
 | `NETVIZ_LOG_UNPARSED` | `0` | Log this many rejected syslog lines, for writing a parser |
-| `NETVIZ_XT_GEOIP_DIR` | `/data/xt_geoip` | Router geo tables, if fetched; absent is fine |
+| `NETVIZ_XT_GEOIP_DIR` | `/data/xt_geoip` | Router geo tables, if you have copied any there; absent is fine, and nothing here fetches them |
 | `NETVIZ_UPDATE_REPO` | `pyro262/netviz` | Release check — **set empty to disable**, see below |
 | `INFLUX_URL` | `http://influxdb:8086` | Leave `INFLUX_TOKEN` empty to disable history |
 | `INFLUX_ORG` / `INFLUX_BUCKET` | `home` / `netviz` | |
