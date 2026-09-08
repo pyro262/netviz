@@ -1,4 +1,6 @@
 .env
+.env.bak
+.env.bak.*
 docs/site-notes.md
 # GeoIP mmdb at the repo root only; netviz/static/data is committed bake output
 /data/
