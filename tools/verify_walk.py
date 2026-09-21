@@ -176,12 +176,38 @@ def run(page) -> bool:
                  + f" (rampFloor {ramp_floor} implies {want:.2f}, "
                  f"floor {want * 0.85:.2f})")
 
-    reach = max((great_circle_deg(s["lat"], s["lon"],
-                                  s["originLat"], s["originLon"])
-                 for s in walking), default=0.0)
+    # DERIVED, not a flat number -- the same lesson case 2 above records, and
+    # this case had not learned it. A walk phase does not always run to its
+    # full duration: a block burst calls rig.visit() and ends it early, and
+    # how often that happens depends on what else is on the machine. Measured
+    # on one build: three standalone runs reached 49.4, 50.8 and 50.1 deg,
+    # while two runs inside verify_release.sh -- same commit, same image, a
+    # loaded box -- reached 29.0 and 20.0, and the flat `>= 25` failed the
+    # second one. That is a working walk reported as broken, which is the one
+    # thing a release gate must never do.
+    #
+    # So judge each COMPLETE stretch on the ground it had TIME to cover:
+    # phaseT and walkDuration are already sampled, so the fraction of the
+    # phase that actually ran is known. Half of the proportional span is the
+    # allowance for the eased camera trailing its target and for the walk
+    # setting off toward a point that is not the full span away.
+    reaches = []
+    for r in stretches:
+        rows = r["rows"]
+        duration = rows[0].get("walkDuration") or 0.0
+        progress = (max(s["phaseT"] for s in rows) / duration
+                    if duration > 1e-6 else 1.0)
+        progress = min(1.0, max(0.0, progress))
+        reach = max(great_circle_deg(s["lat"], s["lon"],
+                                     s["originLat"], s["originLon"])
+                    for s in rows)
+        reaches.append((reach, span * progress * 0.5, progress))
     ok &= report("3: the walk still moves",
-                 reach >= 25,
-                 f"furthest {reach:.1f} deg from the walk's origin")
+                 bool(reaches) and all(got >= floor for got, floor, _ in reaches),
+                 ", ".join(f"furthest {got:.1f} deg, floor {floor:.1f} "
+                           f"({prog:.0%} of a walk phase ran)"
+                           for got, floor, prog in reaches)
+                 or "no complete walk phase in the window")
     return ok
 
 
