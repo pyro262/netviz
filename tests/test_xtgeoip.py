@@ -114,3 +114,27 @@ def test_counts_are_reported(tables):
     x = XtGeoIP.load(str(tables))
     assert x.ranges == 4
     assert x.countries == ["CN", "HK", "ZA"]
+
+
+def test_tables_in_an_LE_subdirectory_are_found(tmp_path):
+    """The router keeps its tables in an endianness directory, so the obvious
+    hand copy lands them one level down. A non-recursive scan returned the
+    same None as "never installed" -- silently reverting every block to
+    MaxMind coordinates."""
+    le = tmp_path / "LE"
+    le.mkdir()
+    # 198.51.100.0/24 (RFC 5737 documentation space), as xt_geoip stores it.
+    lo = int(ipaddress.IPv4Address("198.51.100.0"))
+    hi = int(ipaddress.IPv4Address("198.51.100.255"))
+    (le / "ZZ.iv4").write_bytes(struct.pack("<II", lo, hi))
+
+    xt = XtGeoIP.load(str(tmp_path))
+    assert xt is not None, "tables one level down in LE/ must still load"
+    assert xt.countries == ["ZZ"]
+    assert xt.lookup("198.51.100.7") == "ZZ"
+
+
+def test_a_directory_with_no_tables_anywhere_is_still_None(tmp_path):
+    """The LE/ fallback must not turn "nothing installed" into something."""
+    (tmp_path / "README.txt").write_text("not a table")
+    assert XtGeoIP.load(str(tmp_path)) is None

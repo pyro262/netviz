@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import random
 import signal
 import time
@@ -202,7 +203,12 @@ async def flusher(store: Store, health: Health, flush_seconds: float) -> None:
                         "continuing (buffer keeps accumulating on disk)",
                         FLUSH_TIMEOUT)
                     ok = False
-                if ok:
+                # `is True`, deliberately. flush() returns None when another
+                # flush already owns the drain -- nothing failed, but nothing
+                # was proved, and against a hung Influx that is the only
+                # answer the interleaved ticks ever produce. Treating it as
+                # success kept the feed looking alive for ever.
+                if ok is True:
                     health.saw("influx", time.time())
         except Exception:
             log.exception("flusher: unhandled error, continuing")
@@ -334,11 +340,20 @@ async def status_logger(decoder: IpfixDecoder, enricher: Enricher, fanout: Fanou
         try:
             log.info(
                 "status: ipfix=%s syslog=%s enrich=%s miss_rate=%.1f%% "
-                "fanout_clients=%d fanout=%s store_healthy=%s store_buffered=%s",
+                "fanout_clients=%d fanout=%s store_healthy=%s "
+                "store_persist_ok=%s store_buffered=%s",
                 decoder.stats, syslog.stats if syslog is not None else None,
                 enricher.stats, enricher.miss_rate() * 100,
                 fanout.client_count, fanout.stats,
                 store.healthy if store is not None else None,
+                # Separate from healthy on purpose: an unwritable state
+                # directory and an unreachable Influx are different
+                # mistakes with different fixes, and the old line showed
+                # them as one number.
+                # getattr: the status line is diagnostics and must never be
+                # the thing that raises. A store predating this field (or a
+                # stand-in) reports None rather than taking the line down.
+                getattr(store, "persist_ok", None) if store is not None else None,
                 store.buffered if store is not None else None,
             )
         except Exception:
@@ -424,11 +439,31 @@ async def run(cfg: Config, synthetic: bool) -> None:
     enricher = None if synthetic else Enricher(cfg.mmdb_path,
                                                (cfg.home_lat, cfg.home_lon),
                                                cfg.home_ips)
+    # Checked here rather than discovered on the first flush ten seconds
+    # later. A missing ./state is auto-created by dockerd as root:root, which
+    # the container's uid 10001 cannot write -- the wall then looks perfect
+    # while templates, the Influx buffer and the cloud cache all fail to
+    # persist, and every restart re-loses them.
+    if not os.access(cfg.state_dir, os.W_OK):
+        log.error("state: %s is not writable by uid %d -- IPFIX templates, "
+                  "the Influx buffer and the cloud cache will not survive a "
+                  "restart. chown it to the container's uid and recreate.",
+                  cfg.state_dir, os.getuid())
+
     if enricher is not None:
         # The router's own geo tables, if this install fetched them. Both
         # halves must be present to be useful: the tables say which country,
         # the bake says where to draw it.
         enricher.xt = XtGeoIP.load(cfg.xt_geoip_dir)
+        if enricher.xt is None and os.path.isdir(cfg.xt_geoip_dir):
+            # Present but empty is a DIFFERENT state from never installed, and
+            # /stats.json reports both as geoip.router: null. The usual cause
+            # is a copy that kept the router's own layout, so the tables are a
+            # level down in LE/ -- load() looks there too now, and anything
+            # still unfound is worth a line.
+            log.warning("xt_geoip: %s exists but holds no CC.iv4/CC.iv6 "
+                        "tables -- blocks keep their MaxMind coordinates",
+                        cfg.xt_geoip_dir)
         if enricher.xt is not None:
             enricher.centroids = load_centroids(
                 str(static_root / "data" / "borders-index.json"))

@@ -88,7 +88,18 @@ if [ -f "$TARGET" ]; then
     cp -a "$TARGET" "${TARGET}.prev"
     echo "previous database kept at $(basename "${TARGET}.prev")"
 fi
-install -m 0644 "$NEW" "$TARGET"
+# install(1) UNLINKS the destination and creates a new file in its place, so
+# the live filename points at a half-written database for the whole copy. The
+# running collector holds the old inode mmap'd and never notices -- but a
+# refresh interrupted here (disk full, SSH drop, Ctrl-C) leaves a TRUNCATED
+# file under the real name, and resolve_mmdb() only falls back when a file is
+# ABSENT. The next restart therefore opens it, geoip2 raises on the missing
+# tail metadata, and the collector crash-loops: blank wall, and no Discord
+# alert either, because the collector is what sends those. Stage beside the
+# target and rename(2) into place instead -- a reader sees the old file or the
+# new one, never a partial one.
+install -m 0644 "$NEW" "${TARGET}.new"
+mv -f "${TARGET}.new" "$TARGET"
 echo "installed $TARGET"
 
 # The mmdb is opened once at startup and held open, so a new file only takes

@@ -3,6 +3,7 @@
 A failure here must never reach the live path: callers add() and move on. The
 buffer survives a restart so a long Influx outage does not lose the window."""
 import json
+import logging
 import os
 import threading
 import time
@@ -10,6 +11,8 @@ from collections import deque
 from typing import Any, Protocol
 
 from .events import Event
+
+log = logging.getLogger(__name__)
 
 
 class Writer(Protocol):
@@ -59,6 +62,10 @@ class Store:
         self._batch = batch
         self._buf: deque[dict] = deque(maxlen=max_buffer)   # maxlen drops oldest
         self.healthy = True
+        # Disk persistence, tracked apart from Influx health: the two fail
+        # for different reasons and only one of them means the database is
+        # unreachable. Rides /stats.json so a wall can show it.
+        self.persist_ok = True
         # Tracks whether in-memory state has diverged from what is on disk.
         # Lets flush() skip the write+fsync+rename cycle on a timer tick
         # where nothing changed (e.g. buffer stayed empty), which is the
@@ -119,10 +126,20 @@ class Store:
         so a pathological backlog cannot monopolize the thread this runs
         on forever."""
         if not self._flushing.acquire(blocking=False):
-            # Another flush() is already draining. Nothing failed here --
-            # the in-flight call owns the drain and will persist state --
-            # so report success rather than blocking or erroring.
-            return True
+            # Another flush() is already draining. Nothing FAILED here, but
+            # nothing was proved either, and the caller uses the answer to
+            # decide whether Influx is alive.
+            #
+            # None, not True. FLUSH_TIMEOUT (15s) is longer than
+            # flush_seconds (10s), so against a HUNG Influx -- one that
+            # accepts the connection and never answers -- the ticks
+            # interleave: one blocks in the write, the next finds the lock
+            # held and returns immediately. Returning True there handed the
+            # flusher a "saw influx" roughly every 20s for ever, so the
+            # 120s staleness threshold never tripped, no Discord alert was
+            # sent, and the buffer climbed to maxlen dropping history in
+            # silence -- defeating the exact case the timeout exists for.
+            return None
         try:
             return self._flush_locked(max_points, time_budget)
         finally:
@@ -176,7 +193,13 @@ class Store:
             with self._lock:
                 self._dirty = True
             self.healthy = True
-        return self._persist()
+        # The Influx write is what this returns. Persisting the buffer to
+        # disk is a SEPARATE concern with a separate flag: folding a persist
+        # failure into this answer meant an unwritable /state -- a fresh
+        # clone, where Docker creates the bind source as root:root -- alerted
+        # "influx STALE" for ever while Influx was accepting every point.
+        self._persist()
+        return True
 
     def _persist(self) -> bool:
         # Write-to-temp + fsync + atomic rename. The fsync before rename
@@ -215,7 +238,18 @@ class Store:
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp, self._path)
-        except OSError:
+        except OSError as err:
+            # Said out loud, once per transition. This module used to import
+            # no logging at all, so the single most likely deployment mistake
+            # -- a state directory the container's uid cannot write -- had NO
+            # symptom beyond store_healthy=False in a once-a-minute status
+            # line. Rate-limited to the transition because it fires on every
+            # flush, which is every 10 seconds, for as long as it is broken.
+            if self.persist_ok:
+                log.warning("store: cannot persist the buffer to %s: %s -- "
+                            "history will not survive a restart (is the "
+                            "directory writable by this uid?)", self._path, err)
+            self.persist_ok = False
             self.healthy = False
             # Best-effort cleanup so a repeatedly failing persist (e.g.
             # disk full every tick) doesn't litter the directory with
@@ -280,8 +314,12 @@ class Store:
                 # lines were dropped); the next persist should rewrite the
                 # file clean rather than silently staying out of sync.
                 self._dirty = True
-        except OSError:
+        except OSError as err:
             # Can't read the buffer file at all (permissions, race with
             # deletion, etc). Starting empty is strictly better than
-            # failing to start.
+            # failing to start -- but not silently: this is the same
+            # unwritable-/state mistake seen from the other side, and at
+            # startup it is the first chance anyone has to notice it.
+            log.warning("store: cannot read the buffer at %s: %s -- "
+                        "starting with an empty buffer", self._path, err)
             self.healthy = False

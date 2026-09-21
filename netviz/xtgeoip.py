@@ -43,6 +43,19 @@ from typing import Optional
 log = logging.getLogger("netviz")
 
 
+def _has_tables(directory: str) -> bool:
+    """Does this directory hold at least one `CC.iv4`/`CC.iv6` table?"""
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return False
+    for name in names:
+        stem, _, ext = name.partition(".")
+        if ext in ("iv4", "iv6") and len(stem) == 2:
+            return True
+    return False
+
+
 class XtGeoIP:
     """Watched-country ranges, searched by bisection.
 
@@ -74,6 +87,18 @@ class XtGeoIP:
         """
         if not os.path.isdir(directory):
             return None
+
+        # The router keeps its tables one level down, in an endianness
+        # directory (`.../xt_geoip/LE/CN.iv4`). A hand copy that preserves
+        # that layout -- the obvious way to copy them -- puts CC.iv4 in
+        # `directory/LE`, where a non-recursive scan finds nothing and
+        # returns the same None as "never installed". Look there too. LE
+        # only: the records are little-endian and `_parse` assumes it, so a
+        # BE directory would decode to plausible nonsense rather than fail.
+        if not _has_tables(directory) and _has_tables(os.path.join(directory, "LE")):
+            log.info("xt_geoip: no tables in %s, using its LE/ subdirectory",
+                     directory)
+            directory = os.path.join(directory, "LE")
 
         v4: list[tuple[int, int, str]] = []
         v6: list[tuple[int, int, str]] = []

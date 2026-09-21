@@ -88,7 +88,11 @@ def test_persist_failure_does_not_raise_and_marks_unhealthy(tmp_path):
     s.add(_ev(1))
     result = s.flush()
 
-    assert result is False
+    # The Influx write SUCCEEDED; only the disk copy failed, and those are
+    # now separate answers. Folding them together made an unwritable /state
+    # alert as "influx STALE" for ever while Influx accepted every point.
+    assert result is True
+    assert s.persist_ok is False
     assert s.healthy is False
 
 
@@ -340,5 +344,11 @@ def test_flush_is_reentrant_safe_second_call_does_not_double_drain(tmp_path):
     t1.join(timeout=10)
 
     assert w.write_calls == 1, "second flush() drained/wrote concurrently with the first"
+    # None, not True. The flusher reads this answer to decide whether Influx
+    # is alive, and against a HUNG Influx this is the ONLY answer the
+    # interleaved ticks produce -- FLUSH_TIMEOUT (15s) is longer than
+    # flush_seconds (10s), so every other tick lands here. Reporting success
+    # kept the feed looking alive for ever while history was dropped.
+    assert second_result is None, "a flush that did not run must not read as one that succeeded"
     assert len(w.written) == 200
     assert len(set(p["fields"]["bytes"] for p in w.written)) == 200
