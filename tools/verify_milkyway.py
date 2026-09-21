@@ -321,7 +321,14 @@ def case9(page) -> None:
       const halfFov = (cam.fov * Math.PI / 180) / 2;
       const globePx = (h / 2) * Math.tan(Math.asin(1.0 / d)) / Math.tan(halfFov);
       const gc = sf.GALACTIC_X;
-      let best = { clearance: -1 };
+      // globePx is carried from the START, not only added when a candidate
+      // wins. It used to be set only inside the `if`, so a camera at which NO
+      // direction clears the globe left `best` as {clearance: -1} -- and the
+      // failure message below formats best.globePx eagerly, so this raised
+      // KeyError and took the whole verifier down INSTEAD of reporting the
+      // case as failed. A check that crashes rather than saying what it saw
+      // is the one thing a gate must never do.
+      let best = { clearance: -1, globePx, deg: null };
       for (let deg = 0; deg < 360; deg += 1) {
         const a = deg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
         // The same rotation.y the group carries, applied to the centre's
