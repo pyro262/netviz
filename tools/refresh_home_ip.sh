@@ -184,7 +184,15 @@ say "wrote ${KEY}=${wanted} to ${ENV_FILE}"
 # templates and the pending-write buffer both persist to /state.
 if [ "$RESTART" -eq 1 ]; then
     say "recreating the collector so it reads the new value"
-    docker compose up -d
+    # --no-build --no-deps, and the service named explicitly. A bare
+    # `up -d` is a full recreate of everything in the file: it would also
+    # deploy a locally built image or an edited compose file that somebody
+    # had made but deliberately NOT deployed yet. This script is scheduled,
+    # so that would happen unattended, in the middle of the night, on the
+    # unrelated event of a DHCP lease moving -- and the only notification
+    # sent says the WAN address changed. All this needs is for the
+    # collector to re-read its environment.
+    docker compose up -d --no-build --no-deps netviz-collector
 fi
 
 notify "netviz: WAN address changed to \`${wanted}\` (was \`${existing:-unset}\`, seen via ${source_name}). NETVIZ_HOME_IPS updated and the collector recreated -- inbound blocks will be attributed to their real source again."
