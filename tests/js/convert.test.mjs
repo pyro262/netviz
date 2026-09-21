@@ -78,3 +78,39 @@ test('two pending conversions stage as one write', () => {
   assert.deepEqual(Object.keys(out.next).sort(),
                    ['arcs.custom', 'test.preview.layers']);
 });
+
+// The new name already present means somebody has since chosen a value under
+// it. Converting again overwrites that choice with the old one, on every boot,
+// with no dialog in the menu.testMode case -- so the old key is inert history
+// and must be dropped rather than replayed.
+test('a stored new name is never overwritten by the old one', () => {
+  const stored = { 'arcs.rules': [{ id: 'old' }], 'arcs.custom': [{ id: 'new' }] };
+  const { patch, pending } = convertStored(stored);
+  assert.equal(pending.length, 0, 'nothing to convert: the new name is stored');
+  assert.deepEqual(patch['arcs.custom'], [{ id: 'new' }],
+    'the value a person most recently chose wins');
+  assert.equal(Object.prototype.hasOwnProperty.call(patch, 'arcs.rules'), false,
+    'the superseded name is dropped so nothing reads it');
+});
+
+test('superseded test-mode key does not flip the new one back', () => {
+  const stored = { 'menu.testMode': true, 'test.preview.layers': false };
+  const { patch, pending } = convertStored(stored);
+  assert.equal(pending.length, 0);
+  assert.equal(patch['test.preview.layers'], false);
+  assert.equal(Object.prototype.hasOwnProperty.call(patch, 'menu.testMode'), false);
+});
+
+test('stageConversion drops a superseded key even with nothing pending', () => {
+  const stored = { 'arcs.rules': [], 'arcs.custom': [] };
+  const out = stageConversion(stored, pendingConversions(stored));
+  assert.equal(out.ok, true);
+  assert.deepEqual(Object.keys(out.next), ['arcs.custom']);
+});
+
+test('stored is never mutated by a supersede prune', () => {
+  const stored = { 'arcs.rules': [], 'arcs.custom': [] };
+  convertStored(stored);
+  stageConversion(stored, pendingConversions(stored));
+  assert.equal(Object.prototype.hasOwnProperty.call(stored, 'arcs.rules'), true);
+});

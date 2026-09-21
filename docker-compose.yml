@@ -33,6 +33,17 @@ services:
       # Public resolvers to hide from the display, on top of the built-in
       # list. Comma separated; an entry ending in "." or ":" is a prefix.
       NETVIZ_EXTRA_RESOLVERS: ${NETVIZ_EXTRA_RESOLVERS:-}
+      # Compose forwards ONLY what this block names. These five are read by
+      # config.py and documented in the README, and without a line here each
+      # one sits in .env looking applied while the collector runs the built-in
+      # default and logs nothing -- which is the failure this file is least
+      # able to make visible. Set them in .env; ":-" is correct, because an
+      # empty value should mean "the default", not "the empty string".
+      NETVIZ_CLOUDS: ${NETVIZ_CLOUDS:-1}
+      NETVIZ_LIGHTNING: ${NETVIZ_LIGHTNING:-1}
+      NETVIZ_MMDB: ${NETVIZ_MMDB:-/data/GeoLite2-City.mmdb}
+      NETVIZ_XT_GEOIP_DIR: ${NETVIZ_XT_GEOIP_DIR:-/data/xt_geoip}
+      NETVIZ_FLUSH_SECONDS: ${NETVIZ_FLUSH_SECONDS:-10}
       # The kiosk shows a dim watermark in the lower left when the published
       # release is ahead of the running version. On by default; set this to
       # empty to disable the check and make no outbound request at all.

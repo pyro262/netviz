@@ -682,7 +682,15 @@ async function boot() {
       showSamples: (pts) => { for (const p of pts) lightning.spawn(p.lat, p.lon); },
     } : null,
     globe,
-    settings,
+    // The PREVIEW applier, deliberately -- not the persisting one. A showing
+    // turns layers on and puts them back when it ends, but "when it ends" only
+    // happens within one page life: a reload during a showing (a deploy stamp,
+    // a WebGL context loss, the wall losing power) used to leave
+    // layers.lightning and layers.clouds persisted true for ever, so a kiosk
+    // that had merely watched Test Mode once asked Blitzortung and NOAA for
+    // data on every boot afterwards. Nothing a showing touches is a choice
+    // anybody made, so nothing it touches should be remembered.
+    settings: preview,
     read: (path, fallback) => cfg(path, fallback),
     home: () => CONFIG.home,
     watched: () => globe.watchedCountries(),
@@ -803,4 +811,25 @@ async function boot() {
   window.__netvizReady = true;
 }
 
-boot();
+// boot() is a promise nobody awaits, so an unhandled rejection anywhere in it
+// used to end as a black canvas with no banner and -- worse -- no /build.json
+// poll, because watchForNewBuild() is only started well after the first await.
+// One rejected fetch (land.png, stars.bin, /config.json) on a reload that lands
+// while the collector is mid-restart took the wall down until a person walked
+// up to it: the next deploy could not repair it, because nothing was left
+// running to notice the next deploy. Say so on the glass, and keep watching for
+// the build that does.
+boot().catch((err) => {
+  console.error('netviz: boot failed', err);
+  try {
+    const banner = document.getElementById('degraded');
+    if (banner) {
+      banner.textContent = '\u25b2 DISPLAY FAILED TO START \u2014 RETRYING';
+      banner.classList.add('on');
+    }
+    document.body.classList.add('degraded');
+  } catch (e) { /* the DOM is all that is left -- never throw from here */ }
+  // Polls /build.json on its own timer and reloads on a changed stamp, so the
+  // wall heals itself the moment a working build is deployed.
+  try { watchForNewBuild(); } catch (e) { /* nothing left to fall back to */ }
+});

@@ -60,7 +60,8 @@ const has = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
  * @param deps.aurora      __setReading({kp, stale}) and debug()
  * @param deps.lightning   showSamples(points) -- optional
  * @param deps.globe       flashCountry(code) -- optional
- * @param deps.settings    the persisting applier, for layer toggles
+ * @param deps.settings    the PREVIEW applier, for layer toggles -- a
+ *                         showing's changes must not outlive the page
  * @param deps.read        cfg-like reader: (path, fallback) => value
  * @param deps.home        () => {lat, lon} or null
  * @param deps.watched     () => country codes with a border bake, or []

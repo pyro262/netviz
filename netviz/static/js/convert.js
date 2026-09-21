@@ -31,7 +31,9 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export const CONVERTERS = [
   {
     id: 'arcs.custom',
-    detect: (stored) => hasOwn(stored, 'arcs.rules'),
+    from: 'arcs.rules',
+    detect: (stored) => hasOwn(stored, 'arcs.rules')
+                     && !hasOwn(stored, 'arcs.custom'),
     writes: () => ['arcs.custom'],
     count: (stored) => (Array.isArray(stored['arcs.rules'])
       ? stored['arcs.rules'].length : 0),
@@ -49,7 +51,9 @@ export const CONVERTERS = [
     // the whole argument for there being a registry rather than three ad-hoc
     // migrations.
     id: 'test.preview',
-    detect: (stored) => hasOwn(stored, 'menu.testMode'),
+    from: 'menu.testMode',
+    detect: (stored) => hasOwn(stored, 'menu.testMode')
+                     && !hasOwn(stored, 'test.preview.layers'),
     writes: () => ['test.preview.layers'],
     count: () => 1,
     convert: (stored) => {
@@ -71,11 +75,34 @@ export function pendingConversions(stored = {}) {
   return CONVERTERS.filter((c) => c.detect(stored));
 }
 
+/** Old names that are SUPERSEDED: the new key is already stored, so the old
+ *  one is inert history.
+ *
+ *  `detect` refuses to convert these, and it must. A converter that fired on
+ *  the old key's mere presence overwrote the new value with the old one on
+ *  EVERY boot -- so a display that answered "Not now" to the dialog and then
+ *  edited its custom arcs had that work silently reverted on the next reload,
+ *  and `menu.testMode` did it with no dialog at all because nothing asks about
+ *  that key. The new value is what a person most recently chose; the old key
+ *  loses. It is dropped in memory so nothing reads it, and dropped from disk
+ *  on the next approved write. */
+export function supersededKeys(stored = {}) {
+  return CONVERTERS
+    .filter((c) => c.from && hasOwn(stored, c.from) && !c.detect(stored))
+    .map((c) => c.from);
+}
+
+function dropSuperseded(blob) {
+  for (const key of supersededKeys(blob)) delete blob[key];
+  return blob;
+}
+
 /** The blob as this build reads it, plus what it would take to make that
  *  reading permanent. Pure: `stored` is never mutated. */
 export function convertStored(stored = {}) {
   const pending = pendingConversions(stored);
-  const patch = pending.reduce((acc, c) => c.convert(acc), { ...stored });
+  const patch = dropSuperseded(
+    pending.reduce((acc, c) => c.convert(acc), { ...stored }));
   return { patch, pending };
 }
 
@@ -86,8 +113,11 @@ export function convertStored(stored = {}) {
  *  rules never existed" -- the same discipline refresh_geoip.sh uses when it
  *  verifies a database inside the container before installing it. */
 export function stageConversion(stored = {}, pending = []) {
-  if (!pending.length) return { ok: true, next: { ...stored }, error: null };
-  const next = pending.reduce((acc, c) => c.convert(acc), { ...stored });
+  if (!pending.length) {
+    return { ok: true, next: dropSuperseded({ ...stored }), error: null };
+  }
+  const next = dropSuperseded(
+    pending.reduce((acc, c) => c.convert(acc), { ...stored }));
   const written = {};
   for (const c of pending) {
     for (const path of c.writes()) {
