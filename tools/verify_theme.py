@@ -582,7 +582,30 @@ CASE3_SAMPLE_GAP_MS = 350
 # with PRESET_IDS collapsed to ['plasma'] * 5 the distances are 0.00 and this
 # floor still fails them.
 CASE3_RGB_DIST_MIN = 0.4
-CASE3_VAL_MARGIN = 0.02      # globe box brighter than the sky box by this much
+# Globe box brighter than the sky box by this much. This is a SAMPLING
+# sanity check -- it exists to catch a globe box that has drifted off the
+# planet and is reading sky -- and NOT an assertion about a ramp's contrast,
+# which is what the RGB distances above it measure.
+#
+# It was 0.02, and that was too close to the real floor to survive the day.
+# cividis is the flattest ramp and sits nearest the line; measured across
+# three runs of the SAME commit, a few hours apart:
+#
+#   15:20  globe rgb=(25.9, 23.2, 25.7)  diff ~0.0206  -> passed
+#   16:40  globe rgb=(25.7, 23.3, 23.6)  diff ~0.0198  -> FAILED
+#   16:56  globe rgb=(25.7, 23.2, 23.7)  diff ~0.0198  -> FAILED
+#
+# The blue channel falls and the hue swings 304deg -> 349deg as the day goes
+# on: it is the TERMINATOR moving across the sampled patch, so the margin
+# drifts one way through the afternoon rather than jittering. A gate whose
+# answer depends on the hour is not a gate, and it was failing a build whose
+# whole diff was a version string and a shell script.
+#
+# 0.01 is picked from the two numbers that bracket it, not by taste: the
+# failure being guarded against -- both boxes on the same thing -- reads
+# ~0.000, and the smallest REAL margin any preset produces is cividis at
+# ~0.020. Half of that is a factor of two of headroom on each side.
+CASE3_VAL_MARGIN = 0.01
 PRESET_IDS = ["plasma", "viridis", "magma", "inferno", "cividis"]
 
 
