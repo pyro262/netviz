@@ -117,7 +117,7 @@ def parse_home_nets(entries: Sequence[str]) -> list[Any]:
 
 class Enricher:
     def __init__(self, mmdb_path: str, home: tuple[float, float],
-                 home_ips: Sequence[str] = ()) -> None:
+                 home_ips: Sequence[str] = (), log_misses: int = 0) -> None:
         import geoip2.database
         self.mmdb_path = resolve_mmdb(mmdb_path)
         self._reader = geoip2.database.Reader(self.mmdb_path)
@@ -159,6 +159,13 @@ class Enricher:
         # looks exactly like it did before anyone named the address.
         self.stats = {"hits": 0, "misses": 0, "private": 0, "errors": 0,
                       "local": 0, "home_ip": 0}
+        # A bounded sample of the addresses the database could not place, for
+        # answering "what IS that" about a miss burst -- the rate says how
+        # much, never what. A spent budget is never refilled: a burst worth
+        # investigating is thousands of events, and one log line per dropped
+        # packet is how a diagnostic becomes the outage. 0 in normal
+        # operation; same shape as NETVIZ_LOG_UNPARSED.
+        self._log_misses = log_misses
 
     def close(self) -> None:
         self._reader.close()
@@ -235,6 +242,12 @@ class Enricher:
             return (None, "miss")
         return (r.location.latitude, r.location.longitude, r.country.iso_code or "??"), "hit"
 
+    def _note_miss(self, ip: str) -> None:
+        if self._log_misses > 0:
+            self._log_misses -= 1
+            log.info("geoip: miss %s (%d more will be logged)",
+                     ip, self._log_misses)
+
     def enrich(self, ev: Event) -> Optional[Event]:
         src_coords, src_status = self._locate(ev.src_ip)
         rescued = None
@@ -244,6 +257,7 @@ class Enricher:
             self.stats["hits"] += 1
         elif src_status == "miss":
             self.stats["misses"] += 1
+            self._note_miss(ev.src_ip)
         elif src_status == "error":
             self.stats["errors"] += 1
         elif src_status == "private":

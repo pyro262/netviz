@@ -124,3 +124,50 @@ def test_ratio_alert_early_spike_clears_and_does_not_latch():
     assert r.evaluate(misses=9, hits=1_002) == [("geoip", "recovered")]
     # Further healthy windows stay clear, no repeat alerts.
     assert r.evaluate(misses=10, hits=2_002) == []
+
+
+# --- dwell: a breach must be SUSTAINED before it alerts --------------------
+#
+# Measured on the live install 2026-09-22: lifetime miss_rate 4.0%, yet 13
+# STALE/recovered Discord pairs in six hours, nearly all of them lasting one
+# or two 30s windows. Something hourly burst-queries addresses GeoLite2
+# cannot place; nothing was broken. A single-window breach is noise, so the
+# condition must hold for `dwell` consecutive windows before it is alerted,
+# and clear for `dwell` consecutive windows before recovery.
+
+def test_ratio_alert_dwell_suppresses_a_single_bad_window():
+    r = RatioAlert("geoip", threshold=0.20, min_samples=10, dwell=3)
+    assert r.evaluate(misses=8, hits=2) == []          # window 1 of 3, breached
+    assert r.evaluate(misses=8, hits=1_002) == []      # clears -- counter resets
+    assert r.evaluate(misses=16, hits=1_004) == []     # window 1 again, not 2
+
+
+def test_ratio_alert_dwell_fires_once_the_breach_is_sustained():
+    r = RatioAlert("geoip", threshold=0.20, min_samples=10, dwell=3)
+    assert r.evaluate(misses=100, hits=0) == []
+    assert r.evaluate(misses=200, hits=0) == []
+    assert r.evaluate(misses=300, hits=0) == [("geoip", "stale")]
+    assert r.evaluate(misses=400, hits=0) == []        # no repeat while breached
+
+
+def test_ratio_alert_dwell_applies_to_recovery_too():
+    r = RatioAlert("geoip", threshold=0.20, min_samples=10, dwell=2)
+    r.evaluate(misses=100, hits=0)
+    assert r.evaluate(misses=200, hits=0) == [("geoip", "stale")]
+    assert r.evaluate(misses=200, hits=1_000) == []    # one good window is not enough
+    assert r.evaluate(misses=200, hits=2_000) == [("geoip", "recovered")]
+
+
+def test_ratio_alert_undersampled_window_neither_advances_nor_resets_dwell():
+    """A window with too few lookups carries no information about the
+    condition, so it must not count toward the dwell -- and must not throw
+    away the windows already counted either."""
+    r = RatioAlert("geoip", threshold=0.20, min_samples=10, dwell=2)
+    assert r.evaluate(misses=100, hits=0) == []        # window 1 of 2
+    assert r.evaluate(misses=102, hits=0) == []        # 2 attempts: no signal
+    assert r.evaluate(misses=202, hits=0) == [("geoip", "stale")]
+
+
+def test_ratio_alert_dwell_defaults_to_one():
+    r = RatioAlert("geoip", threshold=0.20, min_samples=10)
+    assert r.evaluate(misses=8, hits=2) == [("geoip", "stale")]

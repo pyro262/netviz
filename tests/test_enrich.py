@@ -25,7 +25,7 @@ class FakeReader:
         })()
 
 
-def make_enricher(home_ips=()):
+def make_enricher(home_ips=(), log_misses=0):
     e = Enricher.__new__(Enricher)
     e._reader = FakeReader()
     e._home = (30.3, -97.7)
@@ -36,6 +36,7 @@ def make_enricher(home_ips=()):
     e.xt = None
     e.centroids = {}
     e.stats_xt = {"agreed": 0, "corrected": 0, "placed": 0}
+    e._log_misses = log_misses
     return e
 
 
@@ -417,3 +418,37 @@ def test_an_unparseable_entry_is_dropped_not_fatal():
     the collector, and the good entries beside it must still work."""
     nets = parse_home_nets(["not-an-ip", "198.51.100.4", ""])
     assert [str(n) for n in nets] == ["198.51.100.4/32"]
+
+
+# --- NETVIZ_LOG_MISSES: a bounded sample of what could not be placed -------
+#
+# The miss rate says how much is unplaceable, never WHAT. When a burst of
+# misses shows up on a schedule (hourly, on the live install), the only way
+# to name the addresses behind it is to log a few. Bounded like
+# NETVIZ_LOG_UNPARSED, and 0 in normal operation: an unbounded one would be
+# a log line per dropped packet.
+
+def test_log_misses_is_off_by_default(caplog):
+    e = make_enricher()
+    with caplog.at_level("INFO", logger="netviz"):
+        e.enrich(_ev("198.51.100.200"))
+    assert "geoip: miss" not in caplog.text
+
+
+def test_log_misses_names_the_address(caplog):
+    e = make_enricher(log_misses=5)
+    with caplog.at_level("INFO", logger="netviz"):
+        e.enrich(_ev("198.51.100.200"))
+    assert "198.51.100.200" in caplog.text
+
+
+def test_log_misses_stops_at_the_budget(caplog):
+    """A budget that refills would be a log line per dropped packet for
+    ever -- the burst this exists to identify is thousands of events."""
+    e = make_enricher(log_misses=2)
+    with caplog.at_level("INFO", logger="netviz"):
+        for i in range(6):
+            e.enrich(_ev(f"198.51.100.{200 + i}"))
+    assert caplog.text.count("geoip: miss") == 2
+    # The misses themselves are still all counted -- only the logging stops.
+    assert e.stats["misses"] == 6

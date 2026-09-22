@@ -59,13 +59,26 @@ class RatioAlert:
 
     A minimum sample count guards against a handful of lookups in one
     window (e.g. a quiet period) tripping the alert before there is
-    enough signal in that window to trust the ratio."""
+    enough signal in that window to trust the ratio.
 
-    def __init__(self, name: str, threshold: float, min_samples: int) -> None:
+    `dwell` is how many CONSECUTIVE windows the condition must hold
+    before a transition is emitted, in each direction. One window is
+    noise: measured on a live install 2026-09-22, a lifetime miss rate
+    of 4.0% still produced thirteen stale/recovered alert pairs in six
+    hours, nearly all of them one or two windows long, because something
+    hourly burst-queries addresses the database cannot place. Nothing
+    was broken; the alert simply had no dwell. A window that is under
+    `min_samples` carries no information either way, so it neither
+    advances the dwell counter nor resets it."""
+
+    def __init__(self, name: str, threshold: float, min_samples: int,
+                 dwell: int = 1) -> None:
         self.name = name
         self._threshold = threshold
         self._min_samples = min_samples
+        self._dwell = max(1, dwell)
         self._breached = False
+        self._streak = 0
         self._prev_misses = 0
         self._prev_hits = 0
 
@@ -83,7 +96,14 @@ class RatioAlert:
             return []
         rate = d_misses / attempts
         breach = rate > self._threshold
-        if breach != self._breached:
-            self._breached = breach
-            return [(self.name, "stale" if breach else "recovered")]
-        return []
+        if breach == self._breached:
+            # Already in that state -- any partial run toward the other
+            # one is over.
+            self._streak = 0
+            return []
+        self._streak += 1
+        if self._streak < self._dwell:
+            return []
+        self._breached = breach
+        self._streak = 0
+        return [(self.name, "stale" if breach else "recovered")]

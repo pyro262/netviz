@@ -52,6 +52,11 @@ class Config:
     # How many rejected syslog lines to log once, for building a new parser
     # branch against the real stream. 0 in normal operation.
     log_unparsed: int = int(os.environ.get("NETVIZ_LOG_UNPARSED", "0"))
+    # How many unplaceable source addresses to log once each, for naming the
+    # hosts behind a miss burst -- the miss rate says how much, never what.
+    # 0 in normal operation. Only sources: the rate's denominator is the
+    # source end, so a destination miss is not what the alarm is counting.
+    log_misses: int = int(os.environ.get("NETVIZ_LOG_MISSES", "0"))
     # Falls back to the other supported build in the same directory when this
     # file is absent -- see enrich.resolve_mmdb. A clone with no MaxMind
     # account gets dbip-city-lite.mmdb from tools/fetch_dbip.sh and works.

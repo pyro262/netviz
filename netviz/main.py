@@ -64,6 +64,12 @@ STATUS_LOG_SECONDS = 60.0
 # Spec 6.2: alert if GeoIP miss rate exceeds 20% over a meaningful sample.
 GEOIP_MISS_THRESHOLD = 0.20
 GEOIP_MISS_MIN_SAMPLES = 50
+# ...and only once it has held for this many consecutive alerter ticks.
+# 6 x 30s = 3 minutes sustained. A genuinely broken database misses 100%
+# of lookups and still alerts within three minutes; an hourly burst of
+# unplaceable addresses -- which is what a healthy install actually
+# produces -- says nothing at all. See RatioAlert's docstring.
+GEOIP_MISS_DWELL = 6
 
 
 class InfluxWriter:
@@ -448,7 +454,8 @@ async def run(cfg: Config, synthetic: bool) -> None:
     static_root = Path(__file__).resolve().parent / "static"
     enricher = None if synthetic else Enricher(cfg.mmdb_path,
                                                (cfg.home_lat, cfg.home_lon),
-                                               cfg.home_ips)
+                                               cfg.home_ips,
+                                               log_misses=cfg.log_misses)
     # Checked here rather than discovered on the first flush ten seconds
     # later. A missing ./state is auto-created by dockerd as root:root, which
     # the container's uid 10001 cannot write -- the wall then looks perfect
@@ -518,7 +525,8 @@ async def run(cfg: Config, synthetic: bool) -> None:
     _arm_all_feeds(health, thresholds, time.time())
     geoip_alert = (None if synthetic else
                    RatioAlert("geoip_miss_rate", GEOIP_MISS_THRESHOLD,
-                              GEOIP_MISS_MIN_SAMPLES))
+                              GEOIP_MISS_MIN_SAMPLES,
+                              dwell=GEOIP_MISS_DWELL))
 
     def on_event(ev: Event, feed: str) -> None:
         # Called directly from datagram_received for every event decoded out

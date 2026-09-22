@@ -19,6 +19,10 @@ services:
       # branch against the real stream. 0 in normal operation; set on the host
       # for one run, e.g. NETVIZ_LOG_UNPARSED=40 docker compose up -d.
       NETVIZ_LOG_UNPARSED: ${NETVIZ_LOG_UNPARSED:-0}
+      # Sample of source addresses GeoIP could not place, for naming what is
+      # behind a miss burst. 0 in normal operation; set on the host for one
+      # run, e.g. NETVIZ_LOG_MISSES=40 docker compose up -d.
+      NETVIZ_LOG_MISSES: ${NETVIZ_LOG_MISSES:-0}
       # Where the arcs converge. Set these in .env -- a city centre is plenty
       # precise, and the value ends up on screen.
       NETVIZ_HOME_LAT: ${NETVIZ_HOME_LAT:-30.3}
