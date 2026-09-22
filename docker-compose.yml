@@ -44,6 +44,17 @@ services:
       NETVIZ_MMDB: ${NETVIZ_MMDB:-/data/GeoLite2-City.mmdb}
       NETVIZ_XT_GEOIP_DIR: ${NETVIZ_XT_GEOIP_DIR:-/data/xt_geoip}
       NETVIZ_FLUSH_SECONDS: ${NETVIZ_FLUSH_SECONDS:-10}
+      # Optional stale-feed alerts. Unset -- the default -- means the
+      # collector posts nowhere and makes no outbound request for this at
+      # all; it still logs every transition. Set ONE of the first two:
+      # the webhook itself, or a path to a file holding it (mounted from
+      # the host in docker-compose.override.yml), which keeps the secret
+      # out of `docker inspect`. _KEY names the KEY= line to read from
+      # that file when it is not NETVIZ_WEBHOOK_URL -- point it at a file
+      # another tool already owns rather than copying the value.
+      NETVIZ_WEBHOOK_URL: ${NETVIZ_WEBHOOK_URL:-}
+      NETVIZ_WEBHOOK_FILE: ${NETVIZ_WEBHOOK_FILE:-}
+      NETVIZ_WEBHOOK_KEY: ${NETVIZ_WEBHOOK_KEY:-}
       # The kiosk shows a dim watermark in the lower left when the published
       # release is ahead of the running version. On by default; set this to
       # empty to disable the check and make no outbound request at all.

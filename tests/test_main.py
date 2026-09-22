@@ -110,9 +110,10 @@ async def test_alerter_survives_notify_post_raising(monkeypatch, caplog):
 
     def _raise(_msg):
         calls["count"] += 1
-        raise RuntimeError("WATCHTOWER_NOTIFICATION_URL not found")
+        raise RuntimeError("no webhook configured")
 
     monkeypatch.setattr(netviz_main.notify, "post", _raise)
+    monkeypatch.setenv("NETVIZ_WEBHOOK_URL", "discord://faketoken@123456789")
 
     orig_sleep = asyncio.sleep
 
@@ -152,6 +153,7 @@ async def test_alerter_logs_exception_and_continues_looping(monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(netviz_main.notify, "post", _raise)
+    monkeypatch.setenv("NETVIZ_WEBHOOK_URL", "discord://faketoken@123456789")
 
     orig_sleep = asyncio.sleep
 
@@ -661,6 +663,7 @@ async def test_alerter_posts_geoip_miss_alert_via_ratio_alert(monkeypatch):
         return True
 
     monkeypatch.setattr(netviz_main.notify, "post", _post)
+    monkeypatch.setenv("NETVIZ_WEBHOOK_URL", "discord://faketoken@123456789")
 
     orig_sleep = asyncio.sleep
 
@@ -684,6 +687,39 @@ async def test_alerter_posts_geoip_miss_alert_via_ratio_alert(monkeypatch):
         await task
 
     assert any("geoip_miss_rate" in p and "STALE" in p for p in posts)
+
+
+async def test_alerter_without_a_webhook_posts_nothing(monkeypatch, caplog):
+    """A clone that configured no webhook still logs the transition locally
+    and makes no outbound request -- alerting off must cost nothing, not a
+    failed POST and a traceback every 30s."""
+    for var in ("NETVIZ_WEBHOOK_URL", "NETVIZ_WEBHOOK_FILE"):
+        monkeypatch.delenv(var, raising=False)
+
+    posts = []
+    monkeypatch.setattr(netviz_main.notify, "post", lambda msg: posts.append(msg))
+
+    orig_sleep = asyncio.sleep
+
+    async def _fast_sleep(_seconds):
+        await orig_sleep(0)
+
+    monkeypatch.setattr(netviz_main.asyncio, "sleep", _fast_sleep)
+
+    health = Health({"netflow": 1.0})
+    task = asyncio.create_task(netviz_main.alerter(health))
+
+    with caplog.at_level(logging.WARNING, logger="netviz"):
+        for _ in range(3):
+            await orig_sleep(0)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert posts == []
+    # The operator still learns about it from the log.
+    assert "STALE" in caplog.text
 
 
 async def test_alerter_with_no_geoip_alert_is_unaffected():

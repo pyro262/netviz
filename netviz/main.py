@@ -304,6 +304,14 @@ async def lightning_poller(cache: "lightning_mod.LightningCache", cfg: Config) -
 
 async def alerter(health: Health, geoip_alert: Optional[RatioAlert] = None,
                    enricher: Optional[Enricher] = None) -> None:
+    # Resolved once, and said out loud once, because alerting that is off is
+    # indistinguishable from alerting that is broken: both are silence. An
+    # install that configured nothing keeps the local WARNING lines below and
+    # makes no outbound request at all -- it must not pay a failed POST, or a
+    # traceback, every 30s for a feature it declined.
+    posting = notify.configured()
+    log.info("alerting: %s", "enabled" if posting else
+             "disabled (no NETVIZ_WEBHOOK_URL or NETVIZ_WEBHOOK_FILE)")
     while True:
         await asyncio.sleep(30)
         try:
@@ -318,6 +326,8 @@ async def alerter(health: Health, geoip_alert: Optional[RatioAlert] = None,
                 msg = (f"netviz: feed `{feed}` is STALE" if transition == "stale"
                        else f"netviz: feed `{feed}` recovered")
                 log.warning(msg)
+                if not posting:
+                    continue
                 try:
                     await asyncio.to_thread(notify.post, msg)
                 except Exception:

@@ -2,9 +2,35 @@
 # your host. Compose merges it into docker-compose.yml automatically.
 services:
   netviz-collector:
+    environment:
+      # --- Optional: stale-feed alerts -------------------------------------
+      # Leave all of this out and the collector alerts nowhere; it still logs
+      # every transition. To turn it on, create a webhook in your chat app
+      # (Discord: Channel Settings -> Integrations -> Webhooks -> New) and
+      # either paste it here:
+      #
+      #   NETVIZ_WEBHOOK_URL: https://discord.com/api/webhooks/<id>/<token>
+      #
+      # or, better, keep it in a file on the host and point at that. The
+      # value then never enters the container's environment, where
+      # `docker inspect` would print it in full:
+      NETVIZ_WEBHOOK_FILE: /run/secrets/netviz-webhook
+      #
+      # If that file is one another tool already owns, name its key instead
+      # of copying the secret into a second place:
+      #
+      #   NETVIZ_WEBHOOK_KEY: SOME_OTHER_TOOL_NOTIFICATION_URL
+      #
+      # The shoutrrr form `discord://<token>@<id>` is accepted too, so a file
+      # written for Watchtower or a similar tool works as-is.
     volumes:
-      # Discord webhook, read at call time. Never copy the secret into .env.
-      - /path/to/watchtower/.env:/host/watchtower.env:ro
+      # The webhook file, read only when a message is actually sent. The
+      # container does not run as root, so this must be readable by its uid
+      # (10001) -- a mode 600 file owned by your login user is not, and every
+      # alert will fail silently. `group_add:` below is one way.
+      - /path/to/your/webhook.env:/run/secrets/netviz-webhook:ro
+    # group_add:
+    #   - "1000"
     networks:
       - my_influx_network
 

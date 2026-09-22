@@ -263,10 +263,35 @@ NETVIZ_UPDATE_REPO=
 It defaults to on rather than off because the people most likely to be running a
 stale build are the ones who never read this file.
 
-`WATCHTOWER_ENV` (read by `notify.py`) points at a file holding a Discord webhook
-in shoutrrr form, for stale-feed alerts. Bind it in
-`docker-compose.override.yml`; it is read at call time and never copied into the
-repo. Leave it unmounted and alerting stays off.
+### Alerts (optional, off by default)
+
+The collector can post to a chat webhook when a feed goes stale or recovers.
+Configure nothing and it posts nowhere and makes no outbound request for this
+at all — the transitions still appear in the log either way.
+
+To turn it on, create a webhook in your own chat app (in Discord: *Channel
+Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL*) and set
+**one** of these:
+
+```
+NETVIZ_WEBHOOK_URL=https://discord.com/api/webhooks/<id>/<token>
+NETVIZ_WEBHOOK_FILE=/run/secrets/netviz-webhook
+```
+
+The file form is the better one: the value is read only when a message is
+actually being sent, so it never enters the container's environment, where
+`docker inspect` would print it in full. `NETVIZ_WEBHOOK_KEY` names the `KEY=`
+line to read from that file (default `NETVIZ_WEBHOOK_URL`), so a file some
+other tool already owns can be pointed at rather than copied. The shoutrrr
+form `discord://<token>@<id>` is accepted wherever a URL is, since that is
+what several other tools store.
+
+Two things that make a webhook look dead when it is not: the container does
+not run as root, so a mode-600 file owned by your login user is unreadable to
+it; and Discord sits behind Cloudflare, which rejects requests carrying no
+`User-Agent` — `notify.py` sends one, so do not strip it.
+
+See `docker-compose.override.yml.example` for the mount.
 
 ## When something is wrong
 
