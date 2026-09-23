@@ -31,7 +31,19 @@ def _is_valid_point(obj: Any) -> bool:
     return isinstance(obj, dict) and _REQUIRED_POINT_KEYS.issubset(obj.keys())
 
 
-def event_to_point(ev: Event) -> dict[str, Any]:
+# Influx keeps ONE point per series per timestamp, and a series is only the
+# measurement plus its tags -- kind and the two countries here. IPFIX stamps
+# every flow in a message with the header's export time, in whole seconds, so
+# two flows between the same pair of countries in one second used to collide
+# and the later silently overwrote the earlier: measured at roughly 80% of
+# flow history, bytes and all. Each point now takes a per-store sequence
+# number as a nanosecond offset. It wraps well inside a millisecond, so no
+# point moves visibly, and two same-series points in one second can only
+# collide a million points apart.
+SEQ_WRAP = 1_000_000
+
+
+def event_to_point(ev: Event, seq: int = 0) -> dict[str, Any]:
     return {
         "measurement": "netviz",
         "tags": {
@@ -50,7 +62,7 @@ def event_to_point(ev: Event) -> dict[str, Any]:
             "dst_lat": float(ev.dst_lat) if ev.dst_lat is not None else 0.0,
             "dst_lon": float(ev.dst_lon) if ev.dst_lon is not None else 0.0,
         },
-        "time": int(ev.ts * 1_000_000_000),
+        "time": int(ev.ts * 1_000_000_000) + seq % SEQ_WRAP,
     }
 
 
@@ -91,6 +103,8 @@ class Store:
         # up behind the first (which would also stall the event loop's
         # asyncio.to_thread call for longer than necessary).
         self._flushing = threading.Lock()
+        # Next nanosecond offset for event_to_point -- see SEQ_WRAP.
+        self._seq = 0
         self._load()
 
     @property
@@ -108,7 +122,8 @@ class Store:
         # loop. Lock acquisition here is uncontended almost always and
         # only ever guards a pure in-memory append, so it stays cheap.
         with self._lock:
-            self._buf.append(event_to_point(ev))
+            self._buf.append(event_to_point(ev, self._seq))
+            self._seq = (self._seq + 1) % SEQ_WRAP
             self._dirty = True
 
     def flush(self, max_points: int = 10_000, time_budget: float = 5.0) -> bool:

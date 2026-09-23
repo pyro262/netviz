@@ -352,3 +352,26 @@ def test_flush_is_reentrant_safe_second_call_does_not_double_drain(tmp_path):
     assert second_result is None, "a flush that did not run must not read as one that succeeded"
     assert len(w.written) == 200
     assert len(set(p["fields"]["bytes"] for p in w.written)) == 200
+
+
+def test_same_second_same_series_points_do_not_share_a_timestamp(tmp_path):
+    # IPFIX stamps every flow in a message with the header's export time, in
+    # whole seconds, and the tags are only kind/countries/policy -- so two
+    # flows between the same pair of countries in one second were the same
+    # Influx series at the same time, and the second silently overwrote the
+    # first. Measured at roughly 80% of flow history lost.
+    w = OkWriter()
+    s = Store(w, str(tmp_path / "buf.jsonl"))
+    for _ in range(5):
+        s.add(_ev(7))
+    assert s.flush() is True
+    times = [p["time"] for p in w.written]
+    assert len(set(times)) == 5
+    # The disambiguator stays inside the second the event belongs to, and
+    # under a millisecond: it must not move history visibly.
+    base = 7 * 1_000_000_000
+    assert all(base <= t < base + 1_000_000 for t in times)
+
+
+def test_event_to_point_default_time_is_the_event_time():
+    assert event_to_point(_ev(3))["time"] == 3 * 1_000_000_000
